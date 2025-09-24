@@ -81,13 +81,12 @@
 
 ```bash
 # 克隆仓库
-git clone git@github.com:cacity/youtube_reader.git
-cd youtube_reader/pyqt7
+git clone git@github.com:cacity/VideoHub.git
+cd VideoHub
 
 # 创建虚拟环境（推荐）
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# 或 venv\Scripts\activate  # Windows
+conda create -n VideoHub
+conda activate VideoHub
 
 # 安装依赖
 pip install -r requirements.txt
@@ -123,14 +122,28 @@ PROXY=http://proxy.example.com:8080
 - 默认闲时：23:00 - 07:00
 - 可在"设置"或"闲时队列"页面自定义时间段
 
-### 3. 运行应用
+### 3. 安装Deno
+
+1. **使用PowerShell安装**:
+
+- 打开PowerShell，输入以下命令以下载和安装Deno:
+
+```powershell
+iwr https://deno.land/x/install/install.sh | sh
+```
+2.**后台运行**
+
+```
+deno run --allow-net --allow-read ./douyinVd/main.ts
+```
+
+
+
+### 4. 运行应用
 
 ```bash
-# Windows 用户
-run.bat
-
-# 其他系统
-python youtube_transcriber_pyqt.py
+# Windows 用户 虚拟环境下运行
+python main.py
 ```
 
 ## 📂 项目结构
@@ -139,7 +152,7 @@ python youtube_transcriber_pyqt.py
 youtube_reader/pyqt7/
 ├── 📁 核心文件
 │   ├── youtube_transcriber_pyqt.py    # PyQt6 GUI 主程序（支持多平台）
-│   ├── youtube_transcriber.py         # 核心业务逻辑（多平台下载+转录）
+│   ├── main.py         # 核心业务逻辑（多平台下载+转录）
 │   ├── run.bat                        # Windows 启动脚本
 │   └── requirements.txt               # Python 依赖
 ├── 📁 输出目录
@@ -154,8 +167,7 @@ youtube_reader/pyqt7/
 │   ├── icons/                         # 应用图标资源
 │   └── logs/                          # 下载历史记录
 └── 📁 配置文件
-    ├── .env                           # 环境变量（API密钥等）
-    └── CLAUDE.md                      # 项目配置文档
+    └── .env                           # 环境变量（API密钥等）
 ```
 
 ## 🌐 支持的平台
@@ -272,6 +284,8 @@ youtube_reader/pyqt7/
 - [OpenAI API](https://openai.com/) - 大语言模型服务
 
 ---
+
+
 
 ![GitHub stars](https://img.shields.io/github/stars/cacity/VideoHub?style=social)
 
