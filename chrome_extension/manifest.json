@@ -1,0 +1,88 @@
+{
+  "manifest_version": 3,
+  "name": "视频下载助手",
+  "version": "1.0",
+  "description": "在YouTube、Twitter、Bilibili页面添加下载按钮，将视频添加到闲时下载队列",
+  
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "scripting",
+    "downloads"
+  ],
+  
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://m.youtube.com/*", 
+    "https://youtube.com/*",
+    "https://twitter.com/*",
+    "https://x.com/*",
+    "https://www.bilibili.com/*",
+    "https://m.bilibili.com/*",
+    "https://bilibili.com/*",
+    "http://127.0.0.1:8765/*",
+    "http://localhost:8765/*"
+  ],
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://m.youtube.com/*", 
+        "https://youtube.com/*"
+      ],
+      "js": ["content-scripts/youtube.js"],
+      "css": ["content-scripts/styles.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://twitter.com/*",
+        "https://x.com/*"
+      ],
+      "js": ["content-scripts/twitter.js"],
+      "css": ["content-scripts/styles.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://www.bilibili.com/*",
+        "https://m.bilibili.com/*",
+        "https://bilibili.com/*"
+      ],
+      "js": ["content-scripts/bilibili.js"],
+      "css": ["content-scripts/styles.css"],
+      "run_at": "document_end"
+    }
+  ],
+  
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "视频下载助手",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

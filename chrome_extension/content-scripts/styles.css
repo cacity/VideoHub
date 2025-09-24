@@ -1,0 +1,88 @@
+.video-downloader-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 8px 12px !important;
+    background: #ff6b35 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    text-decoration: none !important;
+    transition: all 0.2s ease !important;
+    z-index: 10000 !important;
+    position: relative !important;
+    margin: 0 8px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+}
+
+.video-downloader-btn:hover {
+    background: #e55a2b !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important;
+}
+
+.video-downloader-btn:active {
+    transform: translateY(0) !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+}
+
+.video-downloader-btn::before {
+    content: '⬇' !important;
+    margin-right: 6px !important;
+    font-size: 16px !important;
+}
+
+.video-downloader-btn.success {
+    background: #28a745 !important;
+}
+
+.video-downloader-btn.success::before {
+    content: '✓' !important;
+}
+
+.video-downloader-btn.loading {
+    background: #6c757d !important;
+    cursor: not-allowed !important;
+}
+
+.video-downloader-btn.loading::before {
+    content: '⏳' !important;
+    animation: spin 1s linear infinite !important;
+}
+
+.video-downloader-btn.error {
+    background: #dc3545 !important;
+}
+
+.video-downloader-btn.error::before {
+    content: '❌' !important;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.video-downloader-tooltip {
+    position: absolute !important;
+    background: #333 !important;
+    color: white !important;
+    padding: 6px 10px !important;
+    border-radius: 4px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    z-index: 10001 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: opacity 0.2s !important;
+    top: -35px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+}
+
+.video-downloader-btn:hover .video-downloader-tooltip {
+    opacity: 1 !important;
+}

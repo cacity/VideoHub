@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频下载助手</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        <!-- 头部 -->
+        <header class="popup-header">
+            <h1>视频下载助手</h1>
+            <span class="version">v1.0</span>
+        </header>
+
+        <!-- 状态栏 -->
+        <div class="status-bar">
+            <div class="queue-info">
+                <span class="queue-count">队列中有 <strong id="queueCount">0</strong> 个任务</span>
+            </div>
+            <div class="status-indicator">
+                <span class="status-dot" id="statusDot"></span>
+                <span class="status-text" id="statusText">检查中...</span>
+            </div>
+        </div>
+        
+        <div class="api-status" id="apiStatus">
+            <div class="api-status-item">
+                <span class="api-dot" id="apiDot"></span>
+                <span class="api-text" id="apiText">检查GUI应用连接...</span>
+                <button id="testApiBtn" class="btn-mini" title="测试连接">🔄</button>
+            </div>
+        </div>
+
+        <!-- 选项卡 -->
+        <div class="tabs">
+            <button class="tab-button active" data-tab="queue">下载队列</button>
+            <button class="tab-button" data-tab="settings">设置</button>
+        </div>
+
+        <!-- 队列面板 -->
+        <div class="tab-panel active" id="queue-panel">
+            <div class="queue-controls">
+                <button id="exportBtn" class="btn btn-primary">导出队列</button>
+                <button id="clearBtn" class="btn btn-danger">清空队列</button>
+                <button id="refreshBtn" class="btn btn-secondary">刷新</button>
+            </div>
+
+            <div class="queue-list" id="queueList">
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">📥</div>
+                    <p>队列为空</p>
+                    <small>在支持的网站上点击下载按钮来添加任务</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置面板 -->
+        <div class="tab-panel" id="settings-panel">
+            <div class="settings-section">
+                <h3>闲时下载时间</h3>
+                <div class="time-inputs">
+                    <label>
+                        开始时间:
+                        <input type="time" id="idleStartTime" value="23:00">
+                    </label>
+                    <label>
+                        结束时间:
+                        <input type="time" id="idleEndTime" value="07:00">
+                    </label>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>GUI应用API</h3>
+                <label>
+                    API地址:
+                    <input type="text" id="apiUrl" placeholder="http://127.0.0.1:8765">
+                </label>
+                <small>GUI应用的API服务器地址</small>
+            </div>
+
+            <div class="settings-actions">
+                <button id="saveSettingsBtn" class="btn btn-primary">保存设置</button>
+                <button id="resetSettingsBtn" class="btn btn-secondary">重置</button>
+            </div>
+        </div>
+
+        <!-- 底部信息 -->
+        <footer class="popup-footer">
+            <div class="support-sites">
+                <small>支持：YouTube、Twitter/X、Bilibili</small>
+            </div>
+        </footer>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
