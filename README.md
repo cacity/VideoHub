@@ -85,7 +85,7 @@ git clone git@github.com:cacity/VideoHub.git
 cd VideoHub
 
 # 创建虚拟环境（推荐）
-conda create -n VideoHub
+conda create -n VideoHub python=3.12
 conda activate VideoHub
 
 # 安装依赖
