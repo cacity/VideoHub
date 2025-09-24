@@ -1,0 +1,8 @@
+yt-dlp>=2023.3.4
+openai-whisper>=20231117
+torch>=2.0.0
+openai>=1.0.0
+ffmpeg-python>=0.2.0
+python-dotenv>=1.0.0
+requests>=2.28.0
+PyQt6>=6.4.0
