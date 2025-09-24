@@ -273,4 +273,6 @@ youtube_reader/pyqt7/
 
 ---
 
+![GitHub stars](https://img.shields.io/github/stars/cacity/VideoHub?style=social)
+
 **⭐ 如果这个项目对您有帮助，请给个 Star 支持一下！**
