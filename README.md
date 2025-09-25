@@ -1,7 +1,5 @@
 # 视频转录工具 (Video Hub)
 
-![](https://raw.githubusercontent.com/cacity/py_test/master/test/20250904133952067.jpeg)
-
 这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音、Bilibili** 等多平台视频内容的智能处理。提供视频下载、语音转录、双语字幕生成、内容摘要等完整工作流，并配备闲时调度、批量处理等高级功能。
 
 ## ✨ 核心功能
@@ -283,9 +281,10 @@ youtube_reader/pyqt7/
 - [OpenAI Whisper](https://github.com/openai/whisper) - 语音识别模型
 - [OpenAI API](https://openai.com/) - 大语言模型服务
 
----
+## 交流群
 
-[cacity/VideoHub](https://github.com/cacity/VideoHub)
+![image-20250925083303544](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20250925083306862.png)
+
 
 ![GitHub stars](https://img.shields.io/github/stars/cacity/VideoHub?style=social)
 
