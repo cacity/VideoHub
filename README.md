@@ -309,6 +309,8 @@ youtube_reader/pyqt7/
 - [OpenAI Whisper](https://github.com/openai/whisper) - 语音识别模型
 - [OpenAI API](https://openai.com/) - 大语言模型服务
 
-![GitHub stars](https://img.shields.io/github/stars/cacity/VideoHub?style=social)
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=cacity/VideoHub&type=Date)](https://www.star-history.com/#cacity/VideoHub&Date)
 
 **⭐ 如果这个项目对您有帮助，请给个 Star 支持一下！**
