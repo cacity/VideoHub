@@ -52,17 +52,36 @@
 
 ### 📋 功能说明
 
-#### "仅转录，不生成文章"选项
-- **勾选时**: 只进行视频下载、音频提取、语音转录、字幕生成（如果启用），跳过文章摘要生成
-- **不勾选时**: 执行完整流程，包括最终的 LLM 文章摘要生成
+1.  **复制连接准备**
 
-#### 闲时操作使用方法
-1. **设置闲时**: 在"设置"或"闲时队列"标签页设置闲时时间（默认 23:00-07:00）
-2. **添加任务**: 在任意处理页面点击"闲时操作"按钮，将任务加入队列
-3. **自动执行**: 到达闲时时间，系统自动依次执行队列中的任务
-4. **队列管理**: 在"闲时队列"页面查看、管理、重排任务
+复制好需要下载的视频的连接，
 
-#### 智能右键粘贴功能
+- YouTube视频地址，如：https://www.youtube.com/watch?v=2WhLmN3dayU 或 https://youtu.be/2WhLmN3dayU ，
+
+- X/Twitter 视频 地址如：https://x.com/tydezhang/status/1970786761849835567 ，
+
+- 抖音 是在视频右下角向右箭头的分享，点复制连接，内容类似：
+
+```
+  0.20 z@t.EH CUl:/ 12/21 小伙伴介绍，先出场的就是奥运花样游泳美女 @梁梁梁馨枰 # 吊环 # 危险动作请勿模仿  https://v.douyin.com/KWOa3YB1Lo8/ 复制此链接，打开Dou音搜索，直接观看视频！
+```
+
+2. **粘贴**
+
+在上图在线视频标签页，**视频URL**里直接右键，自动粘贴并自动填写正确的连接。
+
+3. **选项勾选**
+
+如果只是下载视频，勾选视频即可，也可下载字幕，转字幕，翻译等工作。下载字幕主要是指油管视频，如果有字幕，会优先下载原版字幕，如果没有，就会调用whisper，进行语音转文字，并制做成字幕。还可以对英文字幕进行翻译，目标文字是中文，制作成双语字幕，并带有新式。
+
+3. **下载**
+
+点击开始处理就开始在后台下载，进行你所勾选的作品，操作成功后会有提示。
+
+4. **其他功能**
+
+还可以对本地视频/音频进行以上的操作，提取字幕，对字幕进行翻译，提取摘要等。
+
 - **单个URL**: 在视频 URL 输入框右键，自动识别并粘贴 YouTube、Twitter、X、抖音等平台链接
 - **抖音分享**: 支持直接粘贴抖音分享文本，自动提取其中的视频链接
 - **批量URL**: 在批量处理文本框右键，支持粘贴多个不同平台链接或添加到现有链接
@@ -251,17 +270,25 @@ youtube_reader/pyqt7/
 2. 确认 API 账户有足够余额
 3. 检查网络防火墙设置
 
+
+
+## 交流群
+
+![image-20250925083303544](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20250925083306862.png)
+
 ## 🤝 贡献
 
 欢迎对本项目进行贡献！
 
 ### 贡献方式
+
 - 🐛 报告 Bug: [创建 Issue](https://github.com/cacity/youtube_reader/issues)
 - 💡 功能建议: 提交 Feature Request
 - 🔀 代码贡献: 提交 Pull Request
 - 📖 文档改进: 完善使用说明
 
 ### 开发指南
+
 1. Fork 项目并创建分支
 2. 提交代码前请确保通过基本测试
 3. 遵循现有代码风格和注释规范
@@ -276,15 +303,11 @@ youtube_reader/pyqt7/
 ## 🌟 致谢
 
 感谢以下开源项目的支持：
+
 - [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) - 现代化GUI框架
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - 多平台视频下载工具（支持1000+网站）
 - [OpenAI Whisper](https://github.com/openai/whisper) - 语音识别模型
 - [OpenAI API](https://openai.com/) - 大语言模型服务
-
-## 交流群
-
-![image-20250925083303544](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20250925083306862.png)
-
 
 ![GitHub stars](https://img.shields.io/github/stars/cacity/VideoHub?style=social)
 
