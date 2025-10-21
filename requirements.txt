@@ -2,8 +2,8 @@
 # Generated for Python 3.8+ compatibility
 
 # GUI Framework
-PyQt6
-PyQt6-Qt6
+PyQt6>=6.4.0,<7.0.0
+PyQt6-Qt6>=6.4.0,<7.0.0
 
 # Video Processing and Download
 yt-dlp>=2023.12.30
@@ -53,3 +53,11 @@ psutil>=5.9.0,<7.0.0
 # Additional Utilities
 packaging>=21.0
 typing-extensions>=4.0.0;python_version<"3.8"
+
+# Live Stream Recording Dependencies (from DouyinLiveRecorder)
+loguru>=0.7.3
+pycryptodome>=3.20.0
+distro>=1.9.0
+tqdm>=4.67.1
+httpx[http2]>=0.28.1
+PyExecJS>=1.5.1
