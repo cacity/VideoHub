@@ -12,6 +12,23 @@
 - **字幕嵌入**: 支持将字幕直接嵌入到视频文件中
 - **内容摘要**: 利用 LLM（支持 OpenAI、DeepSeek 等）智能生成文章摘要
 
+### 📺 直播录制功能
+- **多平台监控**: 支持抖音、快手、虎牙、斗鱼、B站、TikTok 等多个直播平台
+- **自动录制**: 实时监控直播状态，开播自动录制，下播自动停止
+- **高清录制**: 支持原画、超清、高清等多种画质选择
+- **多格式输出**: 支持 TS、FLV、MP4 等多种视频格式
+- **批量监控**: 可同时监控多个直播间，自动管理录制任务
+- **消息推送**: 支持钉钉、PushPlus、邮件等多种开播提醒方式
+- **定时检测**: 可配置监控间隔，平衡性能和实时性
+
+### 🌐 Chrome浏览器扩展
+- **页面集成**: 在 YouTube、Twitter/X、Bilibili 视频页面自动添加下载按钮
+- **一键加入队列**: 点击按钮即可将视频添加到闲时下载队列
+- **队列管理**: 通过扩展弹窗查看、导出、清空下载队列
+- **实时同步**: 通过 HTTP API 与桌面应用实时通信
+- **智能识别**: 自动提取视频标题、作者、链接等信息
+- **视觉反馈**: 添加成功后按钮状态变化，避免重复添加
+
 ### 🔄 批量处理
 - **多平台批处理**: 支持混合处理不同平台的视频链接
 - **文件导入**: 可从文本文件批量导入 URL 列表
@@ -43,6 +60,7 @@
 - **本地音频/视频**: 处理本地媒体文件
 - **批量处理**: 批量处理多个不同平台的视频链接
 - **闲时队列**: 可视化任务队列管理和闲时调度控制
+- **直播录制**: 多平台直播监控和自动录制管理
 - **下载历史**: 查看所有处理过的视频记录
 - **设置**: API 配置、模板管理、闲时设置
 
@@ -93,6 +111,8 @@
 - Python 3.8+
 - Windows/macOS/Linux
 - 8GB+ RAM（推荐用于 Whisper 模型）
+- FFmpeg（直播录制必需）
+- Chrome浏览器（使用浏览器扩展时）
 
 ### 1. 环境准备
 
@@ -112,11 +132,14 @@ pip install -r requirements.txt
 ### 核心依赖
 ```txt
 PyQt6                    # 现代化GUI框架
-yt-dlp                   # YouTube下载器
+yt-dlp                   # 多平台视频下载
 openai-whisper           # 语音转录
 openai                   # OpenAI API
 requests                 # HTTP请求
 python-dotenv            # 环境变量管理
+flask                    # API服务器
+flask-cors               # 跨域支持
+asyncio                  # 异步IO（直播录制）
 ```
 
 ### 2. 配置设置
@@ -139,43 +162,87 @@ PROXY=http://proxy.example.com:8080
 - 默认闲时：23:00 - 07:00
 - 可在"设置"或"闲时队列"页面自定义时间段
 
-### 3. 安装Deno
+### 3. 安装 FFmpeg（直播录制必需）
 
-1. **使用PowerShell安装**:
-
-- 打开PowerShell，输入以下命令以下载和安装Deno:
-
-```powershell
-iwr https://deno.land/x/install/install.sh | sh
-```
-2.**后台运行**
-
-```
-deno run --allow-net --allow-read ./douyinVd/main.ts
-```
-
-
-
-### 4. 运行应用
+FFmpeg 是直播录制功能的必需组件。应用会自动检测并尝试安装：
 
 ```bash
-# Windows 用户 虚拟环境下运行
+# 运行自动安装脚本
+python ffmpeg_install.py
+```
+
+手动安装方式：
+- **Windows**: 下载 FFmpeg 并添加到系统 PATH
+- **macOS**: `brew install ffmpeg`
+- **Linux**: `sudo apt-get install ffmpeg` 或 `sudo yum install ffmpeg`
+
+### 4. 安装 Chrome 浏览器扩展（可选）
+
+如果需要使用浏览器扩展功能：
+
+1. 打开 Chrome 浏览器，访问 `chrome://extensions/`
+2. 开启右上角的"开发者模式"
+3. 点击"加载已解压的扩展程序"
+4. 选择项目中的 `chrome_extension` 文件夹
+5. 扩展将出现在扩展程序列表中
+
+### 5. 运行应用
+
+```bash
+# 启动桌面应用（包含 HTTP API 服务器）
 python main.py
+
+# 或使用抖音命令行工具
+python douyin_cli.py <抖音视频URL>
 ```
 
 ## 📂 项目结构
 
 ```
-youtube_reader/pyqt7/
+VideoHub/
 ├── 📁 核心文件
-│   ├── youtube_transcriber_pyqt.py    # PyQt6 GUI 主程序（支持多平台）
-│   ├── main.py         # 核心业务逻辑（多平台下载+转录）
-│   ├── run.bat                        # Windows 启动脚本
+│   ├── main.py                        # PyQt6 GUI 主程序（整合所有功能）
+│   ├── api_server.py                  # HTTP API 服务器（供Chrome扩展调用）
+│   ├── douyin_cli.py                  # 抖音命令行下载工具
+│   ├── live_recorder_adapter.py       # 直播录制适配器
+│   ├── ffmpeg_install.py              # FFmpeg 自动安装脚本
+│   ├── msg_push.py                    # 消息推送模块
 │   └── requirements.txt               # Python 依赖
+├── 📁 Chrome扩展
+│   ├── chrome_extension/
+│   │   ├── manifest.json              # 扩展配置文件
+│   │   ├── background.js              # 后台服务脚本
+│   │   ├── content-scripts/           # 页面内容脚本
+│   │   │   ├── youtube.js
+│   │   │   ├── twitter.js
+│   │   │   ├── bilibili.js
+│   │   │   └── styles.css
+│   │   ├── popup/                     # 扩展弹窗界面
+│   │   │   ├── popup.html
+│   │   │   ├── popup.js
+│   │   │   └── popup.css
+│   │   └── icons/                     # 扩展图标
+├── 📁 抖音下载模块
+│   ├── douyin/                        # 抖音视频解析和下载
+│   │   ├── parser.py                  # URL解析
+│   │   ├── downloader.py              # 视频下载
+│   │   ├── video_extractor.py         # 视频提取器
+│   │   └── ...
+│   └── douyinVd/                      # Deno实现的备用下载方案
+├── 📁 直播录制模块
+│   ├── live_recorder/
+│   │   ├── spider.py                  # 直播平台爬虫
+│   │   ├── stream.py                  # 直播流处理
+│   │   ├── room.py                    # 直播间管理
+│   │   └── ...
+│   └── live_config/
+│       ├── config.ini                 # 直播录制配置
+│       └── URL_config.ini             # 直播间URL列表
 ├── 📁 输出目录
 │   ├── downloads/                     # 多平台音频文件 (.mp3)
 │   ├── videos/                        # 多平台视频文件 (.mp4/.webm/.mov等)
 │   ├── douyin_downloads/              # 抖音视频文件 (.mp4 无水印)
+│   ├── live_downloads/                # 直播录制文件 (.ts/.flv/.mp4)
 │   ├── transcripts/                   # 转录文本 (.txt)
 │   ├── subtitles/                     # 字幕文件 (.srt/.vtt/.ass)
 │   └── summaries/                     # 文章摘要 (.md)
@@ -184,7 +251,8 @@ youtube_reader/pyqt7/
 │   ├── icons/                         # 应用图标资源
 │   └── logs/                          # 下载历史记录
 └── 📁 配置文件
-    └── .env                           # 环境变量（API密钥等）
+    ├── .env                           # 环境变量（API密钥等）
+    └── idle_queue.json                # 闲时队列数据
 ```
 
 ## 🌐 支持的平台
@@ -213,11 +281,59 @@ youtube_reader/pyqt7/
 
 ## 🔧 高级功能
 
+### 🌐 Chrome扩展集成
+通过浏览器扩展实现无缝的视频下载工作流：
+
+1. **页面按钮注入**
+   - 访问 YouTube、Twitter/X、Bilibili 视频页面
+   - 自动在页面上添加橙色"添加到下载队列"按钮
+   - 点击按钮即可将视频加入闲时队列
+
+2. **队列管理界面**
+   - 点击浏览器工具栏的扩展图标
+   - 查看当前队列中的所有任务
+   - 支持导出队列为 JSON 文件
+   - 一键清空队列
+
+3. **API 通信机制**
+   - 桌面应用启动时自动运行 HTTP API 服务器（端口 8765）
+   - 浏览器扩展通过 API 实时同步任务到桌面应用
+   - 支持任务添加、删除、查询等操作
+   - 桌面应用状态栏实时显示扩展操作
+
+### 📺 直播录制功能
+
+#### 支持平台
+- **国内平台**: 抖音、快手、虎牙、斗鱼、B站等
+- **国际平台**: TikTok、Twitch、YouTube Live 等
+
+#### 使用方法
+1. 在"直播录制"标签页添加直播间 URL
+2. 配置录制参数：
+   - 监控间隔（默认 60 秒）
+   - 视频格式（TS、FLV、MP4）
+   - 视频质量（原画、超清、高清）
+   - 保存路径
+3. 点击"开始监控"，应用将自动：
+   - 定期检查直播状态
+   - 开播时自动开始录制
+   - 下播时自动停止录制
+   - 保存录制文件
+
+#### 高级配置
+- **代理设置**: 支持为特定平台配置代理（如 TikTok、Twitch）
+- **消息推送**:
+  - 钉钉 Webhook 通知
+  - PushPlus 通知
+  - 邮件通知
+- **日志管理**: 可选保存详细日志，方便排查问题
+
 ### 🎵 抖音特色功能
 - **智能分享识别**: 直接粘贴抖音App分享的文本内容，自动提取视频链接
 - **无水印下载**: 下载的视频文件自动去除水印，获得原始清晰视频
 - **简洁文件名**: 只保留视频标题，去除作者名和ID等冗余信息
 - **多种下载源**: 支持多个下载服务，确保下载成功率
+- **直播录制**: 支持抖音直播间监控和自动录制
 
 ### 自定义模板
 在"设置"页面可以创建和管理文章生成模板：
@@ -269,6 +385,50 @@ youtube_reader/pyqt7/
 1. 检查 API 密钥是否正确配置
 2. 确认 API 账户有足够余额
 3. 检查网络防火墙设置
+
+### Chrome扩展问题
+
+#### 扩展按钮不显示
+1. 确认在支持的网站上（YouTube、Twitter/X、Bilibili）
+2. 检查扩展是否已启用
+3. 刷新页面重试
+4. 查看浏览器控制台是否有错误信息
+
+#### 无法添加到队列
+1. 确认桌面应用正在运行
+2. 检查 API 服务器是否启动（默认端口 8765）
+3. 查看桌面应用状态栏是否有提示信息
+4. 尝试在扩展弹窗中点击"刷新"
+
+#### 队列同步问题
+1. 确认桌面应用的"闲时队列"标签页能正常显示
+2. 检查 `idle_queue.json` 文件是否存在
+3. 尝试重启桌面应用
+
+### 直播录制问题
+
+#### FFmpeg 未找到
+1. 运行 `python ffmpeg_install.py` 自动安装
+2. 手动安装后确认已添加到系统 PATH
+3. 重启应用使环境变量生效
+
+#### 直播检测失败
+1. 确认直播间 URL 格式正确
+2. 检查网络连接，某些平台可能需要代理
+3. 增加监控间隔时间，避免频繁请求
+4. 查看日志获取详细错误信息
+
+#### 录制文件损坏
+1. 检查磁盘空间是否充足
+2. 确认 FFmpeg 版本较新
+3. 尝试更换视频格式（TS 格式更稳定）
+4. 检查网络稳定性
+
+#### 收不到开播通知
+1. 确认已在设置中启用消息推送
+2. 检查 Webhook URL 或邮箱配置是否正确
+3. 测试推送服务是否可用
+4. 查看应用日志确认推送是否发送
 
 
 
