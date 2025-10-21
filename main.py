@@ -623,6 +623,10 @@ class WorkerThread(QThread):
             # 根据任务类型执行不同的操作
             if not self.stopped and self.task_type == "youtube":
                 self.process_youtube()
+            elif not self.stopped and self.task_type == "twitter":
+                self.process_twitter()
+            elif not self.stopped and self.task_type == "bilibili":
+                self.process_bilibili()
             elif not self.stopped and self.task_type == "local_audio":
                 self.process_local_audio()
             elif not self.stopped and self.task_type == "local_video":
@@ -681,9 +685,8 @@ class WorkerThread(QThread):
                 
                 # 使用抖音下载器处理
                 try:
-                    # 获取配置的端口，默认8080
-                    port = getattr(self, 'deno_service_port', None) or (self.deno_port_input.text().strip() if hasattr(self, 'deno_port_input') else '8080') or '8080'
-                    downloader = DouyinDownloader(port=port)
+                    # 创建下载器
+                    downloader = DouyinDownloader()
                     
                     # 获取视频信息
                     self.update_signal.emit("正在获取视频信息...")
@@ -721,7 +724,17 @@ class WorkerThread(QThread):
                             
                             if video_file:
                                 self.update_signal.emit(f"✅ 抖音视频下载完成: {video_file}")
-                                self.finished_signal.emit(video_file, True)
+                                
+                                # 检查是否需要执行转录和摘要
+                                if enable_transcription or generate_article:
+                                    self.process_douyin_transcription_and_summary(
+                                        video_file, model, api_key, base_url, whisper_model_size,
+                                        stream, summary_dir, custom_prompt, template_path,
+                                        generate_subtitles, translate_to_chinese, embed_subtitles,
+                                        enable_transcription, generate_article
+                                    )
+                                else:
+                                    self.finished_signal.emit(video_file, True)
                             else:
                                 self.update_signal.emit("✅ 抖音视频处理完成")
                                 self.finished_signal.emit("", True)
@@ -791,6 +804,131 @@ class WorkerThread(QThread):
             # 恢复原始print函数
             builtins.print = original_print
     
+    def process_douyin_transcription_and_summary(self, video_file, model, api_key, base_url, 
+                                                 whisper_model_size, stream, summary_dir, custom_prompt, 
+                                                 template_path, generate_subtitles, translate_to_chinese, 
+                                                 embed_subtitles, enable_transcription, generate_article):
+        """处理抖音视频的转录和摘要"""
+        try:
+            self.update_signal.emit("开始处理抖音视频转录和摘要...")
+            
+            # 导入处理函数
+            from youtube_transcriber import process_local_video
+            
+            # 执行转录和摘要处理
+            result = process_local_video(
+                video_file, model, api_key, base_url, whisper_model_size,
+                stream, summary_dir, custom_prompt, template_path,
+                generate_subtitles, translate_to_chinese, embed_subtitles,
+                enable_transcription, generate_article, None  # source_language
+            )
+            
+            if result:
+                self.update_signal.emit(f"✅ 抖音视频转录和摘要完成！结果保存在: {result}")
+                self.finished_signal.emit(result, True)
+            else:
+                self.update_signal.emit("⚠️ 转录和摘要处理失败，但视频下载成功")
+                self.finished_signal.emit(video_file, True)
+                
+        except Exception as e:
+            self.update_signal.emit(f"❌ 转录处理失败: {str(e)}")
+            # 即使转录失败，视频下载成功也算成功
+            self.finished_signal.emit(video_file, True)
+
+    def process_twitter(self):
+        """处理Twitter视频 - 使用yt-dlp下载"""
+        self.update_signal.emit("开始处理Twitter视频...")
+
+        # 从参数中获取Twitter URL
+        twitter_url = self.params.get("url", "")
+        if not twitter_url:
+            self.update_signal.emit("错误: 未提供Twitter URL")
+            self.finished_signal.emit("", False)
+            return
+
+        self.update_signal.emit(f"Twitter URL: {twitter_url}")
+
+        try:
+            import yt_dlp
+            import os
+
+            # 创建下载目录
+            download_dir = "twitter_downloads"
+            os.makedirs(download_dir, exist_ok=True)
+
+            # 配置yt-dlp选项
+            ydl_opts = {
+                'format': 'best',
+                'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+                'quiet': False,
+                'no_warnings': False,
+            }
+
+            self.update_signal.emit("正在下载Twitter视频...")
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(twitter_url, download=True)
+                video_title = info.get('title', 'twitter_video')
+                video_ext = info.get('ext', 'mp4')
+                video_file = os.path.join(download_dir, f"{video_title}.{video_ext}")
+
+                self.update_signal.emit(f"✓ Twitter视频下载完成!")
+                self.update_signal.emit(f"保存位置: {video_file}")
+                self.finished_signal.emit(video_file, True)
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Twitter视频下载失败: {str(e)}\n{traceback.format_exc()}"
+            self.update_signal.emit(error_msg)
+            self.finished_signal.emit("", False)
+
+    def process_bilibili(self):
+        """处理Bilibili视频 - 使用yt-dlp下载"""
+        self.update_signal.emit("开始处理Bilibili视频...")
+
+        # 从参数中获取Bilibili URL
+        bilibili_url = self.params.get("url", "")
+        if not bilibili_url:
+            self.update_signal.emit("错误: 未提供Bilibili URL")
+            self.finished_signal.emit("", False)
+            return
+
+        self.update_signal.emit(f"Bilibili URL: {bilibili_url}")
+
+        try:
+            import yt_dlp
+            import os
+
+            # 创建下载目录
+            download_dir = "bilibili_downloads"
+            os.makedirs(download_dir, exist_ok=True)
+
+            # 配置yt-dlp选项
+            ydl_opts = {
+                'format': 'best',
+                'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+                'quiet': False,
+                'no_warnings': False,
+            }
+
+            self.update_signal.emit("正在下载Bilibili视频...")
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(bilibili_url, download=True)
+                video_title = info.get('title', 'bilibili_video')
+                video_ext = info.get('ext', 'mp4')
+                video_file = os.path.join(download_dir, f"{video_title}.{video_ext}")
+
+                self.update_signal.emit(f"✓ Bilibili视频下载完成!")
+                self.update_signal.emit(f"保存位置: {video_file}")
+                self.finished_signal.emit(video_file, True)
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Bilibili视频下载失败: {str(e)}\n{traceback.format_exc()}"
+            self.update_signal.emit(error_msg)
+            self.finished_signal.emit("", False)
+
     def process_local_audio(self):
         """处理本地音频文件"""
         self.update_signal.emit("开始处理本地音频文件...")
@@ -1140,11 +1278,34 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(history_tab, "下载历史")
         subtitle_translate_tab = self.create_subtitle_translate_tab()
         tab_widget.addTab(subtitle_translate_tab, "字幕翻译")
-        douyin_tab = self.create_douyin_tab()
-        tab_widget.addTab(douyin_tab, "抖音下载")
+        
+        # 创建直播录制标签页（替换原来的抖音下载标签页）
+        try:
+            print("📺 正在创建直播录制标签页...")
+            live_recorder_tab = self.create_live_recorder_tab()
+            if live_recorder_tab:
+                tab_widget.addTab(live_recorder_tab, "直播录制")
+                print("✅ 直播录制标签页创建成功")
+            else:
+                print("❌ 直播录制标签页创建失败：返回None")
+        except Exception as e:
+            print(f"❌ 直播录制标签页创建异常: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # 注释掉抖音下载标签页（不再使用）
+        # douyin_tab = self.create_douyin_tab()
+        # tab_widget.addTab(douyin_tab, "抖音下载")
+        
         cleanup_tab = self.create_cleanup_tab()
         tab_widget.addTab(cleanup_tab, "清理工具")
         tab_widget.addTab(settings_tab, "设置")
+        
+        # 调试：打印所有标签页
+        print(f"📋 总标签页数: {tab_widget.count()}")
+        for i in range(tab_widget.count()):
+            tab_name = tab_widget.tabText(i)
+            print(f"  {i+1}. {tab_name}")
         
         # 创建状态栏
         self.statusBar = QStatusBar()
@@ -2164,6 +2325,18 @@ class MainWindow(QMainWindow):
         self.douyin_save_metadata_cb = QCheckBox("保存元数据")
         self.douyin_save_metadata_cb.setChecked(True)
         
+        # 转录和摘要选项
+        transcription_options_layout = QHBoxLayout()
+        self.douyin_enable_transcription_cb = QCheckBox("执行转录（音频转文字）")
+        self.douyin_enable_transcription_cb.setChecked(True)
+        self.douyin_generate_article_cb = QCheckBox("生成文章摘要")
+        self.douyin_generate_article_cb.setChecked(True)
+        
+        transcription_options_layout.addWidget(self.douyin_enable_transcription_cb)
+        transcription_options_layout.addWidget(self.douyin_generate_article_cb)
+        transcription_options_layout.addStretch()
+        options_layout.addLayout(transcription_options_layout)
+        
         # 下载目录选择
         dir_label = QLabel("下载目录:")
         self.douyin_download_dir_input = QLineEdit("douyin_downloads")
@@ -2262,6 +2435,369 @@ class MainWindow(QMainWindow):
         # 调用父类的事件过滤器
         return super().eventFilter(obj, event)
     
+    def create_live_recorder_tab(self):
+        """创建直播录制选项卡"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # 标题和说明
+        title_label = QLabel("📺 直播录制")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #e91e63; margin-bottom: 10px;")
+        layout.addWidget(title_label)
+        
+        desc_label = QLabel("支持65+平台直播录制：抖音、快手、虎牙、斗鱼、B站、小红书、TikTok等")
+        desc_label.setStyleSheet("color: #666; margin-bottom: 15px;")
+        layout.addWidget(desc_label)
+        
+        # 创建滚动区域
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # 直播间URL输入区域
+        url_group = QGroupBox("直播间URL管理")
+        url_layout = QVBoxLayout(url_group)
+        
+        # URL输入框
+        input_layout = QHBoxLayout()
+        self.live_url_input = QLineEdit()
+        self.live_url_input.setPlaceholderText("输入直播间URL (支持抖音、快手、虎牙、斗鱼、B站等65+平台)")
+        add_url_btn = QPushButton("添加URL")
+        add_url_btn.clicked.connect(self.add_live_url)
+        input_layout.addWidget(self.live_url_input)
+        input_layout.addWidget(add_url_btn)
+        url_layout.addLayout(input_layout)
+        
+        # URL列表
+        self.live_url_list = QListWidget()
+        self.live_url_list.setMaximumHeight(120)
+        url_layout.addWidget(self.live_url_list)
+        
+        # URL操作按钮
+        url_btn_layout = QHBoxLayout()
+        remove_url_btn = QPushButton("删除选中")
+        clear_urls_btn = QPushButton("清空全部")
+        load_urls_btn = QPushButton("从配置文件加载")
+        save_urls_btn = QPushButton("保存到配置文件")
+        remove_url_btn.clicked.connect(self.remove_live_url)
+        clear_urls_btn.clicked.connect(self.clear_live_urls)
+        load_urls_btn.clicked.connect(self.load_live_urls)
+        save_urls_btn.clicked.connect(self.save_live_urls)
+        url_btn_layout.addWidget(remove_url_btn)
+        url_btn_layout.addWidget(clear_urls_btn)
+        url_btn_layout.addWidget(load_urls_btn)
+        url_btn_layout.addWidget(save_urls_btn)
+        url_layout.addLayout(url_btn_layout)
+        
+        scroll_layout.addWidget(url_group)
+        
+        # 录制设置区域
+        settings_group = QGroupBox("录制设置")
+        settings_layout = QVBoxLayout(settings_group)
+        
+        # 第一行设置
+        settings_row1 = QHBoxLayout()
+        
+        # 视频格式
+        format_label = QLabel("视频格式:")
+        self.live_format_combo = QComboBox()
+        self.live_format_combo.addItems(["ts", "mp4", "flv"])
+        self.live_format_combo.setCurrentText("ts")
+        
+        # 视频画质
+        quality_label = QLabel("视频画质:")
+        self.live_quality_combo = QComboBox()
+        self.live_quality_combo.addItems(["原画", "超清", "高清", "标清"])
+        
+        # 监测间隔
+        interval_label = QLabel("监测间隔(秒):")
+        self.live_interval_spin = QSpinBox()
+        self.live_interval_spin.setRange(30, 600)
+        self.live_interval_spin.setValue(60)
+        
+        settings_row1.addWidget(format_label)
+        settings_row1.addWidget(self.live_format_combo)
+        settings_row1.addWidget(quality_label)
+        settings_row1.addWidget(self.live_quality_combo)
+        settings_row1.addWidget(interval_label)
+        settings_row1.addWidget(self.live_interval_spin)
+        settings_row1.addStretch()
+        
+        settings_layout.addLayout(settings_row1)
+        
+        # 第二行设置
+        settings_row2 = QHBoxLayout()
+        
+        # 保存路径
+        path_label = QLabel("保存路径:")
+        self.live_path_input = QLineEdit()
+        self.live_path_input.setText("./live_downloads")
+        browse_path_btn = QPushButton("浏览")
+        browse_path_btn.clicked.connect(self.browse_live_path)
+        
+        settings_row2.addWidget(path_label)
+        settings_row2.addWidget(self.live_path_input)
+        settings_row2.addWidget(browse_path_btn)
+        
+        settings_layout.addLayout(settings_row2)
+        
+        # 高级设置
+        advanced_layout = QHBoxLayout()
+        self.show_ffmpeg_log = QCheckBox("显示FFmpeg日志")
+        self.save_log = QCheckBox("保存日志到文件")
+        self.save_log.setChecked(True)
+        advanced_layout.addWidget(self.show_ffmpeg_log)
+        advanced_layout.addWidget(self.save_log)
+        advanced_layout.addStretch()
+        
+        settings_layout.addLayout(advanced_layout)
+        
+        scroll_layout.addWidget(settings_group)
+        
+        # 录制控制区域
+        control_group = QGroupBox("录制控制")
+        control_layout = QVBoxLayout(control_group)
+        
+        # 控制按钮
+        control_btn_layout = QHBoxLayout()
+        self.start_record_btn = QPushButton("开始录制")
+        self.stop_record_btn = QPushButton("停止录制")
+        self.pause_record_btn = QPushButton("暂停监测")
+        
+        self.start_record_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }")
+        self.stop_record_btn.setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; }")
+        self.pause_record_btn.setStyleSheet("QPushButton { background-color: #FF9800; color: white; font-weight: bold; }")
+        
+        self.start_record_btn.clicked.connect(self.start_live_recording)
+        self.stop_record_btn.clicked.connect(self.stop_live_recording)
+        self.pause_record_btn.clicked.connect(self.pause_live_recording)
+        
+        # 初始状态
+        self.stop_record_btn.setEnabled(False)
+        self.pause_record_btn.setEnabled(False)
+        
+        control_btn_layout.addWidget(self.start_record_btn)
+        control_btn_layout.addWidget(self.stop_record_btn)
+        control_btn_layout.addWidget(self.pause_record_btn)
+        control_btn_layout.addStretch()
+        
+        control_layout.addLayout(control_btn_layout)
+        
+        # 状态显示
+        self.live_status_label = QLabel("状态: 未开始")
+        self.live_status_label.setStyleSheet("color: #666; font-weight: bold;")
+        control_layout.addWidget(self.live_status_label)
+        
+        scroll_layout.addWidget(control_group)
+        
+        # 日志显示区域
+        log_group = QGroupBox("录制日志")
+        log_layout = QVBoxLayout(log_group)
+        
+        self.live_log_display = QTextEdit()
+        self.live_log_display.setMaximumHeight(200)
+        self.live_log_display.setReadOnly(True)
+        self.live_log_display.append("📺 直播录制工具已就绪")
+        self.live_log_display.append("💡 支持平台：抖音、快手、虎牙、斗鱼、B站、小红书、TikTok等65+平台")
+        
+        log_layout.addWidget(self.live_log_display)
+        
+        # 日志控制按钮
+        log_btn_layout = QHBoxLayout()
+        clear_log_btn = QPushButton("清空日志")
+        save_log_btn = QPushButton("保存日志")
+        clear_log_btn.clicked.connect(self.clear_live_log)
+        save_log_btn.clicked.connect(self.save_live_log)
+        log_btn_layout.addWidget(clear_log_btn)
+        log_btn_layout.addWidget(save_log_btn)
+        log_btn_layout.addStretch()
+        
+        log_layout.addLayout(log_btn_layout)
+        
+        scroll_layout.addWidget(log_group)
+        
+        scroll.setWidget(scroll_widget)
+        layout.addWidget(scroll)
+        
+        # 初始化直播录制相关变量
+        self.live_recorder = None
+        self.live_recording_thread = None
+        self.is_live_recording = False
+        
+        return tab
+    
+    def add_live_url(self):
+        """添加直播URL到列表"""
+        url = self.live_url_input.text().strip()
+        if url:
+            # 检查URL是否已存在
+            for i in range(self.live_url_list.count()):
+                if self.live_url_list.item(i).text() == url:
+                    QMessageBox.information(self, "提示", "该URL已存在于列表中")
+                    return
+            
+            self.live_url_list.addItem(url)
+            self.live_url_input.clear()
+            self.live_log_display.append(f"✅ 已添加URL: {url}")
+    
+    def remove_live_url(self):
+        """删除选中的URL"""
+        current_row = self.live_url_list.currentRow()
+        if current_row >= 0:
+            item = self.live_url_list.takeItem(current_row)
+            self.live_log_display.append(f"🗑️ 已删除URL: {item.text()}")
+    
+    def clear_live_urls(self):
+        """清空所有URL"""
+        self.live_url_list.clear()
+        self.live_log_display.append("🗑️ 已清空所有URL")
+    
+    def load_live_urls(self):
+        """从配置文件加载URL"""
+        try:
+            config_file = "live_config/URL_config.ini"
+            if os.path.exists(config_file):
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                self.live_url_list.clear()
+                count = 0
+                for line in lines:
+                    line = line.strip()
+                    if line and not line.startswith('#') and line.startswith('http'):
+                        self.live_url_list.addItem(line)
+                        count += 1
+                
+                self.live_log_display.append(f"📂 已从配置文件加载 {count} 个URL")
+            else:
+                QMessageBox.information(self, "提示", "配置文件不存在")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"加载配置文件失败: {str(e)}")
+    
+    def save_live_urls(self):
+        """保存URL到配置文件"""
+        try:
+            config_file = "live_config/URL_config.ini"
+            os.makedirs(os.path.dirname(config_file), exist_ok=True)
+            
+            with open(config_file, 'w', encoding='utf-8') as f:
+                f.write("# 直播间URL配置文件\n")
+                f.write("# 一行一个直播间地址\n")
+                f.write("# 要停止某个直播间录制，在URL前添加 # 号\n\n")
+                
+                for i in range(self.live_url_list.count()):
+                    url = self.live_url_list.item(i).text()
+                    f.write(f"{url}\n")
+            
+            self.live_log_display.append(f"💾 已保存 {self.live_url_list.count()} 个URL到配置文件")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"保存配置文件失败: {str(e)}")
+    
+    def browse_live_path(self):
+        """浏览保存路径"""
+        path = QFileDialog.getExistingDirectory(self, "选择保存路径")
+        if path:
+            self.live_path_input.setText(path)
+    
+    def start_live_recording(self):
+        """开始直播录制"""
+        if self.live_url_list.count() == 0:
+            QMessageBox.warning(self, "错误", "请先添加直播间URL")
+            return
+        
+        try:
+            # 更新按钮状态
+            self.start_record_btn.setEnabled(False)
+            self.stop_record_btn.setEnabled(True)
+            self.pause_record_btn.setEnabled(True)
+            self.is_live_recording = True
+            
+            # 更新状态
+            self.live_status_label.setText("状态: 正在录制...")
+            self.live_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+            
+            # 启动录制线程
+            self.live_recording_thread = LiveRecordingThread(self)
+            self.live_recording_thread.log_signal.connect(self.append_live_log)
+            self.live_recording_thread.start()
+            
+            self.live_log_display.append("🎬 开始直播录制监控...")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"启动录制失败: {str(e)}")
+            self.stop_live_recording()
+    
+    def stop_live_recording(self):
+        """停止直播录制"""
+        try:
+            self.is_live_recording = False
+            
+            if self.live_recording_thread and self.live_recording_thread.isRunning():
+                self.live_recording_thread.stop()
+                self.live_recording_thread.wait()
+            
+            # 更新按钮状态
+            self.start_record_btn.setEnabled(True)
+            self.stop_record_btn.setEnabled(False)
+            self.pause_record_btn.setEnabled(False)
+            
+            # 更新状态
+            self.live_status_label.setText("状态: 已停止")
+            self.live_status_label.setStyleSheet("color: #f44336; font-weight: bold;")
+            
+            self.live_log_display.append("⏹️ 已停止直播录制")
+            
+        except Exception as e:
+            self.live_log_display.append(f"❌ 停止录制时出错: {str(e)}")
+    
+    def pause_live_recording(self):
+        """暂停/恢复直播录制监测"""
+        if hasattr(self.live_recording_thread, 'paused'):
+            self.live_recording_thread.paused = not self.live_recording_thread.paused
+            if self.live_recording_thread.paused:
+                self.pause_record_btn.setText("恢复监测")
+                self.live_status_label.setText("状态: 已暂停")
+                self.live_status_label.setStyleSheet("color: #FF9800; font-weight: bold;")
+                self.live_log_display.append("⏸️ 已暂停监测")
+            else:
+                self.pause_record_btn.setText("暂停监测")
+                self.live_status_label.setText("状态: 正在录制...")
+                self.live_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+                self.live_log_display.append("▶️ 已恢复监测")
+    
+    def append_live_log(self, message):
+        """添加日志消息"""
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.live_log_display.append(f"[{timestamp}] {message}")
+        
+        # 自动滚动到底部
+        cursor = self.live_log_display.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.live_log_display.setTextCursor(cursor)
+    
+    def clear_live_log(self):
+        """清空日志"""
+        self.live_log_display.clear()
+        self.live_log_display.append("📺 直播录制日志已清空")
+    
+    def save_live_log(self):
+        """保存日志到文件"""
+        try:
+            from datetime import datetime
+            filename, _ = QFileDialog.getSaveFileName(
+                self, "保存日志", 
+                f"live_record_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                "文本文件 (*.txt)"
+            )
+            if filename:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(self.live_log_display.toPlainText())
+                self.live_log_display.append(f"💾 日志已保存到: {filename}")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"保存日志失败: {str(e)}")
+
     def create_cleanup_tab(self):
         """创建清理工具选项卡"""
         tab = QWidget()
@@ -2704,73 +3240,10 @@ class MainWindow(QMainWindow):
         queue_layout.addWidget(self.clear_queue_button)
         idle_layout.addLayout(queue_layout)
         
-        # Deno 工具管理组
-        deno_group = QGroupBox("Deno 运行时管理")
-        deno_layout = QVBoxLayout(deno_group)
-        
-        # Deno 状态显示
-        deno_status_layout = QHBoxLayout()
-        deno_status_label = QLabel("Deno 状态:")
-        self.deno_status_text = QLabel("检查中...")
-        self.deno_status_text.setStyleSheet("color: #666;")
-        deno_status_layout.addWidget(deno_status_label)
-        deno_status_layout.addWidget(self.deno_status_text)
-        deno_status_layout.addStretch()
-        deno_layout.addLayout(deno_status_layout)
-        
-        # Deno 管理按钮
-        deno_buttons_layout = QHBoxLayout()
-        self.check_deno_button = QPushButton("检查 Deno")
-        self.install_deno_button = QPushButton("安装 Deno")
-        self.install_deno_button.setEnabled(False)
-        deno_buttons_layout.addWidget(self.check_deno_button)
-        deno_buttons_layout.addWidget(self.install_deno_button)
-        deno_buttons_layout.addStretch()
-        deno_layout.addLayout(deno_buttons_layout)
-        
-        # Deno 服务管理
-        deno_service_layout = QHBoxLayout()
-        deno_service_label = QLabel("后台服务:")
-        self.deno_service_status = QLabel("未启动")
-        self.deno_service_status.setStyleSheet("color: #666;")
-        self.start_deno_service_button = QPushButton("启动服务")
-        self.stop_deno_service_button = QPushButton("停止服务")
-        self.start_deno_service_button.setEnabled(False)
-        self.stop_deno_service_button.setEnabled(False)
-        
-        deno_service_layout.addWidget(deno_service_label)
-        deno_service_layout.addWidget(self.deno_service_status)
-        deno_service_layout.addWidget(self.start_deno_service_button)
-        deno_service_layout.addWidget(self.stop_deno_service_button)
-        deno_service_layout.addStretch()
-        deno_layout.addLayout(deno_service_layout)
-        
-        # Deno 服务设置
-        deno_config_layout = QHBoxLayout()
-        deno_port_label = QLabel("服务端口:")
-        self.deno_port_input = QLineEdit()
-        self.deno_port_input.setText("8080")
-        self.deno_port_input.setPlaceholderText("默认: 8080")
-        self.deno_port_input.setMaximumWidth(100)
-        deno_auto_start_cb = QCheckBox("应用启动时自动启动服务")
-        
-        deno_config_layout.addWidget(deno_port_label)
-        deno_config_layout.addWidget(self.deno_port_input)
-        deno_config_layout.addWidget(deno_auto_start_cb)
-        deno_config_layout.addStretch()
-        deno_layout.addLayout(deno_config_layout)
-        
-        # Deno 信息
-        deno_info_label = QLabel("💡 Deno 后台服务可用于高级脚本执行、API 代理等功能。")
-        deno_info_label.setWordWrap(True)
-        deno_info_label.setStyleSheet("color: #666; font-size: 11px;")
-        deno_layout.addWidget(deno_info_label)
-        
         # 添加到主布局
         layout.addWidget(api_group)
         layout.addWidget(template_group)
         layout.addWidget(idle_group)
-        layout.addWidget(deno_group)
         
         # 保存设置按钮
         self.save_settings_button = QPushButton("保存设置")
@@ -2785,17 +3258,6 @@ class MainWindow(QMainWindow):
         self.template_combo.currentIndexChanged.connect(self.template_selected)
         self.view_queue_button.clicked.connect(self.view_idle_queue)
         self.clear_queue_button.clicked.connect(self.clear_idle_queue)
-        self.check_deno_button.clicked.connect(self.check_deno)
-        self.install_deno_button.clicked.connect(self.install_deno)
-        self.start_deno_service_button.clicked.connect(self.start_deno_service)
-        self.stop_deno_service_button.clicked.connect(self.stop_deno_service)
-        
-        # 初始化 Deno 服务相关属性
-        self.deno_service_process = None
-        self.deno_auto_start_checkbox = deno_auto_start_cb
-        
-        # 初始检查 Deno 状态
-        self.check_deno()
         
         return tab
     
@@ -3385,7 +3847,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "模板创建错误", f"创建模板时出错: {str(e)}")
     
-    def check_deno(self):
+    def _removed_check_deno(self):
         """检查 Deno 是否已安装"""
         try:
             self.deno_status_text.setText("检查中...")
@@ -3428,7 +3890,7 @@ class MainWindow(QMainWindow):
         finally:
             self.check_deno_button.setEnabled(True)
     
-    def _deno_not_found(self):
+    def _removed_deno_not_found(self):
         """Deno 未找到时的处理"""
         self.deno_status_text.setText("❌ 未安装")
         self.deno_status_text.setStyleSheet("color: #F44336;")
@@ -3441,7 +3903,7 @@ class MainWindow(QMainWindow):
         self.deno_service_status.setText("Deno 未安装")
         self.deno_service_status.setStyleSheet("color: #666;")
     
-    def install_deno(self):
+    def _removed_install_deno(self):
         """安装 Deno"""
         try:
             self.install_deno_button.setEnabled(False)
@@ -3472,7 +3934,7 @@ class MainWindow(QMainWindow):
             self.install_deno_button.setEnabled(True)
             self.install_deno_button.setText("重试安装")
     
-    def _install_deno_worker(self, install_cmd):
+    def _removed_install_deno_worker(self, install_cmd):
         """在后台线程中执行 Deno 安装"""
         try:
             # 执行安装命令
@@ -3491,7 +3953,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QTimer.singleShot(0, lambda: self._handle_install_error(str(e)))
     
-    def _handle_install_result(self, result):
+    def _removed_handle_install_result(self, result):
         """处理安装结果"""
         if result.returncode == 0:
             self.deno_status_text.setText("✅ 安装成功！请重启应用程序以使用 Deno")
@@ -3519,7 +3981,7 @@ class MainWindow(QMainWindow):
                 f"Deno 安装失败，请检查网络连接或手动安装。\n\n错误信息：\n{error_msg}\n\n手动安装方法：\n访问 https://deno.land/manual/getting_started/installation"
             )
     
-    def _handle_install_timeout(self):
+    def _removed_handle_install_timeout(self):
         """处理安装超时"""
         self.deno_status_text.setText("❌ 安装超时")
         self.deno_status_text.setStyleSheet("color: #F44336;")
@@ -3532,7 +3994,7 @@ class MainWindow(QMainWindow):
             "Deno 安装超时，请检查网络连接后重试，或手动安装。\n\n手动安装方法：\n访问 https://deno.land/manual/getting_started/installation"
         )
     
-    def _handle_install_error(self, error_msg):
+    def _removed_handle_install_error(self, error_msg):
         """处理安装错误"""
         self.deno_status_text.setText(f"❌ 安装失败")
         self.deno_status_text.setStyleSheet("color: #F44336;")
@@ -3545,7 +4007,7 @@ class MainWindow(QMainWindow):
             f"Deno 安装过程中发生错误：\n{error_msg}\n\n请尝试手动安装：\n访问 https://deno.land/manual/getting_started/installation"
         )
     
-    def _check_deno_service_status(self):
+    def _removed_check_deno_service_status(self):
         """检查 Deno 服务状态"""
         if self.deno_service_process and self.deno_service_process.poll() is None:
             # 服务正在运行
@@ -3560,7 +4022,7 @@ class MainWindow(QMainWindow):
             self.start_deno_service_button.setEnabled(True)
             self.stop_deno_service_button.setEnabled(False)
     
-    def start_deno_service(self):
+    def _removed_start_deno_service(self):
         """启动 douyinVd Deno 后台服务"""
         try:
             if self.deno_service_process and self.deno_service_process.poll() is None:
@@ -3620,7 +4082,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "启动失败", f"无法启动 douyinVd 服务：\n{str(e)}")
             self._check_deno_service_status()
     
-    def stop_deno_service(self):
+    def _removed_stop_deno_service(self):
         """停止 Deno 后台服务"""
         try:
             if self.deno_service_process:
@@ -3642,16 +4104,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "停止失败", f"停止 Deno 服务时出错：\n{str(e)}")
     
     def closeEvent(self, event):
-        """应用程序关闭时清理 Deno 服务"""
-        if hasattr(self, 'deno_service_process') and self.deno_service_process:
-            try:
-                self.deno_service_process.terminate()
-                self.deno_service_process.wait(timeout=3)
-            except:
-                try:
-                    self.deno_service_process.kill()
-                except:
-                    pass
+        """应用程序关闭时清理"""
         super().closeEvent(event)
     
     def save_settings(self):
@@ -4071,21 +4524,68 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         self.statusBar.showMessage(f"正在执行闲时任务: {task['title']} (剩余 {len(self.idle_tasks)} 个)")
         
         # 根据任务类型执行相应的处理
-        if task["type"] == "youtube":
+        task_type = task.get("type", "youtube")
+
+        if task_type == "youtube":
             # 设置按钮状态
             self.youtube_process_button.setEnabled(False)
             self.youtube_process_button.setText("闲时处理中...")
             self.youtube_stop_button.setEnabled(True)
-            
+
             # 清空输出
             self.youtube_output_text.clear()
             self.youtube_output_text.append(f"[闲时任务] 开始处理: {task['title']}")
-            
+
             # 创建并启动工作线程
             self.worker_thread = WorkerThread("youtube", task["params"])
             self.worker_thread.update_signal.connect(self.update_youtube_output)
             self.worker_thread.finished_signal.connect(self.on_idle_task_finished)
             self.worker_thread.start()
+
+        elif task_type == "twitter":
+            # Twitter视频下载
+            print(f"[闲时任务] 开始处理 Twitter 视频: {task['title']}")
+            self.youtube_output_text.clear()
+            self.youtube_output_text.append(f"[闲时任务] 开始处理 Twitter 视频: {task['title']}")
+
+            # 设置按钮状态
+            self.youtube_process_button.setEnabled(False)
+            self.youtube_process_button.setText("闲时处理中...")
+            self.youtube_stop_button.setEnabled(True)
+
+            # 使用 yt-dlp 下载 Twitter 视频
+            self.worker_thread = WorkerThread("twitter", task["params"])
+            self.worker_thread.update_signal.connect(self.update_youtube_output)
+            self.worker_thread.finished_signal.connect(self.on_idle_task_finished)
+            self.worker_thread.start()
+
+        elif task_type == "bilibili":
+            # Bilibili视频下载
+            print(f"[闲时任务] 开始处理 Bilibili 视频: {task['title']}")
+            self.youtube_output_text.clear()
+            self.youtube_output_text.append(f"[闲时任务] 开始处理 Bilibili 视频: {task['title']}")
+
+            # 设置按钮状态
+            self.youtube_process_button.setEnabled(False)
+            self.youtube_process_button.setText("闲时处理中...")
+            self.youtube_stop_button.setEnabled(True)
+
+            # 使用 yt-dlp 下载 Bilibili 视频
+            self.worker_thread = WorkerThread("bilibili", task["params"])
+            self.worker_thread.update_signal.connect(self.update_youtube_output)
+            self.worker_thread.finished_signal.connect(self.on_idle_task_finished)
+            self.worker_thread.start()
+
+        else:
+            # 未知类型，标记为失败并继续下一个
+            print(f"[闲时任务] 警告: 未知任务类型 '{task_type}'，跳过此任务")
+            self.youtube_output_text.append(f"[闲时任务] 错误: 不支持的任务类型 '{task_type}'")
+            self.is_idle_running = False
+            self.refresh_idle_queue_display()
+
+            # 继续下一个任务
+            if self.idle_tasks:
+                QTimer.singleShot(1000, self.execute_next_idle_task)
     
     def on_idle_task_finished(self, result_path, success):
         """闲时任务完成回调"""
@@ -4849,8 +5349,25 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             QMessageBox.warning(self, "下载错误", "请先解析视频信息")
             return
         
+        # 验证至少选择一个处理选项
+        download_video = self.douyin_download_video_cb.isChecked()
+        enable_transcription = self.douyin_enable_transcription_cb.isChecked()
+        generate_article = self.douyin_generate_article_cb.isChecked()
+        
+        if not download_video and not enable_transcription and not generate_article:
+            QMessageBox.warning(self, "选择错误", "请至少选择一个处理选项：下载视频、执行转录或生成文章摘要")
+            return
+        
         # 获取下载配置
         config = self.get_douyin_download_config()
+        
+        # 如果只需要转录摘要而不需要保存视频，临时启用视频下载用于转录
+        if not download_video and (enable_transcription or generate_article):
+            config.set("download_video", True)
+            config.set("temp_download_for_transcription", True)
+        else:
+            config.set("download_video", download_video)
+            config.set("temp_download_for_transcription", False)
         
         # 更新UI状态
         self.douyin_download_button.setEnabled(False)
@@ -4997,6 +5514,8 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             "download_music": self.douyin_download_music_cb.isChecked(),
             "remove_watermark": self.douyin_remove_watermark_cb.isChecked(),
             "save_metadata": self.douyin_save_metadata_cb.isChecked(),
+            "enable_transcription": self.douyin_enable_transcription_cb.isChecked(),
+            "generate_article": self.douyin_generate_article_cb.isChecked(),
         })
         
         return config
@@ -5833,6 +6352,82 @@ class DouyinDownloadThread(QThread):
         """停止下载"""
         self.stopped = True
     
+    def process_transcription_and_summary(self, download_result):
+        """处理转录和摘要生成"""
+        try:
+            # 获取下载的视频文件路径
+            video_files = download_result.get("files", {}).get("video", [])
+            if not video_files:
+                self.result_signal.emit(download_result)
+                self.finished_signal.emit(True, "下载完成（未找到视频文件进行转录）")
+                return
+            
+            # 使用第一个视频文件
+            video_path = video_files[0]
+            if not os.path.exists(video_path):
+                self.result_signal.emit(download_result)
+                self.finished_signal.emit(True, "下载完成（视频文件不存在）")
+                return
+            
+            self.update_signal.emit("开始处理转录和摘要...")
+            self.progress_signal.emit(80, "开始转录处理...")
+            
+            # 导入必要的模块
+            from youtube_transcriber import process_local_video
+            import os
+            
+            # 设置处理参数（使用默认值）
+            model = "gpt-4o-mini"  # 默认模型
+            api_key = os.getenv('OPENAI_API_KEY')
+            base_url = os.getenv('OPENAI_BASE_URL')
+            whisper_model_size = "medium"
+            stream = True
+            summary_dir = "summaries"
+            custom_prompt = None
+            template_path = None
+            generate_subtitles = True
+            translate_to_chinese = True
+            embed_subtitles = False
+            enable_transcription = self.config.get("enable_transcription", True)
+            generate_article = self.config.get("generate_article", True)
+            source_language = None
+            
+            # 执行转录和摘要处理
+            result = process_local_video(
+                video_path, model, api_key, base_url, whisper_model_size,
+                stream, summary_dir, custom_prompt, template_path,
+                generate_subtitles, translate_to_chinese, embed_subtitles,
+                enable_transcription, generate_article, source_language
+            )
+            
+            self.progress_signal.emit(100, "转录和摘要完成")
+            
+            # 合并结果
+            if result:
+                download_result["transcription_result"] = result
+                self.update_signal.emit(f"转录和摘要完成！结果保存在: {result}")
+                self.finished_signal.emit(True, "下载、转录和摘要全部完成")
+            else:
+                self.update_signal.emit("转录和摘要处理失败，但视频下载成功")
+                self.finished_signal.emit(True, "下载完成，转录处理失败")
+            
+            self.result_signal.emit(download_result)
+            
+            # 如果是临时下载用于转录，删除视频文件
+            if self.config.get("temp_download_for_transcription"):
+                try:
+                    if os.path.exists(video_path):
+                        os.remove(video_path)
+                        self.update_signal.emit("已删除临时视频文件")
+                except Exception as cleanup_e:
+                    self.update_signal.emit(f"清理临时文件失败: {str(cleanup_e)}")
+            
+        except Exception as e:
+            self.update_signal.emit(f"转录处理失败: {str(e)}")
+            # 即使转录失败，下载成功也要返回成功
+            self.result_signal.emit(download_result)
+            self.finished_signal.emit(True, f"下载完成，转录失败: {str(e)}")
+    
     def run(self):
         """执行视频下载"""
         try:
@@ -5857,8 +6452,12 @@ class DouyinDownloadThread(QThread):
                 return
                 
             if result and result.get("success"):
-                self.result_signal.emit(result)
-                self.finished_signal.emit(True, "下载完成")
+                # 检查是否需要执行转录和摘要
+                if self.config.get("enable_transcription") or self.config.get("generate_article"):
+                    self.process_transcription_and_summary(result)
+                else:
+                    self.result_signal.emit(result)
+                    self.finished_signal.emit(True, "下载完成")
             else:
                 error_msg = result.get("error", "下载失败") if result else "下载失败"
                 self.finished_signal.emit(False, error_msg)
@@ -5926,6 +6525,82 @@ class DouyinBatchDownloadThread(QThread):
             if not self.stopped:
                 self.update_signal.emit(f"批量下载失败: {str(e)}")
                 self.finished_signal.emit(False, f"批量下载失败: {str(e)}")
+
+
+class LiveRecordingThread(QThread):
+    """直播录制线程"""
+    log_signal = pyqtSignal(str)
+    
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        self.running = False
+        self.paused = False
+        
+    def run(self):
+        """运行直播录制"""
+        self.running = True
+        self.log_signal.emit("🔄 初始化直播录制系统...")
+        
+        try:
+            # 导入直播录制适配器
+            from live_recorder_adapter import get_live_recorder_manager
+            
+            # 获取直播录制管理器
+            self.manager = get_live_recorder_manager()
+            if not self.manager:
+                self.log_signal.emit("❌ 直播录制管理器初始化失败")
+                return
+            
+            # 设置日志回调
+            self.manager.set_log_callback(self.log_signal.emit)
+            
+            # 获取URL列表
+            urls = []
+            for i in range(self.main_window.live_url_list.count()):
+                url = self.main_window.live_url_list.item(i).text()
+                if url and url.startswith('http'):
+                    urls.append(url)
+            
+            if not urls:
+                self.log_signal.emit("❌ 没有有效的直播间URL")
+                return
+            
+            # 获取设置
+            settings = {
+                'interval': self.main_window.live_interval_spin.value(),
+                'format': self.main_window.live_format_combo.currentText(),
+                'quality': self.main_window.live_quality_combo.currentText(),
+                'save_path': self.main_window.live_path_input.text(),
+                'show_ffmpeg_log': self.main_window.show_ffmpeg_log.isChecked(),
+                'save_log': self.main_window.save_log.isChecked()
+            }
+            
+            # 开始监控
+            success = self.manager.start_monitoring(urls, settings)
+            if not success:
+                self.log_signal.emit("❌ 启动监控失败")
+                return
+            
+            # 保持线程运行，等待停止信号
+            while self.running:
+                self.msleep(1000)
+            
+        except Exception as e:
+            self.log_signal.emit(f"❌ 直播录制系统错误: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        finally:
+            # 停止监控
+            if hasattr(self, 'manager') and self.manager:
+                self.manager.stop_monitoring()
+            self.log_signal.emit("🛑 直播录制监控已停止")
+    
+    def stop(self):
+        """停止录制"""
+        self.running = False
+        self.log_signal.emit("🛑 正在停止直播录制...")
 
 
 def youtuber():

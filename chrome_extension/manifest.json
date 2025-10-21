@@ -9,7 +9,8 @@
     "activeTab",
     "tabs",
     "scripting",
-    "downloads"
+    "downloads",
+    "alarms"
   ],
   
   "host_permissions": [

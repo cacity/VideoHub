@@ -55,6 +55,10 @@ class DouyinConfig:
         "save_metadata": True,
         "metadata_format": "json",
         "log_level": "INFO",
+        
+        # 转录和摘要设置
+        "enable_transcription": True,
+        "generate_article": True,
     }
     
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None):

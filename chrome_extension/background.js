@@ -44,7 +44,54 @@ function normalizeApiBaseUrl(rawUrl) {
     }
 }
 
-// Service Worker保持活跃
+// Service Worker保持活跃机制
+let keepAliveInterval = null;
+let port = null;
+
+// 保活函数 - 防止Service Worker休眠
+function keepAlive() {
+    if (keepAliveInterval) {
+        clearInterval(keepAliveInterval);
+    }
+
+    // 方法1: 使用 chrome.alarms API (推荐方式)
+    chrome.alarms.create('keepAlive', { periodInMinutes: 0.5 }); // 每30秒
+
+    // 方法2: 创建一个长连接端口
+    try {
+        if (port) {
+            port.disconnect();
+        }
+        port = chrome.runtime.connect({ name: 'keepAlive' });
+        port.onDisconnect.addListener(() => {
+            console.log('Keep-alive port disconnected, reconnecting...');
+            setTimeout(keepAlive, 1000);
+        });
+    } catch (e) {
+        console.error('Failed to create keep-alive port:', e);
+    }
+
+    // 方法3: 定期访问存储（备用方案）
+    keepAliveInterval = setInterval(() => {
+        chrome.storage.local.get(['keepAlive'], (result) => {
+            if (chrome.runtime.lastError) {
+                console.error('Keep-alive error:', chrome.runtime.lastError);
+            } else {
+                console.log('💓 Keep-alive heartbeat', new Date().toLocaleTimeString());
+            }
+        });
+    }, 15000); // 每15秒
+}
+
+// 统一的 alarms 监听器
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'keepAlive') {
+        console.log('💓 Keep-alive alarm triggered', new Date().toLocaleTimeString());
+    } else if (alarm.name === 'cleanupOldTasks') {
+        cleanupOldTasks();
+    }
+});
+
 self.addEventListener('install', event => {
     console.log('Service Worker 安装中');
     self.skipWaiting();
@@ -53,11 +100,13 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
     console.log('Service Worker 激活中');
     event.waitUntil(self.clients.claim());
+    keepAlive(); // 启动保活机制
 });
 
 chrome.runtime.onInstalled.addListener((details) => {
     console.log('视频下载助手已安装/更新', details);
-    
+    keepAlive(); // 启动保活机制
+
     // 初始化存储
     chrome.storage.local.get(['downloadQueue'], (result) => {
         if (!result.downloadQueue) {
@@ -79,114 +128,174 @@ chrome.runtime.onInstalled.addListener((details) => {
 
 chrome.runtime.onStartup.addListener(() => {
     console.log('Chrome扩展启动');
+    keepAlive(); // 启动保活机制
 });
 
 // 添加服务工作器保持活跃的机制
 chrome.runtime.onConnect.addListener((port) => {
     console.log('建立连接:', port.name);
+    keepAlive(); // 重新启动保活机制
 });
 
-console.log('Background script 加载完成');
+// 当Service Worker启动时自动开始保活
+keepAlive();
+
+console.log('Background script 加载完成，保活机制已启动');
 
 // 监听来自content script的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('Background: 收到消息', request.action, request);
-    
+    console.log('===== Background: 收到新消息 =====');
+    console.log('消息动作:', request.action);
+    console.log('发送者:', sender.tab ? `Tab ${sender.tab.id}` : '未知');
+    console.log('完整请求:', request);
+
+    // 立即确认收到消息
+    const startTime = Date.now();
+
     try {
         if (request.action === 'addToDownloadQueue') {
-            console.log('Background: 处理添加到队列请求');
-            handleAddToDownloadQueue(request, sendResponse);
-            return true; // 异步响应
+            console.log('Background: ✓ 开始处理添加到队列请求');
+            handleAddToDownloadQueue(request, (response) => {
+                const duration = Date.now() - startTime;
+                console.log(`Background: ✓ 处理完成，耗时 ${duration}ms`);
+                console.log('Background: 发送响应:', response);
+                sendResponse(response);
+            });
+            return true; // 保持消息通道开放以进行异步响应
         } else if (request.action === 'getDownloadQueue') {
+            console.log('Background: ✓ 处理获取队列请求');
             handleGetDownloadQueue(sendResponse);
             return true;
         } else if (request.action === 'clearDownloadQueue') {
+            console.log('Background: ✓ 处理清空队列请求');
             handleClearDownloadQueue(sendResponse);
             return true;
         } else if (request.action === 'exportToFile') {
+            console.log('Background: ✓ 处理导出文件请求');
             handleExportToFile(sendResponse);
             return true;
         } else if (request.action === 'checkApiConnection') {
+            console.log('Background: ✓ 处理检查API连接请求');
             checkApiConnection(sendResponse);
             return true;
         } else {
-            console.log('Background: 未知消息类型:', request.action);
-            sendResponse({ success: false, error: '未知消息类型' });
+            console.warn('Background: ✗ 未知消息类型:', request.action);
+            sendResponse({ success: false, error: '未知消息类型: ' + request.action });
             return false;
         }
     } catch (error) {
-        console.error('Background: 消息处理出错:', error);
+        console.error('Background: ✗ 消息处理异常:', error);
+        console.error('错误堆栈:', error.stack);
         sendResponse({ success: false, error: '消息处理出错: ' + error.message });
         return false;
     }
 });
 
 // 添加到下载队列
-function handleAddToDownloadQueue(request, sendResponse) {
-    console.log('Background: 收到添加到队列请求', request);
-    
+function handleAddToDownloadQueue(request, callback) {
+    console.log('Background: handleAddToDownloadQueue 函数被调用');
+    console.log('Background: 请求内容:', request);
+
     const { platform, data } = request;
-    
+
+    if (!platform || !data) {
+        console.error('Background: ✗ 缺少必需参数:', { platform, data });
+        callback({
+            success: false,
+            error: '缺少必需参数: platform 或 data'
+        });
+        return;
+    }
+
     try {
         // 创建任务对象
+        console.log('Background: 正在创建任务对象...');
         const task = createTask(platform, data);
-        console.log('Background: 创建任务对象', task);
-        
+        console.log('Background: ✓ 任务对象创建成功:', task);
+
         // 获取当前队列
+        console.log('Background: 正在读取本地存储...');
         chrome.storage.local.get(['downloadQueue'], (result) => {
+            if (chrome.runtime.lastError) {
+                console.error('Background: ✗ 读取存储失败:', chrome.runtime.lastError);
+                callback({
+                    success: false,
+                    error: '读取存储失败: ' + chrome.runtime.lastError.message
+                });
+                return;
+            }
+
             const queue = result.downloadQueue || [];
-            console.log('Background: 当前队列长度', queue.length);
-            
+            console.log('Background: ✓ 当前队列长度:', queue.length);
+
             // 检查是否已存在相同的任务
-            const existingTaskIndex = queue.findIndex(t => 
+            const existingTaskIndex = queue.findIndex(t =>
                 t.params.youtube_url === task.params.youtube_url ||
                 t.params.url === task.params.url
             );
-            
+
             if (existingTaskIndex >= 0) {
-                console.log('Background: 任务已存在，跳过');
-                sendResponse({ success: false, error: '该视频已在下载队列中' });
+                console.log('Background: ✗ 任务已存在，跳过');
+                callback({ success: false, error: '该视频已在下载队列中' });
                 return;
             }
-            
+
             // 直接调用API添加到GUI应用
-            console.log('Background: 开始同步到GUI应用');
+            console.log('Background: 正在同步到GUI应用...');
             syncToGuiApp(task, (success, errorMessage) => {
+                console.log('Background: syncToGuiApp 回调被调用:', { success, errorMessage });
+
                 if (success) {
                     // API成功，也保存到本地存储作为备份
                     queue.push(task);
                     chrome.storage.local.set({ downloadQueue: queue }, () => {
-                        console.log('Background: 任务已通过API添加到GUI应用并保存到本地');
-                        sendResponse({ 
-                            success: true, 
+                        if (chrome.runtime.lastError) {
+                            console.error('Background: ✗ 保存存储失败:', chrome.runtime.lastError);
+                            callback({
+                                success: false,
+                                error: '保存失败: ' + chrome.runtime.lastError.message
+                            });
+                            return;
+                        }
+
+                        console.log('Background: ✓ 任务已通过API添加到GUI应用并保存到本地');
+                        callback({
+                            success: true,
                             message: '已添加到GUI应用队列',
                             queueLength: queue.length
                         });
-                        console.log('Background: 已向content script发送成功响应 (API)');
                     });
                 } else {
                     // API失败，保存到本地存储
-                    console.log('Background: API调用失败，保存到本地队列', errorMessage);
+                    console.log('Background: ⚠ API调用失败，保存到本地队列:', errorMessage);
                     queue.push(task);
                     chrome.storage.local.set({ downloadQueue: queue }, () => {
-                        sendResponse({ 
-                            success: true, 
+                        if (chrome.runtime.lastError) {
+                            console.error('Background: ✗ 保存存储失败:', chrome.runtime.lastError);
+                            callback({
+                                success: false,
+                                error: '保存失败: ' + chrome.runtime.lastError.message
+                            });
+                            return;
+                        }
+
+                        callback({
+                            success: true,
                             message: '已添加到本地队列（无法连接GUI应用）',
                             queueLength: queue.length,
                             warning: errorMessage
                         });
-                        console.log('Background: 已向content script发送成功响应 (本地队列)');
                     });
                 }
             });
         });
     } catch (error) {
-        console.error('Background: 处理请求时出错', error);
-        sendResponse({ 
-            success: false, 
-            error: '处理请求时出错: ' + error.message 
+        console.error('Background: ✗ 处理请求时出现异常:', error);
+        console.error('Background: 错误堆栈:', error.stack);
+        callback({
+            success: false,
+            error: '处理请求时出错: ' + error.message
         });
-        console.log('Background: 已向content script发送失败响应');
     }
 }
 
@@ -445,12 +554,7 @@ function checkApiConnection(callback) {
 // 定期清理旧的任务（可选）
 chrome.alarms.create('cleanupOldTasks', { periodInMinutes: 60 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'cleanupOldTasks') {
-        cleanupOldTasks();
-    }
-});
-
+// cleanupOldTasks 函数
 function cleanupOldTasks() {
     chrome.storage.local.get(['downloadQueue'], (result) => {
         const queue = result.downloadQueue || [];

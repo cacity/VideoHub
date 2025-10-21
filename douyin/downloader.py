@@ -8,17 +8,11 @@
 
 import os
 import time
-import asyncio
-import aiohttp
-import aiofiles
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, Optional, List, Callable
 from pathlib import Path
 import requests
-from .parser import DouyinParser
 from .config import DouyinConfig
 from .utils import DouyinUtils
-from .ytdlp_wrapper import YtDlpWrapper
 from .douyinvd_extractor import DouyinVdExtractor
 
 class DouyinDownloader:
@@ -28,10 +22,9 @@ class DouyinDownloader:
         """
         初始化下载器
         :param config: 配置对象
-        :param port: douyinVd服务端口
+        :param port: 端口（保留兼容性，实际未使用）
         """
         self.config = config or DouyinConfig()
-        self.parser = DouyinParser(self.config)
         self.session = requests.Session()
         self.session.headers.update(self.config.get_headers())
         
@@ -44,10 +37,7 @@ class DouyinDownloader:
         download_dir = self.config.get("download_dir")
         os.makedirs(download_dir, exist_ok=True)
         
-        # 初始化yt-dlp包装器
-        self.ytdlp_wrapper = YtDlpWrapper(download_dir)
-        
-        # 初始化douyinVd提取器，使用指定端口
+        # 初始化新的提取器（使用douyin.py）
         self.douyinvd_extractor = DouyinVdExtractor(port=port)
     
     def download_video(self, url: str, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
@@ -58,191 +48,19 @@ class DouyinDownloader:
         :return: 下载结果
         """
         try:
-            # 优先尝试使用 douyinVd 下载
-            print("🚀 尝试使用 douyinVd 下载...")
+            # 使用新的 douyin.py 下载
+            print("🚀 使用新douyin.py下载...")
             if progress_callback:
-                progress_callback("尝试使用 douyinVd 下载...", 5)
+                progress_callback("正在下载抖音视频...", 5)
             
             douyinvd_result = self._download_with_douyinvd(url, progress_callback)
             if douyinvd_result.get("success"):
-                print("✅ douyinVd 下载成功")
+                print("✅ 下载成功")
                 return douyinvd_result
             else:
-                print(f"⚠️ douyinVd 下载失败: {douyinvd_result.get('error', '未知错误')}")
-                print("🔄 回退到传统解析方法...")
-            
-            # 解析视频信息
-            print("正在解析视频信息...")
-            if progress_callback:
-                progress_callback("正在解析视频信息...", 10)
-            
-            video_info = self.parser.parse_video_info(url)
-            if not video_info:
-                return {"success": False, "error": "无法解析视频信息"}
-            
-            # 检查是否是来自yt-dlp的信息
-            if video_info.get('from_ytdlp'):
-                print("🚀 检测到 yt-dlp 视频信息，使用 yt-dlp 下载")
-                return self._download_with_ytdlp(url, progress_callback)
-            
-            # 生成文件名
-            filename_template = self.config.get("filename_template")
-            print(f"文件名模板: {filename_template}")
-            base_filename = DouyinUtils.format_filename(filename_template, video_info)
-            print(f"生成的基础文件名: {base_filename}")
-            print(f"下载目录: {self.config.get('download_dir')}")
-            
-            # 下载结果
-            result = {
-                "success": True,
-                "video_info": video_info,
-                "downloaded_files": [],
-                "errors": []
-            }
-            
-            # 下载视频 - 优先下载无水印版本
-            video_data = video_info.get("video", {})
-            
-            # 优先使用无水印链接
-            no_watermark_url = video_data.get("play_url_no_watermark")
-            video_url = video_data.get("play_url")
-            
-            download_url = None
-            video_type = ""
-            
-            if no_watermark_url and no_watermark_url.strip():
-                download_url = no_watermark_url
-                video_type = "无水印视频"
-                print("🎬 发现无水印视频链接，优先下载")
-            elif video_url and video_url.strip():
-                download_url = video_url
-                video_type = "标准视频"
-                print("📹 使用标准视频链接下载")
-            
-            if download_url:
-                print(f"正在下载{video_type}...")
-                if progress_callback:
-                    progress_callback(f"正在下载{video_type}...", 20)
-                
-                video_filename = f"{base_filename}{'_no_watermark' if no_watermark_url else ''}.mp4"
-                video_path = self._download_file(
-                    download_url, 
-                    video_filename,
-                    progress_callback,
-                    20, 70  # 进度范围：20% - 70%
-                )
-                
-                if video_path:
-                    result["downloaded_files"].append({
-                        "type": "video",
-                        "path": video_path,
-                        "size": os.path.getsize(video_path),
-                        "is_no_watermark": bool(no_watermark_url)
-                    })
-                    print(f"✅ {video_type}下载成功")
-                else:
-                    result["errors"].append(f"{video_type}下载失败")
-            else:
-                print("⚠️ 无法获取视频下载链接（来自网页解析）")
-                if progress_callback:
-                    progress_callback("跳过视频下载（无下载链接）", 70)
-                result["errors"].append("无法获取视频下载链接")
-            
-            # 下载封面
-            if self.config.get("download_cover"):
-                cover_url = video_info.get("video", {}).get("cover_url")
-                if cover_url and cover_url.strip():
-                    print("正在下载封面...")
-                    if progress_callback:
-                        progress_callback("正在下载封面...", 75)
-                    
-                    cover_path = self._download_file(cover_url, f"{base_filename}_cover.jpg")
-                    if cover_path:
-                        result["downloaded_files"].append({
-                            "type": "cover",
-                            "path": cover_path,
-                            "size": os.path.getsize(cover_path)
-                        })
-                else:
-                    print("⚠️ 无法获取封面下载链接")
-                    if progress_callback:
-                        progress_callback("跳过封面下载（无下载链接）", 75)
-            
-            # 下载音频
-            if self.config.get("download_music"):
-                music_url = video_info.get("music", {}).get("play_url")
-                if music_url and music_url.strip():
-                    print("正在下载音频...")
-                    if progress_callback:
-                        progress_callback("正在下载音频...", 85)
-                    
-                    music_path = self._download_file(music_url, f"{base_filename}_music.mp3")
-                    if music_path:
-                        result["downloaded_files"].append({
-                            "type": "music",
-                            "path": music_path,
-                            "size": os.path.getsize(music_path)
-                        })
-                else:
-                    print("⚠️ 无法获取音频下载链接")
-                    if progress_callback:
-                        progress_callback("跳过音频下载（无下载链接）", 85)
-            
-            # 保存元数据
-            if self.config.get("save_metadata"):
-                print("正在保存元数据...")
-                if progress_callback:
-                    progress_callback("正在保存元数据...", 95)
-                
-                try:
-                    metadata_path = os.path.join(
-                        self.config.get("download_dir"),
-                        f"{base_filename}_metadata.json"
-                    )
-                    print(f"元数据保存路径: {metadata_path}")
-                    
-                    if DouyinUtils.save_metadata(video_info, metadata_path):
-                        result["downloaded_files"].append({
-                            "type": "metadata",
-                            "path": metadata_path,
-                            "size": os.path.getsize(metadata_path)
-                        })
-                        print("✅ 元数据保存成功")
-                    else:
-                        print("❌ 元数据保存失败")
-                        result["errors"].append("元数据保存失败")
-                        
-                except Exception as metadata_error:
-                    print(f"❌ 元数据保存异常: {metadata_error}")
-                    result["errors"].append(f"元数据保存异常: {metadata_error}")
-            
-            if progress_callback:
-                progress_callback("下载完成", 100)
-            
-            # 优化结果消息
-            if result["success"]:
-                downloaded_count = len(result["downloaded_files"])
-                error_count = len(result["errors"])
-                
-                if downloaded_count > 0:
-                    print(f"✅ 下载成功：共下载 {downloaded_count} 个文件")
-                    if error_count > 0:
-                        print(f"⚠️ 注意：有 {error_count} 个警告")
-                        for error in result["errors"]:
-                            print(f"   - {error}")
-                else:
-                    print("⚠️ 下载完成但没有文件被下载")
-                    if error_count > 0:
-                        for error in result["errors"]:
-                            print(f"   - {error}")
-                    
-                    # 如果只是因为网页解析无法获取下载链接，给出友好提示
-                    if "无法获取视频下载链接" in result["errors"]:
-                        print("💡 提示：当前使用网页解析模式，只能获取基本信息")
-                        print("   - 视频信息已保存到元数据文件")
-                        print("   - 如需下载视频文件，请确保链接有效或尝试其他方法")
-            
-            return result
+                error = douyinvd_result.get('error', '未知错误')
+                print(f"❌ 下载失败: {error}")
+                return {"success": False, "error": error}
             
         except Exception as e:
             print(f"下载视频失败: {e}")
@@ -369,108 +187,30 @@ class DouyinDownloader:
         :return: 视频信息
         """
         try:
-            # 优先尝试使用 douyinVd 获取视频信息
-            print("🚀 尝试使用 douyinVd 获取视频信息...")
+            print("🚀 获取视频信息...")
             video_info = self.douyinvd_extractor.get_video_info(url)
             
             if video_info:
-                print("✅ douyinVd 获取视频信息成功")
+                print("✅ 获取视频信息成功")
                 return video_info
             else:
-                print("⚠️ douyinVd 获取视频信息失败，回退到传统解析方法...")
+                print("❌ 获取视频信息失败")
+                return None
                 
         except Exception as e:
-            print(f"❌ douyinVd 获取视频信息异常: {e}")
-            print("🔄 回退到传统解析方法...")
-        
-        # 回退到传统解析方法
-        return self.parser.parse_video_info(url)
+            print(f"❌ 获取视频信息异常: {e}")
+            return None
     
     def download_user_videos(self, user_url: str, limit: int = 20, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """
-        下载用户的视频
+        下载用户的视频（暂不支持）
         :param user_url: 用户主页链接
         :param limit: 下载数量限制
         :param progress_callback: 进度回调
         :return: 下载结果
         """
-        try:
-            # 解析用户信息
-            print("正在解析用户信息...")
-            if progress_callback:
-                progress_callback("正在解析用户信息...", 5)
-            
-            user_info = self.parser.parse_user_info(user_url)
-            if not user_info:
-                return {"success": False, "error": "无法解析用户信息"}
-            
-            # 获取用户视频列表
-            print("正在获取用户视频列表...")
-            if progress_callback:
-                progress_callback("正在获取用户视频列表...", 15)
-            
-            # 这里需要实现获取用户视频列表的逻辑
-            # 由于复杂性，暂时返回空列表
-            video_urls = []
-            
-            if not video_urls:
-                return {"success": False, "error": "无法获取用户视频列表"}
-            
-            # 限制下载数量
-            video_urls = video_urls[:limit]
-            
-            # 批量下载
-            def batch_progress(msg, progress):
-                if progress_callback:
-                    # 将批量下载进度映射到总进度的85%
-                    mapped_progress = 15 + int((progress / 100) * 85)
-                    progress_callback(msg, mapped_progress)
-            
-            result = self.download_videos_batch(video_urls, batch_progress)
-            result["user_info"] = user_info
-            
-            return result
-            
-        except Exception as e:
-            print(f"下载用户视频失败: {e}")
-            return {"success": False, "error": str(e)}
+        return {"success": False, "error": "批量下载用户视频功能暂不支持"}
     
-    def _download_with_ytdlp(self, url: str, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
-        """
-        使用yt-dlp下载视频
-        :param url: 视频URL
-        :param progress_callback: 进度回调函数
-        :return: 下载结果
-        """
-        try:
-            print("🚀 使用 yt-dlp 下载模式")
-            if progress_callback:
-                progress_callback(10, "使用 yt-dlp 下载...")
-            
-            # 使用yt-dlp下载
-            result = self.ytdlp_wrapper.download_video(url, progress_callback)
-            
-            if result.get("success"):
-                print("✅ yt-dlp 下载成功")
-                if progress_callback:
-                    progress_callback(100, "yt-dlp 下载完成")
-                
-                # 转换为标准格式
-                return {
-                    "success": True,
-                    "video_info": {"extraction_method": "yt-dlp"},
-                    "downloaded_files": result.get("downloaded_files", []),
-                    "errors": []
-                }
-            else:
-                error_msg = result.get("error", "yt-dlp 下载失败")
-                print(f"❌ yt-dlp 下载失败: {error_msg}")
-                return {"success": False, "error": error_msg}
-                
-        except Exception as e:
-            error_msg = f"yt-dlp 下载异常: {str(e)}"
-            print(f"❌ {error_msg}")
-            return {"success": False, "error": error_msg}
 
     def cleanup_downloads(self, days_old: int = 7) -> Dict[str, Any]:
         """

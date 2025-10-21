@@ -8,13 +8,13 @@
     // 初始化函数
     function init() {
         console.log('Twitter下载助手已加载');
-        
+
         // 启动观察器
         startObserver();
-        
+
         // 立即扫描现有内容
         scanAndInjectButtons();
-        
+
         // 监听页面导航变化
         let lastUrl = location.href;
         const navigationObserver = new MutationObserver(() => {
@@ -26,7 +26,7 @@
                 }, 1000);
             }
         });
-        
+
         navigationObserver.observe(document, {subtree: true, childList: true});
     }
 
@@ -35,7 +35,7 @@
         if (observer) {
             observer.disconnect();
         }
-        
+
         observer = new MutationObserver((mutations) => {
             let shouldScan = false;
             mutations.forEach(mutation => {
@@ -43,12 +43,12 @@
                     shouldScan = true;
                 }
             });
-            
+
             if (shouldScan) {
                 debounce(scanAndInjectButtons, 500)();
             }
         });
-        
+
         observer.observe(document.body, {
             childList: true,
             subtree: true
@@ -72,13 +72,13 @@
     function scanAndInjectButtons() {
         // 查找包含视频的推文
         const videoTweets = document.querySelectorAll('[data-testid="tweet"]:has(video), [data-testid="tweet"]:has([data-testid="videoPlayer"])');
-        
+
         videoTweets.forEach(tweet => {
             const tweetId = getTweetId(tweet);
             if (!tweetId || injectedButtons.has(tweetId)) {
                 return;
             }
-            
+
             injectDownloadButton(tweet, tweetId);
         });
     }
@@ -91,13 +91,13 @@
             const match = tweetLink.href.match(/\/status\/(\d+)/);
             return match ? match[1] : null;
         }
-        
+
         // 如果找不到链接，使用时间戳作为唯一标识
         const timeElement = tweetElement.querySelector('time');
         if (timeElement) {
             return timeElement.getAttribute('datetime') || Date.now().toString();
         }
-        
+
         return Date.now().toString();
     }
 
@@ -105,15 +105,15 @@
     function getTweetInfo(tweetElement) {
         const tweetLink = tweetElement.querySelector('a[href*="/status/"]');
         const tweetUrl = tweetLink ? tweetLink.href : window.location.href;
-        
+
         // 获取推文文本
         const tweetTextElement = tweetElement.querySelector('[data-testid="tweetText"], [lang]');
         const tweetText = tweetTextElement ? tweetTextElement.textContent.trim() : '推文内容';
-        
+
         // 获取作者信息
         const authorElement = tweetElement.querySelector('[data-testid="User-Name"] span, [data-testid="User-Names"] span');
         const author = authorElement ? authorElement.textContent.trim() : '未知用户';
-        
+
         return {
             url: tweetUrl,
             text: tweetText,
@@ -154,7 +154,7 @@
 
         // 记录已注入的按钮
         injectedButtons.add(tweetId);
-        
+
         console.log(`Twitter下载助手: 已为推文 ${tweetId} 注入下载按钮`);
     }
 
@@ -163,7 +163,12 @@
         event.preventDefault();
         event.stopPropagation();
 
-        const button = event.target;
+        const button = event.target.closest('.video-downloader-btn') || event.target;
+        if (!button || !button.classList) {
+            console.warn('Twitter下载助手: 未能定位到按钮元素');
+            return;
+        }
+
         const tweetInfo = getTweetInfo(tweetElement);
 
         if (!tweetInfo.url) {
@@ -171,11 +176,30 @@
             return;
         }
 
+        const resetButtonState = (text = '下载视频', stateClass = '') => {
+            button.className = stateClass || 'video-downloader-btn';
+            button.textContent = text;
+        };
+
         // 设置按钮为加载状态
-        button.className = 'video-downloader-btn loading';
-        button.textContent = '正在添加...';
+        resetButtonState('正在添加...', 'video-downloader-btn loading');
+
+        // 超时回退，避免一直停留在加载状态
+        const timeoutId = setTimeout(() => {
+            console.warn('Twitter下载助手: 添加请求超时');
+            resetButtonState('连接超时', 'video-downloader-btn error');
+            setTimeout(() => resetButtonState(), 3000);
+        }, 15000);
 
         // 发送消息到background script
+        console.log('Twitter下载助手: 发送添加到队列请求', {
+            url: tweetInfo.url,
+            title: tweetInfo.title,
+            text: tweetInfo.text,
+            author: tweetInfo.author,
+            tweetId: tweetId
+        });
+
         chrome.runtime.sendMessage({
             action: 'addToDownloadQueue',
             platform: 'twitter',
@@ -187,26 +211,57 @@
                 tweetId: tweetId
             }
         }, (response) => {
-            if (response && response.success) {
+            clearTimeout(timeoutId);
+            console.log('Twitter下载助手: 收到响应', response);
+
+            // 检查是否有运行时错误
+            if (chrome.runtime.lastError) {
+                console.error('Twitter下载助手: 运行时错误', chrome.runtime.lastError);
+                resetButtonState('连接失败', 'video-downloader-btn error');
+
+                setTimeout(() => {
+                    resetButtonState();
+                }, 3000);
+                return;
+            }
+
+            // 检查响应有效性
+            if (!response) {
+                console.error('Twitter下载助手: 响应为空');
+                resetButtonState('无响应', 'video-downloader-btn error');
+
+                setTimeout(() => {
+                    resetButtonState();
+                }, 3000);
+                return;
+            }
+
+            if (response.success) {
                 // 显示成功状态
-                button.className = 'video-downloader-btn success';
-                button.textContent = '已添加';
-                
+                console.log('Twitter下载助手: 添加成功');
+                resetButtonState('已添加', 'video-downloader-btn success');
+
+                // 显示详细信息（如果有）
+                if (response.message) {
+                    console.log('Twitter下载助手: ' + response.message);
+                }
+
                 // 3秒后恢复原状态
                 setTimeout(() => {
-                    button.className = 'video-downloader-btn';
-                    button.textContent = '下载视频';
+                    resetButtonState();
                 }, 3000);
             } else {
                 // 显示错误状态
-                button.className = 'video-downloader-btn error';
-                button.textContent = '失败';
-                alert('添加到下载队列失败: ' + (response?.error || '未知错误'));
-                
+                console.error('Twitter下载助手: 添加失败', response.error);
+                resetButtonState('添加失败', 'video-downloader-btn error');
+
+                // 显示具体错误信息
+                const errorMsg = response.error || '未知错误';
+                console.error('Twitter下载助手: 错误详情:', errorMsg);
+
                 // 3秒后恢复原状态
                 setTimeout(() => {
-                    button.className = 'video-downloader-btn';
-                    button.textContent = '下载视频';
+                    resetButtonState();
                 }, 3000);
             }
         });
