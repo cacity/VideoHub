@@ -434,7 +434,7 @@ VideoHub/
 
 ## 交流群
 
-![image-20250925083303544](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20250925083306862.png)
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251031111522281.png)
 
 ## 🤝 贡献
 
