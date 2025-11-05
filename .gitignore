@@ -27,6 +27,7 @@ coverage.xml
 
 # 工作目录和数据文件 - 所有用户生成的内容
 downloads/
+.claude/
 douyin_downloads/
 videos/
 videos_with_subtitles/
@@ -56,9 +57,14 @@ Thumbs.db
 
 # 操作系统生成文件
 *.exe
+!ffmpeg/ffmpeg.exe
+!ffmpeg/ffprobe.exe
 chromedriver.exe
 *.tmp
 *.temp
+
+# FFmpeg配置（可选：如果不想提交个人配置，保留这行；否则删除）
+# ffmpeg_config.json
 
 # 图片和媒体文件
 *.png

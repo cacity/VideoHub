@@ -2,6 +2,10 @@
 
 这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音、Bilibili** 等多平台视频内容的智能处理。提供视频下载、语音转录、双语字幕生成、内容摘要等完整工作流，并配备闲时调度、批量处理等高级功能。
 
+## ✨ 加入讨论群
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251105153443205.png)
+
 ## ✨ 核心功能
 
 ### 🎬 多平台视频处理
@@ -12,15 +16,6 @@
 - **字幕嵌入**: 支持将字幕直接嵌入到视频文件中
 - **内容摘要**: 利用 LLM（支持 OpenAI、DeepSeek 等）智能生成文章摘要
 
-### 📺 直播录制功能
-- **多平台监控**: 支持抖音、快手、虎牙、斗鱼、B站、TikTok 等多个直播平台
-- **自动录制**: 实时监控直播状态，开播自动录制，下播自动停止
-- **高清录制**: 支持原画、超清、高清等多种画质选择
-- **多格式输出**: 支持 TS、FLV、MP4 等多种视频格式
-- **批量监控**: 可同时监控多个直播间，自动管理录制任务
-- **消息推送**: 支持钉钉、PushPlus、邮件等多种开播提醒方式
-- **定时检测**: 可配置监控间隔，平衡性能和实时性
-
 ### 🌐 Chrome浏览器扩展
 - **页面集成**: 在 YouTube、Twitter/X、Bilibili 视频页面自动添加下载按钮
 - **一键加入队列**: 点击按钮即可将视频添加到闲时下载队列
@@ -29,7 +24,16 @@
 - **智能识别**: 自动提取视频标题、作者、链接等信息
 - **视觉反馈**: 添加成功后按钮状态变化，避免重复添加
 
+正确安装插件后，在X/YouTube等视频网站，视频下方会出现下载按钮，后台运行主程序，点下载按钮，直接把下载任务加入到下载列表中。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251105153043895.png)
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251105153238077.png)
+
+
+
 ### 🔄 批量处理
+
 - **多平台批处理**: 支持混合处理不同平台的视频链接
 - **文件导入**: 可从文本文件批量导入 URL 列表
 - **进度跟踪**: 实时显示批量任务的处理进度和结果
@@ -432,9 +436,7 @@ VideoHub/
 
 
 
-## 交流群
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251031111522281.png)
 
 ## 🤝 贡献
 
@@ -442,7 +444,7 @@ VideoHub/
 
 ### 贡献方式
 
-- 🐛 报告 Bug: [创建 Issue](https://github.com/cacity/youtube_reader/issues)
+- 🐛 报告 Bug: [创建 Issue](https://github.com/cacity/VideoHub/issues)
 - 💡 功能建议: 提交 Feature Request
 - 🔀 代码贡献: 提交 Pull Request
 - 📖 文档改进: 完善使用说明

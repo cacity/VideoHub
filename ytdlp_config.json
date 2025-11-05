@@ -1,0 +1,12 @@
+{
+    "ytdlp_mode": "exe",
+    "ytdlp_exe_path": "F:\\work\\VideoHub\\ytdlp\\yt-dlp.exe",
+    "download_on_missing": true,
+    "prefer_exe": true,
+    "description": {
+        "ytdlp_mode": "yt-dlp使用模式: 'auto' (自动检测), 'python' (使用yt-dlp库), 'exe' (使用yt-dlp.exe)",
+        "ytdlp_exe_path": "yt-dlp.exe的完整路径 (仅在ytdlp_mode为'exe'或'auto'时使用). 为空则自动查找",
+        "download_on_missing": "当找不到yt-dlp.exe时是否自动下载 (true/false)",
+        "prefer_exe": "在auto模式下优先使用exe而不是Python库 (true/false)"
+    }
+}

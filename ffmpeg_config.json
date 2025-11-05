@@ -1,0 +1,12 @@
+{
+    "ffmpeg_mode": "exe",
+    "ffmpeg_exe_path": "F:/youtube/ffmpeg.exe",
+    "download_on_missing": true,
+    "prefer_exe": true,
+    "description": {
+        "ffmpeg_mode": "FFmpeg使用模式: 'auto' (自动检测), 'python' (使用ffmpeg-python库), 'exe' (使用ffmpeg可执行文件)",
+        "ffmpeg_exe_path": "ffmpeg.exe的完整路径 (仅在ffmpeg_mode为'exe'或'auto'时使用). 为空则自动查找",
+        "download_on_missing": "当找不到ffmpeg.exe时是否自动下载 (true/false)",
+        "prefer_exe": "在auto模式下优先使用exe而不是Python库 (true/false)"
+    }
+}

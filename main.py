@@ -48,6 +48,28 @@ except ImportError as e:
     DouyinDownloader = None
     DouyinConfig = None
     DouyinUtils = None
+
+# 导入FFmpeg管理器
+try:
+    from ffmpeg_manager import get_ffmpeg_manager, FFmpegManager
+    FFMPEG_MANAGER_AVAILABLE = True
+    print("✅ FFmpeg管理器导入成功")
+except ImportError as e:
+    print(f"⚠️ FFmpeg管理器未找到: {e}")
+    get_ffmpeg_manager = None
+    FFmpegManager = None
+    FFMPEG_MANAGER_AVAILABLE = False
+
+# 导入yt-dlp管理器
+try:
+    from ytdlp_manager import get_ytdlp_manager, YtDlpManager
+    YTDLP_MANAGER_AVAILABLE = True
+    print("✅ yt-dlp管理器导入成功")
+except ImportError as e:
+    print(f"⚠️ yt-dlp管理器未找到: {e}")
+    get_ytdlp_manager = None
+    YtDlpManager = None
+    YTDLP_MANAGER_AVAILABLE = False
     DOUYIN_AVAILABLE = False
 
 # DouyinUtils 安全调用函数
@@ -3240,11 +3262,107 @@ class MainWindow(QMainWindow):
         queue_layout.addWidget(self.clear_queue_button)
         idle_layout.addLayout(queue_layout)
         
+        # FFmpeg设置组
+        ffmpeg_group = QGroupBox("FFmpeg设置")
+        ffmpeg_layout = QVBoxLayout(ffmpeg_group)
+
+        # FFmpeg模式选择
+        mode_layout = QHBoxLayout()
+        mode_label = QLabel("FFmpeg模式:")
+        self.ffmpeg_mode_combo = QComboBox()
+        self.ffmpeg_mode_combo.addItems(["自动", "Python库", "可执行文件"])
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.ffmpeg_mode_combo)
+        ffmpeg_layout.addLayout(mode_layout)
+
+        # FFmpeg路径设置
+        path_layout = QHBoxLayout()
+        path_label = QLabel("FFmpeg路径:")
+        self.ffmpeg_path_input = QLineEdit()
+        self.ffmpeg_path_input.setPlaceholderText("留空则自动查找系统ffmpeg...")
+        self.browse_ffmpeg_button = QPushButton("浏览...")
+        self.browse_ffmpeg_button.setMaximumWidth(80)
+        path_layout.addWidget(path_label)
+        path_layout.addWidget(self.ffmpeg_path_input)
+        path_layout.addWidget(self.browse_ffmpeg_button)
+        ffmpeg_layout.addLayout(path_layout)
+
+        # FFmpeg选项
+        options_layout = QHBoxLayout()
+        self.prefer_exe_checkbox = QCheckBox("优先使用可执行文件（auto模式）")
+        self.auto_download_checkbox = QCheckBox("找不到时自动下载")
+        self.auto_download_checkbox.setChecked(True)
+        options_layout.addWidget(self.prefer_exe_checkbox)
+        options_layout.addWidget(self.auto_download_checkbox)
+        ffmpeg_layout.addLayout(options_layout)
+
+        # FFmpeg操作按钮
+        ffmpeg_buttons_layout = QHBoxLayout()
+        self.download_ffmpeg_button = QPushButton("下载FFmpeg")
+        self.test_ffmpeg_button = QPushButton("测试FFmpeg")
+        ffmpeg_buttons_layout.addWidget(self.download_ffmpeg_button)
+        ffmpeg_buttons_layout.addWidget(self.test_ffmpeg_button)
+        ffmpeg_layout.addLayout(ffmpeg_buttons_layout)
+
+        # FFmpeg状态显示
+        self.ffmpeg_status_label = QLabel("状态: 未初始化")
+        self.ffmpeg_status_label.setStyleSheet("color: gray; padding: 5px;")
+        ffmpeg_layout.addWidget(self.ffmpeg_status_label)
+
+        # yt-dlp设置组
+        ytdlp_group = QGroupBox("yt-dlp设置")
+        ytdlp_layout = QVBoxLayout(ytdlp_group)
+
+        # yt-dlp模式选择
+        ytdlp_mode_layout = QHBoxLayout()
+        ytdlp_mode_label = QLabel("yt-dlp模式:")
+        self.ytdlp_mode_combo = QComboBox()
+        self.ytdlp_mode_combo.addItems(["自动", "Python库", "可执行文件"])
+        ytdlp_mode_layout.addWidget(ytdlp_mode_label)
+        ytdlp_mode_layout.addWidget(self.ytdlp_mode_combo)
+        ytdlp_layout.addLayout(ytdlp_mode_layout)
+
+        # yt-dlp路径设置
+        ytdlp_path_layout = QHBoxLayout()
+        ytdlp_path_label = QLabel("yt-dlp路径:")
+        self.ytdlp_path_input = QLineEdit()
+        self.ytdlp_path_input.setPlaceholderText("留空则自动查找系统yt-dlp...")
+        self.browse_ytdlp_button = QPushButton("浏览...")
+        self.browse_ytdlp_button.setMaximumWidth(80)
+        ytdlp_path_layout.addWidget(ytdlp_path_label)
+        ytdlp_path_layout.addWidget(self.ytdlp_path_input)
+        ytdlp_path_layout.addWidget(self.browse_ytdlp_button)
+        ytdlp_layout.addLayout(ytdlp_path_layout)
+
+        # yt-dlp选项
+        ytdlp_options_layout = QHBoxLayout()
+        self.ytdlp_prefer_exe_checkbox = QCheckBox("优先使用可执行文件（auto模式）")
+        self.ytdlp_auto_download_checkbox = QCheckBox("找不到时自动下载")
+        self.ytdlp_auto_download_checkbox.setChecked(True)
+        ytdlp_options_layout.addWidget(self.ytdlp_prefer_exe_checkbox)
+        ytdlp_options_layout.addWidget(self.ytdlp_auto_download_checkbox)
+        ytdlp_layout.addLayout(ytdlp_options_layout)
+
+        # yt-dlp操作按钮
+        ytdlp_buttons_layout = QHBoxLayout()
+        self.download_ytdlp_button = QPushButton("下载yt-dlp")
+        self.test_ytdlp_button = QPushButton("测试yt-dlp")
+        ytdlp_buttons_layout.addWidget(self.download_ytdlp_button)
+        ytdlp_buttons_layout.addWidget(self.test_ytdlp_button)
+        ytdlp_layout.addLayout(ytdlp_buttons_layout)
+
+        # yt-dlp状态显示
+        self.ytdlp_status_label = QLabel("状态: 未初始化")
+        self.ytdlp_status_label.setStyleSheet("color: gray; padding: 5px;")
+        ytdlp_layout.addWidget(self.ytdlp_status_label)
+
         # 添加到主布局
         layout.addWidget(api_group)
         layout.addWidget(template_group)
+        layout.addWidget(ffmpeg_group)
+        layout.addWidget(ytdlp_group)
         layout.addWidget(idle_group)
-        
+
         # 保存设置按钮
         self.save_settings_button = QPushButton("保存设置")
         self.save_settings_button.setMinimumHeight(40)
@@ -3258,7 +3376,19 @@ class MainWindow(QMainWindow):
         self.template_combo.currentIndexChanged.connect(self.template_selected)
         self.view_queue_button.clicked.connect(self.view_idle_queue)
         self.clear_queue_button.clicked.connect(self.clear_idle_queue)
-        
+        self.browse_ffmpeg_button.clicked.connect(self.browse_ffmpeg_path)
+        self.download_ffmpeg_button.clicked.connect(self.download_ffmpeg)
+        self.test_ffmpeg_button.clicked.connect(self.test_ffmpeg)
+        self.ffmpeg_mode_combo.currentIndexChanged.connect(self.on_ffmpeg_mode_changed)
+        self.browse_ytdlp_button.clicked.connect(self.browse_ytdlp_path)
+        self.download_ytdlp_button.clicked.connect(self.download_ytdlp)
+        self.test_ytdlp_button.clicked.connect(self.test_ytdlp)
+        self.ytdlp_mode_combo.currentIndexChanged.connect(self.on_ytdlp_mode_changed)
+
+        # 加载配置
+        self.load_ffmpeg_config()
+        self.load_ytdlp_config()
+
         return tab
     
     def process_youtube(self):
@@ -4112,15 +4242,19 @@ class MainWindow(QMainWindow):
         # 保存API密钥到环境变量
         os.environ["OPENAI_API_KEY"] = self.openai_api_key_input.text()
         os.environ["DEEPSEEK_API_KEY"] = self.deepseek_api_key_input.text()
-        
+
         # 保存闲时设置
         self.idle_start_time = self.idle_start_input.text()
         self.idle_end_time = self.idle_end_input.text()
-        
+
+        # 保存FFmpeg和yt-dlp配置
+        self.save_ffmpeg_config()
+        self.save_ytdlp_config()
+
         # 更新.env文件
         try:
             env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-            
+
             # 读取现有.env文件
             env_vars = {}
             if os.path.exists(env_path):
@@ -4129,21 +4263,451 @@ class MainWindow(QMainWindow):
                         if "=" in line:
                             key, value = line.strip().split("=", 1)
                             env_vars[key] = value
-            
+
             # 更新API密钥
             env_vars["OPENAI_API_KEY"] = self.openai_api_key_input.text()
             env_vars["DEEPSEEK_API_KEY"] = self.deepseek_api_key_input.text()
             env_vars["PROXY"] = self.proxy_input.text()
-            
+
             # 写入.env文件
             with open(env_path, "w", encoding="utf-8") as f:
                 for key, value in env_vars.items():
                     f.write(f"{key}={value}\n")
-            
+
             QMessageBox.information(self, "设置保存", "设置已保存")
         except Exception as e:
             QMessageBox.warning(self, "设置保存错误", f"保存设置时出错: {str(e)}")
-    
+
+    # ========== FFmpeg相关方法 ==========
+
+    def load_ffmpeg_config(self):
+        """加载FFmpeg配置"""
+        if not FFMPEG_MANAGER_AVAILABLE:
+            self.ffmpeg_status_label.setText("状态: FFmpeg管理器不可用")
+            self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
+            return
+
+        try:
+            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg_config.json")
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+
+                    # 加载模式
+                    mode = config.get('ffmpeg_mode', 'auto')
+                    mode_map = {'auto': 0, 'python': 1, 'exe': 2}
+                    self.ffmpeg_mode_combo.setCurrentIndex(mode_map.get(mode, 0))
+
+                    # 加载路径
+                    self.ffmpeg_path_input.setText(config.get('ffmpeg_exe_path', ''))
+
+                    # 加载选项
+                    self.prefer_exe_checkbox.setChecked(config.get('prefer_exe', False))
+                    self.auto_download_checkbox.setChecked(config.get('download_on_missing', True))
+
+            # 更新状态显示
+            self.update_ffmpeg_status()
+        except Exception as e:
+            self.ffmpeg_status_label.setText(f"状态: 加载配置失败 - {str(e)}")
+            self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
+
+    def save_ffmpeg_config(self):
+        """保存FFmpeg配置"""
+        if not FFMPEG_MANAGER_AVAILABLE:
+            return
+
+        try:
+            # 映射模式
+            mode_index = self.ffmpeg_mode_combo.currentIndex()
+            mode_map = {0: 'auto', 1: 'python', 2: 'exe'}
+            mode = mode_map.get(mode_index, 'auto')
+
+            config = {
+                'ffmpeg_mode': mode,
+                'ffmpeg_exe_path': self.ffmpeg_path_input.text().strip(),
+                'download_on_missing': self.auto_download_checkbox.isChecked(),
+                'prefer_exe': self.prefer_exe_checkbox.isChecked()
+            }
+
+            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg_config.json")
+
+            # 读取现有配置（保留description）
+            existing_config = {}
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    existing_config = json.load(f)
+
+            # 更新配置
+            existing_config.update(config)
+
+            # 保存配置
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(existing_config, f, indent=4, ensure_ascii=False)
+
+            # 重新初始化FFmpeg管理器
+            global _ffmpeg_manager_instance
+            from ffmpeg_manager import _ffmpeg_manager_instance
+            _ffmpeg_manager_instance = None
+
+            self.update_ffmpeg_status()
+        except Exception as e:
+            QMessageBox.warning(self, "保存失败", f"保存FFmpeg配置失败: {str(e)}")
+
+    def browse_ffmpeg_path(self):
+        """浏览FFmpeg可执行文件"""
+        file_filter = "可执行文件 (*.exe);;所有文件 (*.*)" if platform.system() == "Windows" else "所有文件 (*)"
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择FFmpeg可执行文件", "", file_filter
+        )
+        if file_path:
+            self.ffmpeg_path_input.setText(file_path)
+            # 自动切换到exe模式
+            self.ffmpeg_mode_combo.setCurrentIndex(2)
+
+    def download_ffmpeg(self):
+        """下载FFmpeg"""
+        if not FFMPEG_MANAGER_AVAILABLE:
+            QMessageBox.warning(self, "功能不可用", "FFmpeg管理器未正确加载")
+            return
+
+        reply = QMessageBox.question(
+            self, "下载FFmpeg",
+            "确定要下载FFmpeg吗？\n\n这将从官方源下载FFmpeg到项目目录。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                self.ffmpeg_status_label.setText("状态: 正在下载FFmpeg...")
+                self.ffmpeg_status_label.setStyleSheet("color: blue; padding: 5px;")
+                QApplication.processEvents()
+
+                from ffmpeg_install import install_ffmpeg
+                downloaded_path = install_ffmpeg()
+
+                if downloaded_path:
+                    # 自动配置下载后的路径
+                    self.ffmpeg_path_input.setText(downloaded_path)
+                    # 自动切换到exe模式
+                    self.ffmpeg_mode_combo.setCurrentIndex(2)
+                    # 保存配置
+                    self.save_ffmpeg_config()
+
+                    self.ffmpeg_status_label.setText("状态: FFmpeg下载成功")
+                    self.ffmpeg_status_label.setStyleSheet("color: green; padding: 5px;")
+                    QMessageBox.information(
+                        self, "下载成功",
+                        f"FFmpeg已成功下载到项目目录\n\n路径: {downloaded_path}\n\n已自动配置为exe模式"
+                    )
+
+                    # 重新初始化
+                    global _ffmpeg_manager_instance
+                    from ffmpeg_manager import _ffmpeg_manager_instance
+                    _ffmpeg_manager_instance = None
+                    self.update_ffmpeg_status()
+                else:
+                    self.ffmpeg_status_label.setText("状态: FFmpeg下载失败")
+                    self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
+
+                    # 提供详细的手动下载指引
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Icon.Warning)
+                    msg.setWindowTitle("下载失败")
+                    msg.setText("FFmpeg自动下载失败")
+                    msg.setInformativeText("请尝试以下解决方法：")
+                    msg.setDetailedText(
+                        "方法1：手动下载（推荐）\n"
+                        "1. 访问：https://www.gyan.dev/ffmpeg/builds/\n"
+                        "2. 下载 ffmpeg-release-essentials.zip\n"
+                        "3. 解压后将bin文件夹中的文件复制到项目的ffmpeg文件夹\n"
+                        "4. 点击'测试FFmpeg'验证\n\n"
+                        "方法2：指定已有的ffmpeg\n"
+                        "1. 点击'浏览'按钮\n"
+                        "2. 选择你电脑上的ffmpeg.exe\n"
+                        "3. 点击'测试FFmpeg'验证\n\n"
+                        "方法3：使用Python库\n"
+                        "1. 安装：pip install ffmpeg-python\n"
+                        "2. 将模式改为'Python库'\n"
+                        "3. 点击'测试FFmpeg'验证\n\n"
+                        "详细指南请查看：FFMPEG_MANUAL_DOWNLOAD.md"
+                    )
+                    msg.exec()
+            except Exception as e:
+                self.ffmpeg_status_label.setText(f"状态: 下载失败 - {str(e)}")
+                self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
+
+                # 提供详细错误信息和解决方案
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Icon.Critical)
+                msg.setWindowTitle("下载错误")
+                msg.setText("下载FFmpeg时发生错误")
+                msg.setInformativeText(f"错误信息：{str(e)[:100]}")
+                msg.setDetailedText(
+                    f"完整错误：{str(e)}\n\n"
+                    "推荐解决方法：\n\n"
+                    "1. 手动下载FFmpeg（最可靠）\n"
+                    "   访问：https://www.gyan.dev/ffmpeg/builds/\n"
+                    "   下载并解压到项目的ffmpeg文件夹\n\n"
+                    "2. 使用浏览按钮指定ffmpeg.exe路径\n\n"
+                    "3. 查看详细指南：FFMPEG_MANUAL_DOWNLOAD.md\n\n"
+                    "如果问题持续，可能是网络问题，请稍后重试或使用手动下载。"
+                )
+                msg.exec()
+
+    def test_ffmpeg(self):
+        """测试FFmpeg"""
+        if not FFMPEG_MANAGER_AVAILABLE:
+            QMessageBox.warning(self, "功能不可用", "FFmpeg管理器未正确加载")
+            return
+
+        try:
+            # 先保存当前配置
+            self.save_ffmpeg_config()
+
+            # 获取FFmpeg管理器
+            manager = get_ffmpeg_manager()
+
+            # 获取版本信息
+            version = manager.get_version()
+            mode = manager.get_mode()
+
+            info_text = f"✅ FFmpeg测试成功！\n\n"
+            info_text += f"模式: {mode}\n"
+            info_text += f"版本: {version}\n"
+
+            if mode == 'exe':
+                info_text += f"路径: {manager.get_ffmpeg_exe()}\n"
+
+            QMessageBox.information(self, "FFmpeg测试", info_text)
+            self.update_ffmpeg_status()
+        except Exception as e:
+            QMessageBox.warning(self, "测试失败", f"FFmpeg测试失败:\n{str(e)}\n\n请检查FFmpeg配置或尝试下载FFmpeg。")
+            self.ffmpeg_status_label.setText(f"状态: 测试失败 - {str(e)[:30]}")
+            self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
+
+    def on_ffmpeg_mode_changed(self, index):
+        """FFmpeg模式改变时的处理"""
+        # 根据模式启用/禁用路径输入
+        if index == 2:  # exe模式
+            self.ffmpeg_path_input.setEnabled(True)
+            self.browse_ffmpeg_button.setEnabled(True)
+        else:
+            self.ffmpeg_path_input.setEnabled(True)
+            self.browse_ffmpeg_button.setEnabled(True)
+
+    def update_ffmpeg_status(self):
+        """更新FFmpeg状态显示"""
+        if not FFMPEG_MANAGER_AVAILABLE:
+            self.ffmpeg_status_label.setText("状态: FFmpeg管理器不可用")
+            self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
+            return
+
+        try:
+            manager = get_ffmpeg_manager()
+            mode = manager.get_mode()
+            version = manager.get_version()
+
+            status_text = f"状态: {mode}模式 - {version[:50]}"
+            self.ffmpeg_status_label.setText(status_text)
+            self.ffmpeg_status_label.setStyleSheet("color: green; padding: 5px;")
+        except Exception as e:
+            self.ffmpeg_status_label.setText(f"状态: 未初始化或出错")
+            self.ffmpeg_status_label.setStyleSheet("color: orange; padding: 5px;")
+
+    # ========== 结束FFmpeg相关方法 ==========
+
+    # ========== yt-dlp相关方法 ==========
+
+    def load_ytdlp_config(self):
+        """加载yt-dlp配置"""
+        if not YTDLP_MANAGER_AVAILABLE:
+            self.ytdlp_status_label.setText("状态: yt-dlp管理器不可用")
+            self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
+            return
+
+        try:
+            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ytdlp_config.json")
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+
+                    mode = config.get('ytdlp_mode', 'auto')
+                    mode_map = {'auto': 0, 'python': 1, 'exe': 2}
+                    self.ytdlp_mode_combo.setCurrentIndex(mode_map.get(mode, 0))
+
+                    self.ytdlp_path_input.setText(config.get('ytdlp_exe_path', ''))
+                    self.ytdlp_prefer_exe_checkbox.setChecked(config.get('prefer_exe', False))
+                    self.ytdlp_auto_download_checkbox.setChecked(config.get('download_on_missing', True))
+
+            self.update_ytdlp_status()
+        except Exception as e:
+            self.ytdlp_status_label.setText(f"状态: 加载配置失败 - {str(e)}")
+            self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
+
+    def save_ytdlp_config(self):
+        """保存yt-dlp配置"""
+        if not YTDLP_MANAGER_AVAILABLE:
+            return
+
+        try:
+            mode_index = self.ytdlp_mode_combo.currentIndex()
+            mode_map = {0: 'auto', 1: 'python', 2: 'exe'}
+            mode = mode_map.get(mode_index, 'auto')
+
+            config = {
+                'ytdlp_mode': mode,
+                'ytdlp_exe_path': self.ytdlp_path_input.text().strip(),
+                'download_on_missing': self.ytdlp_auto_download_checkbox.isChecked(),
+                'prefer_exe': self.ytdlp_prefer_exe_checkbox.isChecked()
+            }
+
+            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ytdlp_config.json")
+
+            existing_config = {}
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    existing_config = json.load(f)
+
+            existing_config.update(config)
+
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(existing_config, f, indent=4, ensure_ascii=False)
+
+            global _ytdlp_manager_instance
+            from ytdlp_manager import _ytdlp_manager_instance
+            _ytdlp_manager_instance = None
+
+            self.update_ytdlp_status()
+        except Exception as e:
+            QMessageBox.warning(self, "保存失败", f"保存yt-dlp配置失败: {str(e)}")
+
+    def browse_ytdlp_path(self):
+        """浏览yt-dlp可执行文件"""
+        file_filter = "可执行文件 (*.exe);;所有文件 (*.*)" if platform.system() == "Windows" else "所有文件 (*)"
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择yt-dlp可执行文件", "", file_filter
+        )
+        if file_path:
+            self.ytdlp_path_input.setText(file_path)
+            self.ytdlp_mode_combo.setCurrentIndex(2)
+
+    def download_ytdlp(self):
+        """下载yt-dlp"""
+        if not YTDLP_MANAGER_AVAILABLE:
+            QMessageBox.warning(self, "功能不可用", "yt-dlp管理器未正确加载")
+            return
+
+        reply = QMessageBox.question(
+            self, "下载yt-dlp",
+            "确定要下载yt-dlp吗？\n\n这将从GitHub官方源下载yt-dlp到项目目录。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                self.ytdlp_status_label.setText("状态: 正在下载yt-dlp...")
+                self.ytdlp_status_label.setStyleSheet("color: blue; padding: 5px;")
+                QApplication.processEvents()
+
+                manager = get_ytdlp_manager()
+                downloaded_path = manager._download_ytdlp()
+
+                if downloaded_path:
+                    # 自动配置下载后的路径
+                    self.ytdlp_path_input.setText(downloaded_path)
+                    # 自动切换到exe模式
+                    self.ytdlp_mode_combo.setCurrentIndex(2)
+                    # 保存配置
+                    self.save_ytdlp_config()
+
+                    self.ytdlp_status_label.setText("状态: yt-dlp下载成功")
+                    self.ytdlp_status_label.setStyleSheet("color: green; padding: 5px;")
+                    QMessageBox.information(
+                        self, "下载成功",
+                        f"yt-dlp已成功下载到项目目录\n\n路径: {downloaded_path}\n\n已自动配置为exe模式"
+                    )
+
+                    global _ytdlp_manager_instance
+                    from ytdlp_manager import _ytdlp_manager_instance
+                    _ytdlp_manager_instance = None
+                    self.update_ytdlp_status()
+                else:
+                    self.ytdlp_status_label.setText("状态: yt-dlp下载失败")
+                    self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
+
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Icon.Warning)
+                    msg.setWindowTitle("下载失败")
+                    msg.setText("yt-dlp自动下载失败")
+                    msg.setInformativeText("请尝试以下解决方法：")
+                    msg.setDetailedText(
+                        "方法1：手动下载\n"
+                        "访问：https://github.com/yt-dlp/yt-dlp/releases\n"
+                        "下载对应系统的yt-dlp文件并放到项目ytdlp文件夹\n\n"
+                        "方法2：指定已有的yt-dlp\n"
+                        "点击'浏览'选择yt-dlp路径\n\n"
+                        "方法3：使用Python库\n"
+                        "pip install yt-dlp"
+                    )
+                    msg.exec()
+            except Exception as e:
+                self.ytdlp_status_label.setText(f"状态: 下载失败 - {str(e)}")
+                self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
+                QMessageBox.warning(self, "下载错误", f"下载yt-dlp时出错:\n{str(e)}")
+
+    def test_ytdlp(self):
+        """测试yt-dlp"""
+        if not YTDLP_MANAGER_AVAILABLE:
+            QMessageBox.warning(self, "功能不可用", "yt-dlp管理器未正确加载")
+            return
+
+        try:
+            self.save_ytdlp_config()
+            manager = get_ytdlp_manager()
+
+            version = manager.get_version()
+            mode = manager.get_mode()
+
+            info_text = f"✅ yt-dlp测试成功！\n\n"
+            info_text += f"模式: {mode}\n"
+            info_text += f"版本: {version}\n"
+
+            if mode == 'exe':
+                info_text += f"路径: {manager.get_ytdlp_exe()}\n"
+
+            QMessageBox.information(self, "yt-dlp测试", info_text)
+            self.update_ytdlp_status()
+        except Exception as e:
+            QMessageBox.warning(self, "测试失败", f"yt-dlp测试失败:\n{str(e)}")
+            self.ytdlp_status_label.setText(f"状态: 测试失败")
+            self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
+
+    def on_ytdlp_mode_changed(self, index):
+        """yt-dlp模式改变时的处理"""
+        self.ytdlp_path_input.setEnabled(True)
+        self.browse_ytdlp_button.setEnabled(True)
+
+    def update_ytdlp_status(self):
+        """更新yt-dlp状态显示"""
+        if not YTDLP_MANAGER_AVAILABLE:
+            self.ytdlp_status_label.setText("状态: yt-dlp管理器不可用")
+            self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
+            return
+
+        try:
+            manager = get_ytdlp_manager()
+            mode = manager.get_mode()
+            version = manager.get_version()
+
+            status_text = f"状态: {mode}模式 - v{version}"
+            self.ytdlp_status_label.setText(status_text)
+            self.ytdlp_status_label.setStyleSheet("color: green; padding: 5px;")
+        except Exception as e:
+            self.ytdlp_status_label.setText(f"状态: 未初始化或出错")
+            self.ytdlp_status_label.setStyleSheet("color: orange; padding: 5px;")
+
+    # ========== 结束yt-dlp相关方法 ==========
+
     def browse_cookies_file(self):
         """浏览cookies文件"""
         file_path, _ = QFileDialog.getOpenFileName(
