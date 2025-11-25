@@ -176,7 +176,87 @@ def sanitize_filename(filename):
     
     return filename
 
-def translate_text(text, target_language='zh-CN', source_language='auto'):
+def translate_with_llm(text, target_language='zh-CN', source_language='auto'):
+    """
+    使用大模型API翻译文本
+    :param text: 要翻译的文本
+    :param target_language: 目标语言代码，默认为中文
+    :param source_language: 源语言代码，默认为自动检测
+    :return: 翻译后的文本
+    """
+    try:
+        # 语言代码映射
+        language_map = {
+            'zh-CN': '简体中文',
+            'zh-TW': '繁体中文',
+            'en': '英语',
+            'ja': '日语',
+            'ko': '韩语',
+            'fr': '法语',
+            'de': '德语',
+            'es': '西班牙语',
+            'it': '意大利语',
+            'ru': '俄语'
+        }
+
+        target_lang_name = language_map.get(target_language, '简体中文')
+
+        # 优先使用DeepSeek API（更便宜），如果没有则使用OpenAI
+        deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+        openai_api_key = os.getenv("OPENAI_API_KEY", "")
+        proxy = os.getenv("PROXY", "")
+
+        if not deepseek_api_key and not openai_api_key:
+            print("警告: 未配置大模型API密钥，使用谷歌翻译作为后备")
+            return translate_with_google(text, target_language, source_language)
+
+        # 配置代理
+        proxies = None
+        if proxy:
+            proxies = {
+                "http": proxy,
+                "https": proxy
+            }
+
+        # 使用DeepSeek或OpenAI
+        if deepseek_api_key:
+            client = OpenAI(
+                api_key=deepseek_api_key,
+                base_url="https://api.deepseek.com",
+                http_client=None if not proxies else None  # DeepSeek通常不需要代理
+            )
+            model = "deepseek-chat"
+        else:
+            client = OpenAI(
+                api_key=openai_api_key,
+                http_client=None if not proxies else None
+            )
+            model = "gpt-3.5-turbo"
+
+        # 构建提示词
+        prompt = f"请将以下文本翻译成{target_lang_name}，只返回翻译结果，不要添加任何解释或额外内容：\n\n{text}"
+
+        # 调用API
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": f"你是一个专业的翻译助手，专门将文本翻译成{target_lang_name}。你只返回翻译结果，不添加任何解释。"},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2000
+        )
+
+        translated_text = response.choices[0].message.content.strip()
+        return translated_text
+
+    except Exception as e:
+        print(f"大模型翻译过程中出错: {str(e)}")
+        print("尝试使用谷歌翻译作为后备...")
+        return translate_with_google(text, target_language, source_language)
+
+
+def translate_with_google(text, target_language='zh-CN', source_language='auto'):
     """
     使用Google翻译API翻译文本
     :param text: 要翻译的文本
@@ -187,7 +267,7 @@ def translate_text(text, target_language='zh-CN', source_language='auto'):
     try:
         # Google翻译API的URL
         url = "https://translate.googleapis.com/translate_a/single"
-        
+
         # 请求参数
         params = {
             "client": "gtx",
@@ -196,20 +276,20 @@ def translate_text(text, target_language='zh-CN', source_language='auto'):
             "dt": "t",
             "q": text
         }
-        
+
         # 发送请求
         response = requests.get(url, params=params)
-        
+
         if response.status_code == 200:
             # 解析响应
             result = response.json()
-            
+
             # 提取翻译文本
             translated_text = ""
             for sentence in result[0]:
                 if sentence[0]:
                     translated_text += sentence[0]
-            
+
             return html.unescape(translated_text)
         else:
             print(f"翻译请求失败: {response.status_code}")
@@ -217,6 +297,25 @@ def translate_text(text, target_language='zh-CN', source_language='auto'):
     except Exception as e:
         print(f"翻译过程中出错: {str(e)}")
         return text
+
+
+def translate_text(text, target_language='zh-CN', source_language='auto'):
+    """
+    翻译文本，根据配置选择使用Google翻译或大模型翻译
+    :param text: 要翻译的文本
+    :param target_language: 目标语言代码，默认为中文
+    :param source_language: 源语言代码，默认为自动检测
+    :return: 翻译后的文本
+    """
+    # 从环境变量读取翻译方式配置
+    translation_method = os.getenv("TRANSLATION_METHOD", "google")
+
+    if translation_method == "llm":
+        print(f"使用大模型翻译: {text[:50]}...")
+        return translate_with_llm(text, target_language, source_language)
+    else:
+        print(f"使用谷歌翻译: {text[:50]}...")
+        return translate_with_google(text, target_language, source_language)
 
 def format_timestamp(seconds):
     """
@@ -1344,7 +1443,8 @@ def transcribe_audio_unified(audio_path, output_dir="transcripts", subtitle_dir=
                 ass_file.write("ScriptType: v4.00+\n\n")
                 ass_file.write("[V4+ Styles]\n")
                 ass_file.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-                ass_file.write("Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1\n\n")
+                ass_file.write("Style: Default, Fira Code, 10, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
+                ass_file.write("Style: Secondary, 思源黑体 CN, 16,&H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
                 ass_file.write("[Events]\n")
                 ass_file.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
                 
@@ -1352,20 +1452,24 @@ def transcribe_audio_unified(audio_path, output_dir="transcripts", subtitle_dir=
                     start_time = segment["start"]
                     end_time = segment["end"]
                     original_text = segment["text"].strip()
-                    
+
                     translated_text = ""
                     if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
                         try:
                             translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
                         except:
                             pass
-                    
-                    # 格式化文本
-                    display_text = original_text
+
+                    # 处理特殊字符，避免在ASS字幕中出现问题
+                    escaped_text = original_text.replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
+
+                    # 写入原文（使用Default样式）
+                    ass_file.write(f"Dialogue: 0,{format_timestamp_ass(start_time)},{format_timestamp_ass(end_time)},Default,,0,0,0,,{escaped_text}\n")
+
+                    # 如果有翻译，写入翻译（使用Secondary样式，黄色）
                     if translated_text:
-                        display_text = f"{original_text}\\N{translated_text}"
-                    
-                    ass_file.write(f"Dialogue: 0,{format_timestamp_ass(start_time)},{format_timestamp_ass(end_time)},Default,,0,0,0,,{display_text}\n")
+                        escaped_translated = translated_text.replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
+                        ass_file.write(f"Dialogue: 0,{format_timestamp_ass(start_time)},{format_timestamp_ass(end_time)},Secondary,,0,0,0,,{escaped_translated}\n")
             
             subtitle_path = srt_path  # 返回主要的字幕文件路径
             print(f"字幕文件已保存:")
@@ -2349,7 +2453,26 @@ def summarize_text(text_path, model=None, api_key=None, base_url=None, stream=Fa
         
         # 使用组合模型生成摘要
         print("开始使用组合模型生成文章...")
-        article = composite.generate_summary(content, stream=stream, custom_prompt=custom_prompt, template_path=template_path)
+
+        # 创建新的 Composite 实例，强制重新加载环境变量（支持应用运行时的配置更新）
+        composite = TextSummaryComposite(force_reload=True)
+
+        # 从环境变量获取摘要生成配置（此时已经是最新值）
+        generation_mode = os.getenv("SUMMARY_GENERATION_MODE", "single")
+        thinking_model = os.getenv("THINKING_MODEL", "DeepSeek")
+        output_model = os.getenv("OUTPUT_MODEL", "DeepSeek")
+
+        print(f"📊 摘要生成配置: 模式={generation_mode}, 思考模型={thinking_model}, 生成模型={output_model}")
+
+        article = composite.generate_summary(
+            content,
+            stream=stream,
+            custom_prompt=custom_prompt,
+            template_path=template_path,
+            generation_mode=generation_mode,      # ✨ 添加
+            thinking_model=thinking_model,        # ✨ 添加
+            output_model=output_model             # ✨ 添加
+        )
         
         # 保存摘要
         with open(output_path, "w", encoding="utf-8") as f:
@@ -2363,25 +2486,34 @@ def summarize_text(text_path, model=None, api_key=None, base_url=None, stream=Fa
 
 class TextSummaryComposite:
     """处理 DeepSeek 和其他 OpenAI 兼容模型的组合，用于文本摘要生成"""
-    
-    def __init__(self):
-        """初始化组合模型"""
+
+    def __init__(self, force_reload=False):
+        """
+        初始化组合模型
+        :param force_reload: 是否强制重新加载环境变量（用于应用运行时配置更新）
+        """
+        # 如果需要，强制重新加载 .env 文件（用于支持应用运行时的配置更新）
+        if force_reload:
+            from dotenv import load_dotenv
+            load_dotenv(override=True)
+            print("✨ 已重新加载环境变量")
+
         # 从环境变量获取配置
+        # 先读取 .env 文件中的最新值，然后再从环境变量获取
         self.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
         self.deepseek_api_url = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions")
-        self.deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-ai/DeepSeek-R1")
+        self.deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
         self.is_origin_reasoning = os.getenv("IS_ORIGIN_REASONING", "true").lower() == "true"
-        
+
         self.target_api_key = os.getenv("OPENAI_COMPOSITE_API_KEY") or os.getenv("CLAUDE_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.target_api_url = os.getenv("OPENAI_COMPOSITE_API_URL") or os.getenv("CLAUDE_API_URL") or "https://api.openai.com/v1"
         self.target_model = os.getenv("OPENAI_COMPOSITE_MODEL") or os.getenv("CLAUDE_MODEL") or "gpt-3.5-turbo"
-        
+
         # 检查必要的API密钥
-        if not self.deepseek_api_key:
-            raise ValueError("缺少 DeepSeek API 密钥，请在环境变量中设置 DEEPSEEK_API_KEY")
-        
-        if not self.target_api_key:
-            raise ValueError("缺少目标模型 API 密钥，请在环境变量中设置相应的 API 密钥")
+        if not self.deepseek_api_key and not self.target_api_key:
+            raise ValueError("缺少 API 密钥，请在设置中配置 DeepSeek 或 OpenAI API 密钥")
+
+        print(f"✅ 已初始化摘要生成器: DeepSeek={bool(self.deepseek_api_key)}, 目标模型={bool(self.target_api_key)}")
     
     def get_short_model_name(self):
         """
@@ -2410,18 +2542,21 @@ class TextSummaryComposite:
             # 如果无法识别，返回原始名称的前10个字符
             return model_name[:10].lower()
     
-    def generate_summary(self, content, stream=False, custom_prompt=None, template_path=None):
+    def generate_summary(self, content, stream=False, custom_prompt=None, template_path=None, generation_mode="single", thinking_model=None, output_model=None):
         """
         生成文本摘要
         :param content: 需要摘要的文本内容
         :param stream: 是否使用流式输出
         :param custom_prompt: 自定义提示词，如果提供则使用此提示词代替默认提示词
         :param template_path: 模板文件路径，如果提供则使用此模板
+        :param generation_mode: 生成模式 ("single" 单模型或 "two_stage" 两阶段)
+        :param thinking_model: 思考模型名称 ("DeepSeek" 或 "OpenAI")
+        :param output_model: 生成模型名称 ("OpenAI" 或 "DeepSeek")
         :return: 生成的摘要文本
         """
         # 准备提示词
         system_prompt = "你是一个专业的内容编辑和文章撰写专家。"
-        
+
         # 使用自定义提示词、模板或默认提示词
         if custom_prompt:
             user_prompt = custom_prompt.format(content=content)
@@ -2431,18 +2566,258 @@ class TextSummaryComposite:
         else:
             template = load_template()
             user_prompt = template.format(content=content)
-        
-        # 使用 DeepSeek 生成推理过程
-        print("1. 使用 DeepSeek 生成推理过程...")
-        reasoning = self._get_deepseek_reasoning(system_prompt, user_prompt)
-        
-        # 使用目标模型生成最终摘要
-        print("2. 使用目标模型基于推理过程生成最终文章...")
-        if stream:
-            return self._get_target_model_summary_stream(system_prompt, user_prompt, reasoning)
+
+        # 根据生成模式选择执行路径
+        if generation_mode == "two_stage":
+            print("📊 使用两阶段生成模式...")
+            return self._generate_summary_two_stage(system_prompt, user_prompt, stream, thinking_model, output_model)
         else:
-            return self._get_target_model_summary(system_prompt, user_prompt, reasoning)
+            print("⚡ 使用单模型生成模式...")
+            return self._generate_summary_single_model(system_prompt, user_prompt, stream, output_model)
     
+    def _generate_summary_single_model(self, system_prompt, user_prompt, stream=False, output_model=None):
+        """
+        单模型生成摘要（直接生成，不经过推理过程）
+        :param system_prompt: 系统提示词
+        :param user_prompt: 用户提示词
+        :param stream: 是否流式输出
+        :param output_model: 输出模型 ("OpenAI" 或 "DeepSeek")
+        :return: 生成的摘要文本
+        """
+        try:
+            # 确定使用的模型
+            if output_model == "DeepSeek":
+                print("✨ 使用 DeepSeek 直接生成摘要...")
+                return self._get_deepseek_summary(system_prompt, user_prompt, stream)
+            else:  # OpenAI
+                print("✨ 使用 OpenAI 直接生成摘要...")
+                return self._get_openai_summary(system_prompt, user_prompt, stream)
+        except Exception as e:
+            print(f"❌ 单模型生成失败: {str(e)}")
+            return f"生成摘要失败: {str(e)}"
+
+    def _generate_summary_two_stage(self, system_prompt, user_prompt, stream=False, thinking_model=None, output_model=None):
+        """
+        两阶段生成摘要（思考+生成）
+        :param system_prompt: 系统提示词
+        :param user_prompt: 用户提示词
+        :param stream: 是否流式输出
+        :param thinking_model: 思考模型 ("DeepSeek" 或 "OpenAI")
+        :param output_model: 输出模型 ("OpenAI" 或 "DeepSeek")
+        :return: 生成的摘要文本
+        """
+        # 第一步：使用思考模型生成推理过程
+        if thinking_model == "OpenAI":
+            print("💭 第一步：使用 OpenAI 进行深度思考...")
+            reasoning = self._get_openai_reasoning(system_prompt, user_prompt)
+        else:  # DeepSeek
+            print("💭 第一步：使用 DeepSeek 进行深度思考...")
+            reasoning = self._get_deepseek_reasoning(system_prompt, user_prompt)
+
+        # 第二步：使用生成模型基于推理过程生成最终摘要
+        if output_model == "DeepSeek":
+            print("✨ 第二步：使用 DeepSeek 生成最终摘要...")
+            return self._get_target_model_summary_custom(
+                system_prompt, user_prompt, reasoning,
+                use_openai=False, stream=stream
+            )
+        else:  # OpenAI
+            print("✨ 第二步：使用 OpenAI 生成最终摘要...")
+            return self._get_target_model_summary_custom(
+                system_prompt, user_prompt, reasoning,
+                use_openai=True, stream=stream
+            )
+
+    def _get_deepseek_summary(self, system_prompt, user_prompt, stream=False):
+        """
+        使用 DeepSeek 直接生成摘要
+        """
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.deepseek_api_key}",
+                "Content-Type": "application/json"
+            }
+
+            data = {
+                "model": self.deepseek_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.7,
+                "stream": False
+            }
+
+            import requests
+            response = requests.post(
+                self.deepseek_api_url,
+                headers=headers,
+                json=data,
+                timeout=60
+            )
+
+            if response.status_code != 200:
+                raise Exception(f"DeepSeek API 请求失败: {response.status_code}")
+
+            response_data = response.json()
+            if "choices" in response_data and len(response_data["choices"]) > 0:
+                content = response_data["choices"][0]["message"].get("content", "")
+                cleaned = clean_markdown_formatting(content)
+                return cleaned
+
+            raise Exception("无法从 DeepSeek 响应中提取内容")
+
+        except Exception as e:
+            print(f"DeepSeek 摘要生成失败: {str(e)}")
+            return f"DeepSeek 生成失败: {str(e)}"
+
+    def _get_openai_summary(self, system_prompt, user_prompt, stream=False):
+        """
+        使用 OpenAI 直接生成摘要
+        """
+        try:
+            client = OpenAI(
+                api_key=self.target_api_key,
+                base_url=self.target_api_url
+            )
+
+            response = client.chat.completions.create(
+                model=self.target_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7,
+                stream=stream
+            )
+
+            if stream:
+                full_content = ""
+                for chunk in response:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        print(content, end="", flush=True)
+                        full_content += content
+                print()
+                return clean_markdown_formatting(full_content)
+            else:
+                if response.choices and len(response.choices) > 0:
+                    article = response.choices[0].message.content
+                    cleaned = clean_markdown_formatting(article)
+                    return cleaned
+                raise Exception("无法从 OpenAI 响应中提取内容")
+
+        except Exception as e:
+            print(f"OpenAI 摘要生成失败: {str(e)}")
+            return f"OpenAI 生成失败: {str(e)}"
+
+    def _get_openai_reasoning(self, system_prompt, user_prompt):
+        """
+        使用 OpenAI 进行推理（用于两阶段模式的第一步）
+        """
+        try:
+            client = OpenAI(
+                api_key=self.target_api_key,
+                base_url=self.target_api_url
+            )
+
+            response = client.chat.completions.create(
+                model=self.target_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7
+            )
+
+            if response.choices and len(response.choices) > 0:
+                return response.choices[0].message.content
+            return "无法获取 OpenAI 推理结果"
+
+        except Exception as e:
+            print(f"OpenAI 推理过程失败: {str(e)}")
+            return f"OpenAI 推理失败: {str(e)}"
+
+    def _get_target_model_summary_custom(self, system_prompt, user_prompt, reasoning, use_openai=True, stream=False):
+        """
+        使用目标模型基于推理生成最终摘要（支持两个模型选择）
+        """
+        try:
+            combined_prompt = f"""这是我的原始请求：
+
+{user_prompt}
+
+以下是另一个模型的推理过程：
+
+{reasoning}
+
+请基于上述推理过程，提供你的最终文章。直接输出文章内容，不需要解释你的思考过程。
+"""
+
+            if use_openai:
+                client = OpenAI(
+                    api_key=self.target_api_key,
+                    base_url=self.target_api_url
+                )
+                response = client.chat.completions.create(
+                    model=self.target_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": combined_prompt}
+                    ],
+                    temperature=0.7,
+                    stream=stream
+                )
+            else:  # DeepSeek
+                headers = {
+                    "Authorization": f"Bearer {self.deepseek_api_key}",
+                    "Content-Type": "application/json"
+                }
+                data = {
+                    "model": self.deepseek_model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": combined_prompt}
+                    ],
+                    "temperature": 0.7,
+                    "stream": stream
+                }
+                import requests
+                response = requests.post(
+                    self.deepseek_api_url,
+                    headers=headers,
+                    json=data,
+                    timeout=60
+                )
+                if response.status_code != 200:
+                    raise Exception(f"API 请求失败: {response.status_code}")
+                response_data = response.json()
+                if "choices" in response_data and len(response_data["choices"]) > 0:
+                    content = response_data["choices"][0]["message"].get("content", "")
+                    cleaned = clean_markdown_formatting(content)
+                    return cleaned
+                raise Exception("无法从响应中提取内容")
+
+            if stream:
+                full_content = ""
+                for chunk in response:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        print(content, end="", flush=True)
+                        full_content += content
+                print()
+                return clean_markdown_formatting(full_content)
+            else:
+                if response.choices and len(response.choices) > 0:
+                    article = response.choices[0].message.content
+                    cleaned = clean_markdown_formatting(article)
+                    return cleaned
+                raise Exception("无法从响应中提取内容")
+
+        except Exception as e:
+            print(f"生成摘要失败: {str(e)}")
+            return f"生成失败: {str(e)}"
+
     def _get_deepseek_reasoning(self, system_prompt, user_prompt):
         """
         获取 DeepSeek 的推理过程
@@ -3477,45 +3852,55 @@ def clean_markdown_formatting(markdown_text):
     :return: Cleaned markdown text
     """
     import re
-    
+
     # Split the text into lines for processing
     lines = markdown_text.split('\n')
     result_lines = []
-    
+
     # Track if we're inside a code block
     in_code_block = False
     current_code_language = None
-    
+    skip_next_close = False  # Flag to skip the next closing ``` if we skipped an opening
+
     # First, check if the first line is ```markdown and remove it
-    if lines and (lines[2].strip() == '```markdown' or lines[2].strip() == '```Markdown' or lines[2].strip() == '``` markdown'):
-        lines = lines[3:]  # Remove the first line
-    
+    if lines and (lines[0].strip() == '```markdown' or lines[0].strip() == '```Markdown' or lines[0].strip() == '``` markdown'):
+        lines = lines[1:]  # Remove the first line
+
     i = 0
     while i < len(lines):
         line = lines[i]
-        
+
         # Check for code block start
-        code_block_start = re.match(r'^(\s*)```\s*(\w*)\s*$', line)
+        code_block_start = re.match(r'^(\s*)```\s*(\w+)?\s*$', line)
         if code_block_start and not in_code_block:
             # Starting a code block
             in_code_block = True
             indent = code_block_start.group(1)
-            language = code_block_start.group(2)
+            language = code_block_start.group(2) if code_block_start.group(2) else ''
             current_code_language = language
-            
-            # Add the properly formatted code block start
-            if language:
-                result_lines.append(f"{indent}```{language}")
+
+            # Skip unnecessary ```markdown markers at the start of a code block
+            if language and language.lower() == 'markdown':
+                # Skip this line, don't add it to result, but mark to skip next close
+                skip_next_close = True
             else:
-                result_lines.append(f"{indent}```")
-        
+                # Add the properly formatted code block start
+                if language:
+                    result_lines.append(f"{indent}```{language}")
+                else:
+                    result_lines.append(f"{indent}```")
+
         # Check for code block end
         elif re.match(r'^(\s*)```\s*$', line) and in_code_block:
             # Ending a code block
             in_code_block = False
             current_code_language = None
-            result_lines.append(line)
-        
+
+            # Only add the closing ``` if we didn't skip the opening
+            if not skip_next_close:
+                result_lines.append(line)
+            skip_next_close = False
+
         # Check for standalone triple backticks that aren't part of code blocks
         elif re.match(r'^(\s*)```\s*(markdown|Markdown)\s*$', line) and not in_code_block:
             # Skip unnecessary ```markdown markers
@@ -3523,21 +3908,21 @@ def clean_markdown_formatting(markdown_text):
         elif line.strip() == '```' and not in_code_block:
             # Skip standalone closing backticks that aren't closing a code block
             pass
-        
+
         # Regular line, add it to the result
         else:
             result_lines.append(line)
-        
+
         i += 1
-    
+
     # Ensure all code blocks are closed
     if in_code_block:
         result_lines.append("```")
-    
+
     # Remove any trailing empty lines
     while result_lines and not result_lines[-1].strip():
         result_lines.pop()
-    
+
     return '\n'.join(result_lines)
 
 if __name__ == "__main__":

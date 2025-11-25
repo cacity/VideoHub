@@ -8,14 +8,6 @@
 import os
 from typing import Dict, Any, Optional
 
-# 导入统一的下载配置
-try:
-    from video_download_config import VideoDownloadConfig
-    _DEFAULT_DOWNLOAD_DIR = VideoDownloadConfig.get_douyin_dir()
-except (ImportError, AttributeError):
-    # 如果无法导入，使用默认值
-    _DEFAULT_DOWNLOAD_DIR = "downloads/douyin"
-
 class DouyinConfig:
     """抖音下载配置类"""
     
@@ -26,9 +18,9 @@ class DouyinConfig:
         "timeout": 30,
         "max_retries": 3,
         "retry_delay": 1,
-
+        
         # 下载配置
-        "download_dir": _DEFAULT_DOWNLOAD_DIR,
+        "download_dir": "douyin_downloads",
         "video_quality": "high",  # high, medium, low
         "download_cover": True,
         "download_music": True,

@@ -48,28 +48,6 @@ except ImportError as e:
     DouyinDownloader = None
     DouyinConfig = None
     DouyinUtils = None
-
-# 导入FFmpeg管理器
-try:
-    from ffmpeg_manager import get_ffmpeg_manager, FFmpegManager
-    FFMPEG_MANAGER_AVAILABLE = True
-    print("✅ FFmpeg管理器导入成功")
-except ImportError as e:
-    print(f"⚠️ FFmpeg管理器未找到: {e}")
-    get_ffmpeg_manager = None
-    FFmpegManager = None
-    FFMPEG_MANAGER_AVAILABLE = False
-
-# 导入yt-dlp管理器
-try:
-    from ytdlp_manager import get_ytdlp_manager, YtDlpManager
-    YTDLP_MANAGER_AVAILABLE = True
-    print("✅ yt-dlp管理器导入成功")
-except ImportError as e:
-    print(f"⚠️ yt-dlp管理器未找到: {e}")
-    get_ytdlp_manager = None
-    YtDlpManager = None
-    YTDLP_MANAGER_AVAILABLE = False
     DOUYIN_AVAILABLE = False
 
 # DouyinUtils 安全调用函数
@@ -375,8 +353,10 @@ class DouyinTextEdit(QTextEdit):
                 self.main_window.douyin_status_label.setStyleSheet("color: #f44336;")
             self.paste()
 
-# 加载环境变量
-load_dotenv()
+# 加载环境变量（指定 main.py 所在目录的 .env 文件）
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(_env_path, override=True)  # override=True 确保总是从.env文件中加载最新的值
+print(f"✅ 已加载环境变量: {_env_path}")
 
 
 # 创建模板目录
@@ -3204,7 +3184,110 @@ class MainWindow(QMainWindow):
         proxy_layout.addWidget(proxy_label)
         proxy_layout.addWidget(self.proxy_input)
         api_layout.addLayout(proxy_layout)
-        
+
+        # OpenAI 模型设置
+        openai_model_layout = QHBoxLayout()
+        openai_model_label = QLabel("OpenAI 模型名称:")
+        self.openai_model_input = QLineEdit()
+        self.openai_model_input.setPlaceholderText("例如: gpt-4, gpt-3.5-turbo")
+        self.openai_model_input.setText(os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"))
+        openai_model_layout.addWidget(openai_model_label)
+        openai_model_layout.addWidget(self.openai_model_input)
+        api_layout.addLayout(openai_model_layout)
+
+        # OpenAI Base URL设置
+        openai_base_url_layout = QHBoxLayout()
+        openai_base_url_label = QLabel("OpenAI Base URL:")
+        self.openai_base_url_input = QLineEdit()
+        self.openai_base_url_input.setPlaceholderText("默认: https://api.openai.com/v1")
+        self.openai_base_url_input.setText(os.getenv("OPENAI_BASE_URL", ""))
+        openai_base_url_layout.addWidget(openai_base_url_label)
+        openai_base_url_layout.addWidget(self.openai_base_url_input)
+        api_layout.addLayout(openai_base_url_layout)
+
+        # DeepSeek 模型设置
+        deepseek_model_layout = QHBoxLayout()
+        deepseek_model_label = QLabel("DeepSeek 模型名称:")
+        self.deepseek_model_input = QLineEdit()
+        self.deepseek_model_input.setPlaceholderText("默认: deepseek-chat")
+        self.deepseek_model_input.setText(os.getenv("DEEPSEEK_MODEL", "deepseek-chat"))
+        deepseek_model_layout.addWidget(deepseek_model_label)
+        deepseek_model_layout.addWidget(self.deepseek_model_input)
+        api_layout.addLayout(deepseek_model_layout)
+
+        # DeepSeek Base URL设置
+        deepseek_base_url_layout = QHBoxLayout()
+        deepseek_base_url_label = QLabel("DeepSeek Base URL:")
+        self.deepseek_base_url_input = QLineEdit()
+        self.deepseek_base_url_input.setPlaceholderText("默认: https://api.deepseek.com")
+        self.deepseek_base_url_input.setText(os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
+        deepseek_base_url_layout.addWidget(deepseek_base_url_label)
+        deepseek_base_url_layout.addWidget(self.deepseek_base_url_input)
+        api_layout.addLayout(deepseek_base_url_layout)
+
+        # 翻译方式设置
+        translate_method_layout = QHBoxLayout()
+        translate_method_label = QLabel("字幕翻译方式:")
+        self.translate_method_combo = QComboBox()
+        self.translate_method_combo.addItems(["谷歌翻译", "大模型翻译"])
+        # 从环境变量读取设置，默认为谷歌翻译
+        current_method = os.getenv("TRANSLATION_METHOD", "google")
+        if current_method == "llm":
+            self.translate_method_combo.setCurrentText("大模型翻译")
+        else:
+            self.translate_method_combo.setCurrentText("谷歌翻译")
+        translate_method_layout.addWidget(translate_method_label)
+        translate_method_layout.addWidget(self.translate_method_combo)
+        api_layout.addLayout(translate_method_layout)
+
+        # 摘要生成设置组
+        summary_group = QGroupBox("摘要生成设置")
+        summary_layout = QVBoxLayout(summary_group)
+
+        # 摘要生成模式选择
+        summary_mode_layout = QHBoxLayout()
+        summary_mode_label = QLabel("摘要生成模式:")
+        self.summary_mode_combo = QComboBox()
+        self.summary_mode_combo.addItems(["单模型生成", "两阶段生成（思考+生成）"])
+        # 从环境变量读取设置，默认为单模型
+        current_summary_mode = os.getenv("SUMMARY_GENERATION_MODE", "single")
+        if current_summary_mode == "two_stage":
+            self.summary_mode_combo.setCurrentText("两阶段生成（思考+生成）")
+        else:
+            self.summary_mode_combo.setCurrentText("单模型生成")
+        summary_mode_layout.addWidget(summary_mode_label)
+        summary_mode_layout.addWidget(self.summary_mode_combo)
+        summary_layout.addLayout(summary_mode_layout)
+
+        # 思考模型选择（第一步）
+        thinking_model_layout = QHBoxLayout()
+        thinking_model_label = QLabel("思考模型（第一步）:")
+        self.thinking_model_combo = QComboBox()
+        self.thinking_model_combo.addItems(["DeepSeek", "OpenAI"])
+        thinking_model_layout.addWidget(thinking_model_label)
+        thinking_model_layout.addWidget(self.thinking_model_combo)
+        thinking_model_layout.addStretch()
+        summary_layout.addLayout(thinking_model_layout)
+
+        # 生成模型选择（第二步）
+        output_model_layout = QHBoxLayout()
+        output_model_label = QLabel("生成模型（第二步）:")
+        self.output_model_combo = QComboBox()
+        self.output_model_combo.addItems(["OpenAI", "DeepSeek"])
+        output_model_layout.addWidget(output_model_label)
+        output_model_layout.addWidget(self.output_model_combo)
+        output_model_layout.addStretch()
+        summary_layout.addLayout(output_model_layout)
+
+        # 说明文字
+        summary_info_label = QLabel(
+            "💡 单模型模式：直接使用一个模型生成摘要\n"
+            "💡 两阶段模式：第一步用思考模型分析内容，第二步用生成模型输出最终结果"
+        )
+        summary_info_label.setStyleSheet("color: #666; font-size: 11px; margin-top: 5px;")
+        summary_info_label.setWordWrap(True)
+        summary_layout.addWidget(summary_info_label)
+
         # 模板设置
         template_group = QGroupBox("模板设置")
         template_layout = QVBoxLayout(template_group)
@@ -3262,107 +3345,12 @@ class MainWindow(QMainWindow):
         queue_layout.addWidget(self.clear_queue_button)
         idle_layout.addLayout(queue_layout)
         
-        # FFmpeg设置组
-        ffmpeg_group = QGroupBox("FFmpeg设置")
-        ffmpeg_layout = QVBoxLayout(ffmpeg_group)
-
-        # FFmpeg模式选择
-        mode_layout = QHBoxLayout()
-        mode_label = QLabel("FFmpeg模式:")
-        self.ffmpeg_mode_combo = QComboBox()
-        self.ffmpeg_mode_combo.addItems(["自动", "Python库", "可执行文件"])
-        mode_layout.addWidget(mode_label)
-        mode_layout.addWidget(self.ffmpeg_mode_combo)
-        ffmpeg_layout.addLayout(mode_layout)
-
-        # FFmpeg路径设置
-        path_layout = QHBoxLayout()
-        path_label = QLabel("FFmpeg路径:")
-        self.ffmpeg_path_input = QLineEdit()
-        self.ffmpeg_path_input.setPlaceholderText("留空则自动查找系统ffmpeg...")
-        self.browse_ffmpeg_button = QPushButton("浏览...")
-        self.browse_ffmpeg_button.setMaximumWidth(80)
-        path_layout.addWidget(path_label)
-        path_layout.addWidget(self.ffmpeg_path_input)
-        path_layout.addWidget(self.browse_ffmpeg_button)
-        ffmpeg_layout.addLayout(path_layout)
-
-        # FFmpeg选项
-        options_layout = QHBoxLayout()
-        self.prefer_exe_checkbox = QCheckBox("优先使用可执行文件（auto模式）")
-        self.auto_download_checkbox = QCheckBox("找不到时自动下载")
-        self.auto_download_checkbox.setChecked(True)
-        options_layout.addWidget(self.prefer_exe_checkbox)
-        options_layout.addWidget(self.auto_download_checkbox)
-        ffmpeg_layout.addLayout(options_layout)
-
-        # FFmpeg操作按钮
-        ffmpeg_buttons_layout = QHBoxLayout()
-        self.download_ffmpeg_button = QPushButton("下载FFmpeg")
-        self.test_ffmpeg_button = QPushButton("测试FFmpeg")
-        ffmpeg_buttons_layout.addWidget(self.download_ffmpeg_button)
-        ffmpeg_buttons_layout.addWidget(self.test_ffmpeg_button)
-        ffmpeg_layout.addLayout(ffmpeg_buttons_layout)
-
-        # FFmpeg状态显示
-        self.ffmpeg_status_label = QLabel("状态: 未初始化")
-        self.ffmpeg_status_label.setStyleSheet("color: gray; padding: 5px;")
-        ffmpeg_layout.addWidget(self.ffmpeg_status_label)
-
-        # yt-dlp设置组
-        ytdlp_group = QGroupBox("yt-dlp设置")
-        ytdlp_layout = QVBoxLayout(ytdlp_group)
-
-        # yt-dlp模式选择
-        ytdlp_mode_layout = QHBoxLayout()
-        ytdlp_mode_label = QLabel("yt-dlp模式:")
-        self.ytdlp_mode_combo = QComboBox()
-        self.ytdlp_mode_combo.addItems(["自动", "Python库", "可执行文件"])
-        ytdlp_mode_layout.addWidget(ytdlp_mode_label)
-        ytdlp_mode_layout.addWidget(self.ytdlp_mode_combo)
-        ytdlp_layout.addLayout(ytdlp_mode_layout)
-
-        # yt-dlp路径设置
-        ytdlp_path_layout = QHBoxLayout()
-        ytdlp_path_label = QLabel("yt-dlp路径:")
-        self.ytdlp_path_input = QLineEdit()
-        self.ytdlp_path_input.setPlaceholderText("留空则自动查找系统yt-dlp...")
-        self.browse_ytdlp_button = QPushButton("浏览...")
-        self.browse_ytdlp_button.setMaximumWidth(80)
-        ytdlp_path_layout.addWidget(ytdlp_path_label)
-        ytdlp_path_layout.addWidget(self.ytdlp_path_input)
-        ytdlp_path_layout.addWidget(self.browse_ytdlp_button)
-        ytdlp_layout.addLayout(ytdlp_path_layout)
-
-        # yt-dlp选项
-        ytdlp_options_layout = QHBoxLayout()
-        self.ytdlp_prefer_exe_checkbox = QCheckBox("优先使用可执行文件（auto模式）")
-        self.ytdlp_auto_download_checkbox = QCheckBox("找不到时自动下载")
-        self.ytdlp_auto_download_checkbox.setChecked(True)
-        ytdlp_options_layout.addWidget(self.ytdlp_prefer_exe_checkbox)
-        ytdlp_options_layout.addWidget(self.ytdlp_auto_download_checkbox)
-        ytdlp_layout.addLayout(ytdlp_options_layout)
-
-        # yt-dlp操作按钮
-        ytdlp_buttons_layout = QHBoxLayout()
-        self.download_ytdlp_button = QPushButton("下载yt-dlp")
-        self.test_ytdlp_button = QPushButton("测试yt-dlp")
-        ytdlp_buttons_layout.addWidget(self.download_ytdlp_button)
-        ytdlp_buttons_layout.addWidget(self.test_ytdlp_button)
-        ytdlp_layout.addLayout(ytdlp_buttons_layout)
-
-        # yt-dlp状态显示
-        self.ytdlp_status_label = QLabel("状态: 未初始化")
-        self.ytdlp_status_label.setStyleSheet("color: gray; padding: 5px;")
-        ytdlp_layout.addWidget(self.ytdlp_status_label)
-
         # 添加到主布局
         layout.addWidget(api_group)
+        layout.addWidget(summary_group)
         layout.addWidget(template_group)
-        layout.addWidget(ffmpeg_group)
-        layout.addWidget(ytdlp_group)
         layout.addWidget(idle_group)
-
+        
         # 保存设置按钮
         self.save_settings_button = QPushButton("保存设置")
         self.save_settings_button.setMinimumHeight(40)
@@ -3376,21 +3364,50 @@ class MainWindow(QMainWindow):
         self.template_combo.currentIndexChanged.connect(self.template_selected)
         self.view_queue_button.clicked.connect(self.view_idle_queue)
         self.clear_queue_button.clicked.connect(self.clear_idle_queue)
-        self.browse_ffmpeg_button.clicked.connect(self.browse_ffmpeg_path)
-        self.download_ffmpeg_button.clicked.connect(self.download_ffmpeg)
-        self.test_ffmpeg_button.clicked.connect(self.test_ffmpeg)
-        self.ffmpeg_mode_combo.currentIndexChanged.connect(self.on_ffmpeg_mode_changed)
-        self.browse_ytdlp_button.clicked.connect(self.browse_ytdlp_path)
-        self.download_ytdlp_button.clicked.connect(self.download_ytdlp)
-        self.test_ytdlp_button.clicked.connect(self.test_ytdlp)
-        self.ytdlp_mode_combo.currentIndexChanged.connect(self.on_ytdlp_mode_changed)
-
-        # 加载配置
-        self.load_ffmpeg_config()
-        self.load_ytdlp_config()
-
+        
         return tab
-    
+
+    def get_model_and_base_url(self):
+        """获取配置的模型和Base URL"""
+        # 确定使用哪个API的模型和base_url
+        if self.translate_method_combo.currentText() == "大模型翻译":
+            # 优先使用DeepSeek（如果配置了密钥），否则使用OpenAI
+            deepseek_key = self.deepseek_api_key_input.text().strip()
+            openai_key = self.openai_api_key_input.text().strip()
+
+            if deepseek_key:
+                model = self.deepseek_model_input.text() or "deepseek-chat"
+                base_url = self.deepseek_base_url_input.text() or "https://api.deepseek.com"
+            elif openai_key:
+                model = self.openai_model_input.text() or "gpt-3.5-turbo"
+                base_url = self.openai_base_url_input.text() if self.openai_base_url_input.text() else None
+            else:
+                model = None
+                base_url = None
+        else:
+            model = None
+            base_url = None
+
+        return model, base_url
+
+    def get_summary_generation_config(self):
+        """获取摘要生成配置"""
+        summary_mode = self.summary_mode_combo.currentText()
+        thinking_model = self.thinking_model_combo.currentText()
+        output_model = self.output_model_combo.currentText()
+
+        return {
+            "mode": "two_stage" if summary_mode == "两阶段生成（思考+生成）" else "single",
+            "thinking_model": thinking_model,  # DeepSeek 或 OpenAI
+            "output_model": output_model,       # OpenAI 或 DeepSeek
+            "deepseek_key": self.deepseek_api_key_input.text().strip(),
+            "openai_key": self.openai_api_key_input.text().strip(),
+            "deepseek_model": self.deepseek_model_input.text() or "deepseek-chat",
+            "openai_model": self.openai_model_input.text() or "gpt-3.5-turbo",
+            "deepseek_base_url": self.deepseek_base_url_input.text() or "https://api.deepseek.com",
+            "openai_base_url": self.openai_base_url_input.text() if self.openai_base_url_input.text() else None
+        }
+
     def process_youtube(self):
         """处理YouTube视频"""
         # 获取输入框内容
@@ -3421,11 +3438,13 @@ class MainWindow(QMainWindow):
         os.environ["PROXY"] = self.proxy_input.text()
         
         # 获取参数
+        model, base_url = self.get_model_and_base_url()
+
         params = {
             "youtube_url": youtube_url,
-            "model": None,  # 使用默认模型
+            "model": model,  # 使用配置的模型
             "api_key": None,  # 使用环境变量中的API密钥
-            "base_url": None,  # 使用默认API基础URL
+            "base_url": base_url,  # 使用配置的API基础URL
             "whisper_model_size": self.whisper_model_combo.currentText(),
             "stream": True,
             "summary_dir": "summaries",
@@ -3541,13 +3560,15 @@ class MainWindow(QMainWindow):
         
         # 设置代理环境变量
         os.environ["PROXY"] = self.proxy_input.text()
-        
+
         # 获取参数
+        model, base_url = self.get_model_and_base_url()
+
         params = {
             "video_path": video_path,
-            "model": None,  # 使用默认模型
+            "model": model,  # 使用配置的模型
             "api_key": None,  # 使用环境变量中的API密钥
-            "base_url": None,  # 使用默认API基础URL
+            "base_url": base_url,  # 使用配置的API基础URL
             "whisper_model_size": self.video_whisper_model_combo.currentText(),
             "stream": True,
             "summary_dir": "summaries",
@@ -3646,16 +3667,18 @@ class MainWindow(QMainWindow):
         if not audio_path or not os.path.exists(audio_path):
             QMessageBox.warning(self, "输入错误", "请选择有效的本地音频文件")
             return
-        
+
         # 设置代理环境变量
         os.environ["PROXY"] = self.proxy_input.text()
-        
+
         # 获取参数
+        model, base_url = self.get_model_and_base_url()
+
         params = {
             "audio_path": audio_path,
-            "model": None,  # 使用默认模型
+            "model": model,  # 使用配置的模型
             "api_key": None,  # 使用环境变量中的API密钥
-            "base_url": None,  # 使用默认API基础URL
+            "base_url": base_url,  # 使用配置的API基础URL
             "whisper_model_size": self.audio_whisper_model_combo.currentText(),
             "stream": True,
             "summary_dir": "summaries",
@@ -3723,13 +3746,15 @@ class MainWindow(QMainWindow):
         if not text_path or not os.path.exists(text_path):
             QMessageBox.warning(self, "输入错误", "请选择有效的本地文本文件")
             return
-        
+
         # 获取参数
+        model, base_url = self.get_model_and_base_url()
+
         params = {
             "text_path": text_path,
-            "model": self.text_model_input.text() if self.text_model_input.text() else None,
+            "model": model,  # 使用配置的模型
             "api_key": None,  # 使用环境变量中的API密钥
-            "base_url": None,  # 使用默认API基础URL
+            "base_url": base_url,  # 使用配置的API基础URL
             "stream": True,
             "summary_dir": "summaries",
             "custom_prompt": None,  # 使用默认提示词
@@ -3807,13 +3832,15 @@ class MainWindow(QMainWindow):
         
         # 设置代理环境变量
         os.environ["PROXY"] = self.proxy_input.text()
-        
+
         # 获取参数
+        model, base_url = self.get_model_and_base_url()
+
         params = {
             "youtube_urls": urls,
-            "model": None,  # 使用默认模型
+            "model": model,  # 使用配置的模型
             "api_key": None,  # 使用环境变量中的API密钥
-            "base_url": None,  # 使用默认API基础URL
+            "base_url": base_url,  # 使用配置的API基础URL
             "whisper_model_size": self.batch_whisper_model_combo.currentText(),
             "stream": True,
             "summary_dir": "summaries",
@@ -4242,472 +4269,108 @@ class MainWindow(QMainWindow):
         # 保存API密钥到环境变量
         os.environ["OPENAI_API_KEY"] = self.openai_api_key_input.text()
         os.environ["DEEPSEEK_API_KEY"] = self.deepseek_api_key_input.text()
+        os.environ["OPENAI_MODEL"] = self.openai_model_input.text()
+        os.environ["OPENAI_BASE_URL"] = self.openai_base_url_input.text()
+        os.environ["DEEPSEEK_MODEL"] = self.deepseek_model_input.text()
+        os.environ["DEEPSEEK_BASE_URL"] = self.deepseek_base_url_input.text()
+
+        # 保存翻译方式设置
+        translation_method = "llm" if self.translate_method_combo.currentText() == "大模型翻译" else "google"
+        os.environ["TRANSLATION_METHOD"] = translation_method
+
+        # 保存摘要生成设置
+        summary_mode = "two_stage" if self.summary_mode_combo.currentText() == "两阶段生成（思考+生成）" else "single"
+        os.environ["SUMMARY_GENERATION_MODE"] = summary_mode
+        os.environ["THINKING_MODEL"] = self.thinking_model_combo.currentText()
+        os.environ["OUTPUT_MODEL"] = self.output_model_combo.currentText()
 
         # 保存闲时设置
         self.idle_start_time = self.idle_start_input.text()
         self.idle_end_time = self.idle_end_input.text()
 
-        # 保存FFmpeg和yt-dlp配置
-        self.save_ffmpeg_config()
-        self.save_ytdlp_config()
-
         # 更新.env文件
         try:
             env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 
-            # 读取现有.env文件
+            # 读取现有.env文件，同时记录键值对和结构
             env_vars = {}
+            env_lines = []  # 保持原文件的行结构
+
             if os.path.exists(env_path):
                 with open(env_path, "r", encoding="utf-8") as f:
                     for line in f:
-                        if "=" in line:
-                            key, value = line.strip().split("=", 1)
+                        line = line.rstrip("\n")
+                        if line.startswith("#") or line.strip() == "":
+                            # 保留注释和空行
+                            env_lines.append(("comment", line))
+                        elif "=" in line:
+                            key, value = line.split("=", 1)
                             env_vars[key] = value
+                            env_lines.append(("key", key))
 
-            # 更新API密钥
-            env_vars["OPENAI_API_KEY"] = self.openai_api_key_input.text()
-            env_vars["DEEPSEEK_API_KEY"] = self.deepseek_api_key_input.text()
-            env_vars["PROXY"] = self.proxy_input.text()
+            # 更新API密钥、模型名称、Base URL、翻译方式和摘要生成设置
+            new_keys = {
+                "OPENAI_API_KEY": self.openai_api_key_input.text(),
+                "DEEPSEEK_API_KEY": self.deepseek_api_key_input.text(),
+                "OPENAI_MODEL": self.openai_model_input.text(),
+                "OPENAI_BASE_URL": self.openai_base_url_input.text(),
+                "DEEPSEEK_MODEL": self.deepseek_model_input.text(),
+                "DEEPSEEK_BASE_URL": self.deepseek_base_url_input.text(),
+                "PROXY": self.proxy_input.text(),
+                "TRANSLATION_METHOD": translation_method,
+                "SUMMARY_GENERATION_MODE": summary_mode,
+                "THINKING_MODEL": self.thinking_model_combo.currentText(),
+                "OUTPUT_MODEL": self.output_model_combo.currentText()
+            }
 
-            # 写入.env文件
+            # 更新env_vars字典
+            env_vars.update(new_keys)
+
+            # 写入.env文件，同时保留注释和原有结构
             with open(env_path, "w", encoding="utf-8") as f:
-                for key, value in env_vars.items():
-                    f.write(f"{key}={value}\n")
+                # 先写入原文件中存在的键值对（保留顺序和注释）
+                for item_type, item_value in env_lines:
+                    if item_type == "comment":
+                        f.write(f"{item_value}\n")
+                    elif item_type == "key":
+                        f.write(f"{item_value}={env_vars[item_value]}\n")
 
-            QMessageBox.information(self, "设置保存", "设置已保存")
+                # 再写入新添加的键（不在原文件中的键）
+                existing_keys = {item_value for item_type, item_value in env_lines if item_type == "key"}
+                for key, value in new_keys.items():
+                    if key not in existing_keys:
+                        f.write(f"{key}={value}\n")
+
+            # 验证文件写入成功（读取一次确保文件存在且可读）
+            if os.path.exists(env_path):
+                with open(env_path, "r", encoding="utf-8") as f:
+                    saved_content = f.read()
+                    saved_lines = len(saved_content.strip().split("\n"))
+
+                print(f"✅ 配置文件已保存: {env_path}")
+                print(f"   - 文件大小: {len(saved_content)} 字节")
+                print(f"   - 配置项数: {saved_lines}")
+                print(f"   - OpenAI API Key: {'已配置' if env_vars.get('OPENAI_API_KEY') else '未配置'}")
+                print(f"   - DeepSeek API Key: {'已配置' if env_vars.get('DEEPSEEK_API_KEY') else '未配置'}")
+                print(f"   - OpenAI Base URL: {env_vars.get('OPENAI_BASE_URL', '(默认)')}")
+                print(f"   - DeepSeek Base URL: {env_vars.get('DEEPSEEK_BASE_URL', '(默认)')}")
+
+                # 重新加载环境变量，确保应用内存中的值也更新了
+                from dotenv import load_dotenv
+                load_dotenv(env_path, override=True)
+                print(f"✅ 环境变量已重新加载")
+
+                QMessageBox.information(self, "设置保存", f"✅ 设置已保存\n\n配置文件: {env_path}\n配置项数: {saved_lines}")
+            else:
+                QMessageBox.warning(self, "保存失败", "配置文件保存失败，请检查文件权限")
+
         except Exception as e:
-            QMessageBox.warning(self, "设置保存错误", f"保存设置时出错: {str(e)}")
-
-    # ========== FFmpeg相关方法 ==========
-
-    def load_ffmpeg_config(self):
-        """加载FFmpeg配置"""
-        if not FFMPEG_MANAGER_AVAILABLE:
-            self.ffmpeg_status_label.setText("状态: FFmpeg管理器不可用")
-            self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
-            return
-
-        try:
-            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg_config.json")
-            if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-
-                    # 加载模式
-                    mode = config.get('ffmpeg_mode', 'auto')
-                    mode_map = {'auto': 0, 'python': 1, 'exe': 2}
-                    self.ffmpeg_mode_combo.setCurrentIndex(mode_map.get(mode, 0))
-
-                    # 加载路径
-                    self.ffmpeg_path_input.setText(config.get('ffmpeg_exe_path', ''))
-
-                    # 加载选项
-                    self.prefer_exe_checkbox.setChecked(config.get('prefer_exe', False))
-                    self.auto_download_checkbox.setChecked(config.get('download_on_missing', True))
-
-            # 更新状态显示
-            self.update_ffmpeg_status()
-        except Exception as e:
-            self.ffmpeg_status_label.setText(f"状态: 加载配置失败 - {str(e)}")
-            self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
-
-    def save_ffmpeg_config(self):
-        """保存FFmpeg配置"""
-        if not FFMPEG_MANAGER_AVAILABLE:
-            return
-
-        try:
-            # 映射模式
-            mode_index = self.ffmpeg_mode_combo.currentIndex()
-            mode_map = {0: 'auto', 1: 'python', 2: 'exe'}
-            mode = mode_map.get(mode_index, 'auto')
-
-            config = {
-                'ffmpeg_mode': mode,
-                'ffmpeg_exe_path': self.ffmpeg_path_input.text().strip(),
-                'download_on_missing': self.auto_download_checkbox.isChecked(),
-                'prefer_exe': self.prefer_exe_checkbox.isChecked()
-            }
-
-            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg_config.json")
-
-            # 读取现有配置（保留description）
-            existing_config = {}
-            if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    existing_config = json.load(f)
-
-            # 更新配置
-            existing_config.update(config)
-
-            # 保存配置
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(existing_config, f, indent=4, ensure_ascii=False)
-
-            # 重新初始化FFmpeg管理器
-            global _ffmpeg_manager_instance
-            from ffmpeg_manager import _ffmpeg_manager_instance
-            _ffmpeg_manager_instance = None
-
-            self.update_ffmpeg_status()
-        except Exception as e:
-            QMessageBox.warning(self, "保存失败", f"保存FFmpeg配置失败: {str(e)}")
-
-    def browse_ffmpeg_path(self):
-        """浏览FFmpeg可执行文件"""
-        file_filter = "可执行文件 (*.exe);;所有文件 (*.*)" if platform.system() == "Windows" else "所有文件 (*)"
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择FFmpeg可执行文件", "", file_filter
-        )
-        if file_path:
-            self.ffmpeg_path_input.setText(file_path)
-            # 自动切换到exe模式
-            self.ffmpeg_mode_combo.setCurrentIndex(2)
-
-    def download_ffmpeg(self):
-        """下载FFmpeg"""
-        if not FFMPEG_MANAGER_AVAILABLE:
-            QMessageBox.warning(self, "功能不可用", "FFmpeg管理器未正确加载")
-            return
-
-        reply = QMessageBox.question(
-            self, "下载FFmpeg",
-            "确定要下载FFmpeg吗？\n\n这将从官方源下载FFmpeg到项目目录。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                self.ffmpeg_status_label.setText("状态: 正在下载FFmpeg...")
-                self.ffmpeg_status_label.setStyleSheet("color: blue; padding: 5px;")
-                QApplication.processEvents()
-
-                from ffmpeg_install import install_ffmpeg
-                downloaded_path = install_ffmpeg()
-
-                if downloaded_path:
-                    # 自动配置下载后的路径
-                    self.ffmpeg_path_input.setText(downloaded_path)
-                    # 自动切换到exe模式
-                    self.ffmpeg_mode_combo.setCurrentIndex(2)
-                    # 保存配置
-                    self.save_ffmpeg_config()
-
-                    self.ffmpeg_status_label.setText("状态: FFmpeg下载成功")
-                    self.ffmpeg_status_label.setStyleSheet("color: green; padding: 5px;")
-                    QMessageBox.information(
-                        self, "下载成功",
-                        f"FFmpeg已成功下载到项目目录\n\n路径: {downloaded_path}\n\n已自动配置为exe模式"
-                    )
-
-                    # 重新初始化
-                    global _ffmpeg_manager_instance
-                    from ffmpeg_manager import _ffmpeg_manager_instance
-                    _ffmpeg_manager_instance = None
-                    self.update_ffmpeg_status()
-                else:
-                    self.ffmpeg_status_label.setText("状态: FFmpeg下载失败")
-                    self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
-
-                    # 提供详细的手动下载指引
-                    msg = QMessageBox(self)
-                    msg.setIcon(QMessageBox.Icon.Warning)
-                    msg.setWindowTitle("下载失败")
-                    msg.setText("FFmpeg自动下载失败")
-                    msg.setInformativeText("请尝试以下解决方法：")
-                    msg.setDetailedText(
-                        "方法1：手动下载（推荐）\n"
-                        "1. 访问：https://www.gyan.dev/ffmpeg/builds/\n"
-                        "2. 下载 ffmpeg-release-essentials.zip\n"
-                        "3. 解压后将bin文件夹中的文件复制到项目的ffmpeg文件夹\n"
-                        "4. 点击'测试FFmpeg'验证\n\n"
-                        "方法2：指定已有的ffmpeg\n"
-                        "1. 点击'浏览'按钮\n"
-                        "2. 选择你电脑上的ffmpeg.exe\n"
-                        "3. 点击'测试FFmpeg'验证\n\n"
-                        "方法3：使用Python库\n"
-                        "1. 安装：pip install ffmpeg-python\n"
-                        "2. 将模式改为'Python库'\n"
-                        "3. 点击'测试FFmpeg'验证\n\n"
-                        "详细指南请查看：FFMPEG_MANUAL_DOWNLOAD.md"
-                    )
-                    msg.exec()
-            except Exception as e:
-                self.ffmpeg_status_label.setText(f"状态: 下载失败 - {str(e)}")
-                self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
-
-                # 提供详细错误信息和解决方案
-                msg = QMessageBox(self)
-                msg.setIcon(QMessageBox.Icon.Critical)
-                msg.setWindowTitle("下载错误")
-                msg.setText("下载FFmpeg时发生错误")
-                msg.setInformativeText(f"错误信息：{str(e)[:100]}")
-                msg.setDetailedText(
-                    f"完整错误：{str(e)}\n\n"
-                    "推荐解决方法：\n\n"
-                    "1. 手动下载FFmpeg（最可靠）\n"
-                    "   访问：https://www.gyan.dev/ffmpeg/builds/\n"
-                    "   下载并解压到项目的ffmpeg文件夹\n\n"
-                    "2. 使用浏览按钮指定ffmpeg.exe路径\n\n"
-                    "3. 查看详细指南：FFMPEG_MANUAL_DOWNLOAD.md\n\n"
-                    "如果问题持续，可能是网络问题，请稍后重试或使用手动下载。"
-                )
-                msg.exec()
-
-    def test_ffmpeg(self):
-        """测试FFmpeg"""
-        if not FFMPEG_MANAGER_AVAILABLE:
-            QMessageBox.warning(self, "功能不可用", "FFmpeg管理器未正确加载")
-            return
-
-        try:
-            # 先保存当前配置
-            self.save_ffmpeg_config()
-
-            # 获取FFmpeg管理器
-            manager = get_ffmpeg_manager()
-
-            # 获取版本信息
-            version = manager.get_version()
-            mode = manager.get_mode()
-
-            info_text = f"✅ FFmpeg测试成功！\n\n"
-            info_text += f"模式: {mode}\n"
-            info_text += f"版本: {version}\n"
-
-            if mode == 'exe':
-                info_text += f"路径: {manager.get_ffmpeg_exe()}\n"
-
-            QMessageBox.information(self, "FFmpeg测试", info_text)
-            self.update_ffmpeg_status()
-        except Exception as e:
-            QMessageBox.warning(self, "测试失败", f"FFmpeg测试失败:\n{str(e)}\n\n请检查FFmpeg配置或尝试下载FFmpeg。")
-            self.ffmpeg_status_label.setText(f"状态: 测试失败 - {str(e)[:30]}")
-            self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
-
-    def on_ffmpeg_mode_changed(self, index):
-        """FFmpeg模式改变时的处理"""
-        # 根据模式启用/禁用路径输入
-        if index == 2:  # exe模式
-            self.ffmpeg_path_input.setEnabled(True)
-            self.browse_ffmpeg_button.setEnabled(True)
-        else:
-            self.ffmpeg_path_input.setEnabled(True)
-            self.browse_ffmpeg_button.setEnabled(True)
-
-    def update_ffmpeg_status(self):
-        """更新FFmpeg状态显示"""
-        if not FFMPEG_MANAGER_AVAILABLE:
-            self.ffmpeg_status_label.setText("状态: FFmpeg管理器不可用")
-            self.ffmpeg_status_label.setStyleSheet("color: red; padding: 5px;")
-            return
-
-        try:
-            manager = get_ffmpeg_manager()
-            mode = manager.get_mode()
-            version = manager.get_version()
-
-            status_text = f"状态: {mode}模式 - {version[:50]}"
-            self.ffmpeg_status_label.setText(status_text)
-            self.ffmpeg_status_label.setStyleSheet("color: green; padding: 5px;")
-        except Exception as e:
-            self.ffmpeg_status_label.setText(f"状态: 未初始化或出错")
-            self.ffmpeg_status_label.setStyleSheet("color: orange; padding: 5px;")
-
-    # ========== 结束FFmpeg相关方法 ==========
-
-    # ========== yt-dlp相关方法 ==========
-
-    def load_ytdlp_config(self):
-        """加载yt-dlp配置"""
-        if not YTDLP_MANAGER_AVAILABLE:
-            self.ytdlp_status_label.setText("状态: yt-dlp管理器不可用")
-            self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
-            return
-
-        try:
-            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ytdlp_config.json")
-            if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-
-                    mode = config.get('ytdlp_mode', 'auto')
-                    mode_map = {'auto': 0, 'python': 1, 'exe': 2}
-                    self.ytdlp_mode_combo.setCurrentIndex(mode_map.get(mode, 0))
-
-                    self.ytdlp_path_input.setText(config.get('ytdlp_exe_path', ''))
-                    self.ytdlp_prefer_exe_checkbox.setChecked(config.get('prefer_exe', False))
-                    self.ytdlp_auto_download_checkbox.setChecked(config.get('download_on_missing', True))
-
-            self.update_ytdlp_status()
-        except Exception as e:
-            self.ytdlp_status_label.setText(f"状态: 加载配置失败 - {str(e)}")
-            self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
-
-    def save_ytdlp_config(self):
-        """保存yt-dlp配置"""
-        if not YTDLP_MANAGER_AVAILABLE:
-            return
-
-        try:
-            mode_index = self.ytdlp_mode_combo.currentIndex()
-            mode_map = {0: 'auto', 1: 'python', 2: 'exe'}
-            mode = mode_map.get(mode_index, 'auto')
-
-            config = {
-                'ytdlp_mode': mode,
-                'ytdlp_exe_path': self.ytdlp_path_input.text().strip(),
-                'download_on_missing': self.ytdlp_auto_download_checkbox.isChecked(),
-                'prefer_exe': self.ytdlp_prefer_exe_checkbox.isChecked()
-            }
-
-            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ytdlp_config.json")
-
-            existing_config = {}
-            if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    existing_config = json.load(f)
-
-            existing_config.update(config)
-
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(existing_config, f, indent=4, ensure_ascii=False)
-
-            global _ytdlp_manager_instance
-            from ytdlp_manager import _ytdlp_manager_instance
-            _ytdlp_manager_instance = None
-
-            self.update_ytdlp_status()
-        except Exception as e:
-            QMessageBox.warning(self, "保存失败", f"保存yt-dlp配置失败: {str(e)}")
-
-    def browse_ytdlp_path(self):
-        """浏览yt-dlp可执行文件"""
-        file_filter = "可执行文件 (*.exe);;所有文件 (*.*)" if platform.system() == "Windows" else "所有文件 (*)"
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择yt-dlp可执行文件", "", file_filter
-        )
-        if file_path:
-            self.ytdlp_path_input.setText(file_path)
-            self.ytdlp_mode_combo.setCurrentIndex(2)
-
-    def download_ytdlp(self):
-        """下载yt-dlp"""
-        if not YTDLP_MANAGER_AVAILABLE:
-            QMessageBox.warning(self, "功能不可用", "yt-dlp管理器未正确加载")
-            return
-
-        reply = QMessageBox.question(
-            self, "下载yt-dlp",
-            "确定要下载yt-dlp吗？\n\n这将从GitHub官方源下载yt-dlp到项目目录。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                self.ytdlp_status_label.setText("状态: 正在下载yt-dlp...")
-                self.ytdlp_status_label.setStyleSheet("color: blue; padding: 5px;")
-                QApplication.processEvents()
-
-                manager = get_ytdlp_manager()
-                downloaded_path = manager._download_ytdlp()
-
-                if downloaded_path:
-                    # 自动配置下载后的路径
-                    self.ytdlp_path_input.setText(downloaded_path)
-                    # 自动切换到exe模式
-                    self.ytdlp_mode_combo.setCurrentIndex(2)
-                    # 保存配置
-                    self.save_ytdlp_config()
-
-                    self.ytdlp_status_label.setText("状态: yt-dlp下载成功")
-                    self.ytdlp_status_label.setStyleSheet("color: green; padding: 5px;")
-                    QMessageBox.information(
-                        self, "下载成功",
-                        f"yt-dlp已成功下载到项目目录\n\n路径: {downloaded_path}\n\n已自动配置为exe模式"
-                    )
-
-                    global _ytdlp_manager_instance
-                    from ytdlp_manager import _ytdlp_manager_instance
-                    _ytdlp_manager_instance = None
-                    self.update_ytdlp_status()
-                else:
-                    self.ytdlp_status_label.setText("状态: yt-dlp下载失败")
-                    self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
-
-                    msg = QMessageBox(self)
-                    msg.setIcon(QMessageBox.Icon.Warning)
-                    msg.setWindowTitle("下载失败")
-                    msg.setText("yt-dlp自动下载失败")
-                    msg.setInformativeText("请尝试以下解决方法：")
-                    msg.setDetailedText(
-                        "方法1：手动下载\n"
-                        "访问：https://github.com/yt-dlp/yt-dlp/releases\n"
-                        "下载对应系统的yt-dlp文件并放到项目ytdlp文件夹\n\n"
-                        "方法2：指定已有的yt-dlp\n"
-                        "点击'浏览'选择yt-dlp路径\n\n"
-                        "方法3：使用Python库\n"
-                        "pip install yt-dlp"
-                    )
-                    msg.exec()
-            except Exception as e:
-                self.ytdlp_status_label.setText(f"状态: 下载失败 - {str(e)}")
-                self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
-                QMessageBox.warning(self, "下载错误", f"下载yt-dlp时出错:\n{str(e)}")
-
-    def test_ytdlp(self):
-        """测试yt-dlp"""
-        if not YTDLP_MANAGER_AVAILABLE:
-            QMessageBox.warning(self, "功能不可用", "yt-dlp管理器未正确加载")
-            return
-
-        try:
-            self.save_ytdlp_config()
-            manager = get_ytdlp_manager()
-
-            version = manager.get_version()
-            mode = manager.get_mode()
-
-            info_text = f"✅ yt-dlp测试成功！\n\n"
-            info_text += f"模式: {mode}\n"
-            info_text += f"版本: {version}\n"
-
-            if mode == 'exe':
-                info_text += f"路径: {manager.get_ytdlp_exe()}\n"
-
-            QMessageBox.information(self, "yt-dlp测试", info_text)
-            self.update_ytdlp_status()
-        except Exception as e:
-            QMessageBox.warning(self, "测试失败", f"yt-dlp测试失败:\n{str(e)}")
-            self.ytdlp_status_label.setText(f"状态: 测试失败")
-            self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
-
-    def on_ytdlp_mode_changed(self, index):
-        """yt-dlp模式改变时的处理"""
-        self.ytdlp_path_input.setEnabled(True)
-        self.browse_ytdlp_button.setEnabled(True)
-
-    def update_ytdlp_status(self):
-        """更新yt-dlp状态显示"""
-        if not YTDLP_MANAGER_AVAILABLE:
-            self.ytdlp_status_label.setText("状态: yt-dlp管理器不可用")
-            self.ytdlp_status_label.setStyleSheet("color: red; padding: 5px;")
-            return
-
-        try:
-            manager = get_ytdlp_manager()
-            mode = manager.get_mode()
-            version = manager.get_version()
-
-            status_text = f"状态: {mode}模式 - v{version}"
-            self.ytdlp_status_label.setText(status_text)
-            self.ytdlp_status_label.setStyleSheet("color: green; padding: 5px;")
-        except Exception as e:
-            self.ytdlp_status_label.setText(f"状态: 未初始化或出错")
-            self.ytdlp_status_label.setStyleSheet("color: orange; padding: 5px;")
-
-    # ========== 结束yt-dlp相关方法 ==========
-
+            print(f"❌ 保存配置文件时出错: {str(e)}")
+            print(f"   路径: {env_path}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.warning(self, "设置保存错误", f"保存设置时出错: {str(e)}\n\n请检查文件权限和磁盘空间")
+    
     def browse_cookies_file(self):
         """浏览cookies文件"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -4999,13 +4662,15 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 return
             
             # 创建任务参数
+            model, base_url = self.get_model_and_base_url()
+
             task = {
                 "type": "youtube",
                 "params": {
                     "youtube_url": youtube_url,
-                    "model": None,
+                    "model": model,
                     "api_key": None,
-                    "base_url": None,
+                    "base_url": base_url,
                     "whisper_model_size": self.whisper_model_combo.currentText(),
                     "stream": True,
                     "summary_dir": "summaries",
@@ -6302,13 +5967,15 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             return
         
         # 创建任务参数
+        model, base_url = self.get_model_and_base_url()
+
         task = {
             "type": "local_audio",
             "params": {
                 "audio_path": audio_path,
-                "model": None,
+                "model": model,
                 "api_key": None,
-                "base_url": None,
+                "base_url": base_url,
                 "whisper_model_size": self.audio_whisper_model_combo.currentText(),
                 "stream": True,
                 "summary_dir": "summaries",
@@ -6344,13 +6011,15 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         
         # 创建任务参数
         task_type = "local_video_batch" if self.video_batch_mode_radio.isChecked() else "local_video"
+        model, base_url = self.get_model_and_base_url()
+
         task = {
             "type": task_type,
             "params": {
                 "video_path": video_path,
-                "model": None,
+                "model": model,
                 "api_key": None,
-                "base_url": None,
+                "base_url": base_url,
                 "whisper_model_size": self.video_whisper_model_combo.currentText(),
                 "stream": True,
                 "summary_dir": "summaries",
@@ -6378,15 +6047,17 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         if not text_path:
             QMessageBox.warning(self, "输入错误", "请先选择文本文件")
             return
-        
+
         # 创建任务参数
+        model, base_url = self.get_model_and_base_url()
+
         task = {
             "type": "local_text",
             "params": {
                 "text_path": text_path,
-                "model": None,
+                "model": model,
                 "api_key": None,
-                "base_url": None,
+                "base_url": base_url,
                 "stream": True,
                 "summary_dir": "summaries",
                 "custom_prompt": None,
@@ -6426,13 +6097,15 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             return
         
         # 创建任务参数
+        model, base_url = self.get_model_and_base_url()
+
         task = {
             "type": "batch",
             "params": {
                 "youtube_urls": urls,
-                "model": None,
+                "model": model,
                 "api_key": None,
-                "base_url": None,
+                "base_url": base_url,
                 "whisper_model_size": self.batch_whisper_model_combo.currentText(),
                 "stream": True,
                 "summary_dir": "summaries",
