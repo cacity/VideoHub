@@ -1160,6 +1160,34 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
     # 根据下载类型选择默认输出目录（统一挂在 workspace/ 下）
     if output_dir is None:
         output_dir = DOWNLOADS_DIR if audio_only else VIDEOS_DIR
+
+    # 在尝试下载前，先检查是否已经下载过同一URL对应的本地文件
+    try:
+        existing_list = list_downloaded_videos()
+    except Exception:
+        existing_list = []
+
+    def _has_expected_type(path: str, audio_only_flag: bool) -> bool:
+        """根据扩展名粗略判断文件类型是否匹配当前需求（视频/音频）。"""
+        ext = os.path.splitext(path)[1].lower()
+        if audio_only_flag:
+            return ext in [".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac"]
+        else:
+            return ext in [".mp4", ".mkv", ".webm", ".mov", ".flv", ".avi"]
+
+    for item in existing_list:
+        if item.get("url") != youtube_url:
+            continue
+        recorded_path = item.get("file_path")
+        if not recorded_path:
+            continue
+        # 支持相对路径和绝对路径
+        candidate_path = recorded_path
+        if not os.path.isabs(candidate_path):
+            candidate_path = os.path.abspath(candidate_path)
+        if os.path.exists(candidate_path) and _has_expected_type(candidate_path, audio_only):
+            print(f"检测到本地已存在下载文件，跳过重新下载: {candidate_path}")
+            return candidate_path
     
     # 创建输出目录
     Path(output_dir).mkdir(parents=True, exist_ok=True)
