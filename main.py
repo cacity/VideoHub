@@ -403,6 +403,24 @@ from youtube_transcriber import (
     is_youtube_playlist_url, process_youtube_playlist
 )
 
+# 统一的工作目录与子目录
+from paths_config import (
+    WORKSPACE_DIR,
+    VIDEOS_DIR,
+    DOWNLOADS_DIR,
+    SUBTITLES_DIR,
+    TRANSCRIPTS_DIR,
+    SUMMARIES_DIR,
+    VIDEOS_WITH_SUBTITLES_DIR,
+    NATIVE_SUBTITLES_DIR,
+    TWITTER_DOWNLOADS_DIR,
+    BILIBILI_DOWNLOADS_DIR,
+    DOUYIN_DOWNLOADS_DIR,
+    LIVE_DOWNLOADS_DIR,
+    DIRECTORY_MAP,
+    DEFAULT_SUMMARY_DIR,
+)
+
 # 自定义URL输入框类，支持右键直接粘贴
 class URLLineEdit(QLineEdit):
     """支持右键直接粘贴和鼠标悬停显示视频信息的URL输入框"""
@@ -657,7 +675,7 @@ class WorkerThread(QThread):
         base_url = self.params.get("base_url", None)
         whisper_model_size = self.params.get("whisper_model_size", "medium")
         stream = self.params.get("stream", True)
-        summary_dir = self.params.get("summary_dir", "summaries")
+        summary_dir = self.params.get("summary_dir", DEFAULT_SUMMARY_DIR)
         download_video = self.params.get("download_video", False)
         custom_prompt = self.params.get("custom_prompt", None)
         template_path = self.params.get("template_path", None)
@@ -855,7 +873,7 @@ class WorkerThread(QThread):
             import os
 
             # 创建下载目录
-            download_dir = "twitter_downloads"
+            download_dir = TWITTER_DOWNLOADS_DIR
             os.makedirs(download_dir, exist_ok=True)
 
             # 配置yt-dlp选项
@@ -902,7 +920,7 @@ class WorkerThread(QThread):
             import os
 
             # 创建下载目录
-            download_dir = "bilibili_downloads"
+            download_dir = BILIBILI_DOWNLOADS_DIR
             os.makedirs(download_dir, exist_ok=True)
 
             # 配置yt-dlp选项
@@ -942,7 +960,7 @@ class WorkerThread(QThread):
         base_url = self.params.get("base_url", None)
         whisper_model_size = self.params.get("whisper_model_size", "medium")
         stream = self.params.get("stream", True)
-        summary_dir = self.params.get("summary_dir", "summaries")
+        summary_dir = self.params.get("summary_dir", DEFAULT_SUMMARY_DIR)
         custom_prompt = self.params.get("custom_prompt", None)
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
@@ -991,7 +1009,7 @@ class WorkerThread(QThread):
         base_url = self.params.get("base_url", None)
         whisper_model_size = self.params.get("whisper_model_size", "medium")
         stream = self.params.get("stream", True)
-        summary_dir = self.params.get("summary_dir", "summaries")
+        summary_dir = self.params.get("summary_dir", DEFAULT_SUMMARY_DIR)
         custom_prompt = self.params.get("custom_prompt", None)
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
@@ -1043,7 +1061,7 @@ class WorkerThread(QThread):
         base_url = self.params.get("base_url", None)
         whisper_model_size = self.params.get("whisper_model_size", "medium")
         stream = self.params.get("stream", True)
-        summary_dir = self.params.get("summary_dir", "summaries")
+        summary_dir = self.params.get("summary_dir", DEFAULT_SUMMARY_DIR)
         custom_prompt = self.params.get("custom_prompt", None)
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
@@ -1106,7 +1124,7 @@ class WorkerThread(QThread):
         api_key = self.params.get("api_key", None)
         base_url = self.params.get("base_url", None)
         stream = self.params.get("stream", True)
-        summary_dir = self.params.get("summary_dir", "summaries")
+        summary_dir = self.params.get("summary_dir", DEFAULT_SUMMARY_DIR)
         custom_prompt = self.params.get("custom_prompt", None)
         template_path = self.params.get("template_path", None)
         
@@ -1150,7 +1168,7 @@ class WorkerThread(QThread):
         base_url = self.params.get("base_url", None)
         whisper_model_size = self.params.get("whisper_model_size", "medium")
         stream = self.params.get("stream", True)
-        summary_dir = self.params.get("summary_dir", "summaries")
+        summary_dir = self.params.get("summary_dir", DEFAULT_SUMMARY_DIR)
         download_video = self.params.get("download_video", False)
         custom_prompt = self.params.get("custom_prompt", None)
         template_path = self.params.get("template_path", None)
@@ -2341,7 +2359,7 @@ class MainWindow(QMainWindow):
         
         # 下载目录选择
         dir_label = QLabel("下载目录:")
-        self.douyin_download_dir_input = QLineEdit("douyin_downloads")
+        self.douyin_download_dir_input = QLineEdit(DOUYIN_DOWNLOADS_DIR)
         self.douyin_browse_dir_button = QPushButton("浏览...")
         
         advanced_options_layout.addWidget(quality_label)
@@ -2534,7 +2552,7 @@ class MainWindow(QMainWindow):
         # 保存路径
         path_label = QLabel("保存路径:")
         self.live_path_input = QLineEdit()
-        self.live_path_input.setText("./live_downloads")
+        self.live_path_input.setText(LIVE_DOWNLOADS_DIR)
         browse_path_btn = QPushButton("浏览")
         browse_path_btn.clicked.connect(self.browse_live_path)
         
@@ -2949,19 +2967,27 @@ class MainWindow(QMainWindow):
         return tab
     
     def open_directory(self, directory_path):
-        """打开指定目录"""
-        if not os.path.exists(directory_path):
-            QMessageBox.warning(self, "目录不存在", f"目录 '{directory_path}' 不存在")
+        """打开指定目录
+        
+        directory_path 可以是逻辑名称（如 'videos'、'downloads'），
+        也可以是实际路径。逻辑名称会通过 DIRECTORY_MAP 映射到
+        workspace/ 下的真实目录。
+        """
+        # 将逻辑目录名映射到实际路径
+        real_path = DIRECTORY_MAP.get(directory_path, directory_path)
+        
+        if not os.path.exists(real_path):
+            QMessageBox.warning(self, "目录不存在", f"目录 '{real_path}' 不存在")
             return
         
         try:
             system = platform.system()
             if system == "Windows":
-                os.startfile(directory_path)
+                os.startfile(real_path)
             elif system == "Darwin":  # macOS
-                subprocess.run(["open", directory_path])
+                subprocess.run(["open", real_path])
             else:  # Linux
-                subprocess.run(["xdg-open", directory_path])
+                subprocess.run(["xdg-open", real_path])
         except Exception as e:
             QMessageBox.critical(self, "打开失败", f"无法打开目录: {str(e)}")
     
@@ -2999,7 +3025,7 @@ class MainWindow(QMainWindow):
         
         self.cleanup_log.append("🔍 开始扫描文件...")
         
-        # 定义目录和对应的文件扩展名
+        # 定义目录和对应的文件扩展名（逻辑名称，实际路径通过 DIRECTORY_MAP 解析到 workspace/ 下）
         directories = {
             "videos": ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"],
             "downloads": ["*.mp3", "*.wav", "*.m4a", "*.aac", "*.ogg"],
@@ -3014,14 +3040,15 @@ class MainWindow(QMainWindow):
         total_size = 0
         
         for dir_name, extensions in directories.items():
-            if not os.path.exists(dir_name):
+            dir_path = DIRECTORY_MAP.get(dir_name, dir_name)
+            if not os.path.exists(dir_path):
                 continue
                 
             dir_files = 0
             dir_size = 0
             
             for ext in extensions:
-                pattern = os.path.join(dir_name, "**", ext)
+                pattern = os.path.join(dir_path, "**", ext)
                 files = glob.glob(pattern, recursive=True)
                 for file_path in files:
                     try:
@@ -3054,7 +3081,7 @@ class MainWindow(QMainWindow):
         import glob
         import shutil
         
-        # 获取选中的清理类型
+        # 获取选中的清理类型（使用逻辑目录名，实际路径通过 DIRECTORY_MAP 映射）
         cleanup_types = []
         if self.cleanup_videos_cb.isChecked():
             cleanup_types.append(("videos", ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"]))
@@ -3091,16 +3118,17 @@ class MainWindow(QMainWindow):
         total_size = 0
         
         for dir_name, extensions in cleanup_types:
-            if not os.path.exists(dir_name):
-                self.cleanup_log.append(f"⚠️ 目录不存在: {dir_name}")
+            dir_path = DIRECTORY_MAP.get(dir_name, dir_name)
+            if not os.path.exists(dir_path):
+                self.cleanup_log.append(f"⚠️ 目录不存在: {dir_path}")
                 continue
             
-            self.cleanup_log.append(f"🔄 正在清理 {dir_name} 目录...")
+            self.cleanup_log.append(f"🔄 正在清理 {dir_path} 目录...")
             dir_deleted = 0
             dir_size = 0
             
             for ext in extensions:
-                pattern = os.path.join(dir_name, "**", ext)
+                pattern = os.path.join(dir_path, "**", ext)
                 files = glob.glob(pattern, recursive=True)
                 
                 for file_path in files:
@@ -3115,7 +3143,7 @@ class MainWindow(QMainWindow):
             
             if dir_deleted > 0:
                 size_mb = dir_size / (1024 * 1024)
-                self.cleanup_log.append(f"📁 {dir_name}: 删除了 {dir_deleted} 个文件, 释放 {size_mb:.1f} MB")
+                self.cleanup_log.append(f"📁 {dir_path}: 删除了 {dir_deleted} 个文件, 释放 {size_mb:.1f} MB")
                 total_deleted += dir_deleted
                 total_size += dir_size
             else:
@@ -3123,10 +3151,11 @@ class MainWindow(QMainWindow):
         
         # 清理空目录
         for dir_name, _ in cleanup_types:
-            if os.path.exists(dir_name):
+            dir_path = DIRECTORY_MAP.get(dir_name, dir_name)
+            if os.path.exists(dir_path):
                 try:
                     # 删除空的子目录
-                    for root, dirs, files in os.walk(dir_name, topdown=False):
+                    for root, dirs, files in os.walk(dir_path, topdown=False):
                         for d in dirs:
                             dir_path = os.path.join(root, d)
                             try:
@@ -3447,7 +3476,7 @@ class MainWindow(QMainWindow):
             "base_url": base_url,  # 使用配置的API基础URL
             "whisper_model_size": self.whisper_model_combo.currentText(),
             "stream": True,
-            "summary_dir": "summaries",
+            "summary_dir": DEFAULT_SUMMARY_DIR,
             "download_video": self.download_video_checkbox.isChecked(),
             "custom_prompt": None,  # 使用默认提示词
             "template_path": None,  # 使用默认模板
@@ -3571,7 +3600,7 @@ class MainWindow(QMainWindow):
             "base_url": base_url,  # 使用配置的API基础URL
             "whisper_model_size": self.video_whisper_model_combo.currentText(),
             "stream": True,
-            "summary_dir": "summaries",
+            "summary_dir": DEFAULT_SUMMARY_DIR,
             "custom_prompt": None,  # 使用默认提示词
             "template_path": None,  # 使用默认模板
             "generate_subtitles": self.video_generate_subtitles_checkbox.isChecked(),
@@ -3681,7 +3710,7 @@ class MainWindow(QMainWindow):
             "base_url": base_url,  # 使用配置的API基础URL
             "whisper_model_size": self.audio_whisper_model_combo.currentText(),
             "stream": True,
-            "summary_dir": "summaries",
+            "summary_dir": DEFAULT_SUMMARY_DIR,
             "custom_prompt": None,  # 使用默认提示词
             "template_path": None,  # 使用默认模板
             "generate_subtitles": self.audio_generate_subtitles_checkbox.isChecked(),
@@ -3756,7 +3785,7 @@ class MainWindow(QMainWindow):
             "api_key": None,  # 使用环境变量中的API密钥
             "base_url": base_url,  # 使用配置的API基础URL
             "stream": True,
-            "summary_dir": "summaries",
+            "summary_dir": DEFAULT_SUMMARY_DIR,
             "custom_prompt": None,  # 使用默认提示词
             "template_path": None,  # 使用默认模板
         }
@@ -3843,7 +3872,7 @@ class MainWindow(QMainWindow):
             "base_url": base_url,  # 使用配置的API基础URL
             "whisper_model_size": self.batch_whisper_model_combo.currentText(),
             "stream": True,
-            "summary_dir": "summaries",
+            "summary_dir": DEFAULT_SUMMARY_DIR,
             "download_video": self.batch_download_video_checkbox.isChecked(),
             "custom_prompt": None,  # 使用默认提示词
             "template_path": None,  # 使用默认模板
@@ -4673,7 +4702,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                     "base_url": base_url,
                     "whisper_model_size": self.whisper_model_combo.currentText(),
                     "stream": True,
-                    "summary_dir": "summaries",
+                    "summary_dir": DEFAULT_SUMMARY_DIR,
                     "download_video": self.download_video_checkbox.isChecked(),
                     "custom_prompt": None,
                     "template_path": None,
@@ -5978,7 +6007,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "base_url": base_url,
                 "whisper_model_size": self.audio_whisper_model_combo.currentText(),
                 "stream": True,
-                "summary_dir": "summaries",
+                "summary_dir": DEFAULT_SUMMARY_DIR,
                 "custom_prompt": None,
                 "template_path": None,
                 "generate_subtitles": self.audio_generate_subtitles_checkbox.isChecked(),
@@ -6022,7 +6051,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "base_url": base_url,
                 "whisper_model_size": self.video_whisper_model_combo.currentText(),
                 "stream": True,
-                "summary_dir": "summaries",
+                "summary_dir": DEFAULT_SUMMARY_DIR,
                 "custom_prompt": None,
                 "template_path": None,
                 "generate_subtitles": self.video_generate_subtitles_checkbox.isChecked(),
@@ -6059,7 +6088,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "api_key": None,
                 "base_url": base_url,
                 "stream": True,
-                "summary_dir": "summaries",
+                "summary_dir": DEFAULT_SUMMARY_DIR,
                 "custom_prompt": None,
                 "template_path": None
             },
@@ -6108,7 +6137,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "base_url": base_url,
                 "whisper_model_size": self.batch_whisper_model_combo.currentText(),
                 "stream": True,
-                "summary_dir": "summaries",
+                "summary_dir": DEFAULT_SUMMARY_DIR,
                 "download_video": download_video,
                 "custom_prompt": None,
                 "template_path": None,

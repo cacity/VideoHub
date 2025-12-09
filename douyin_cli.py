@@ -13,7 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from douyin import DouyinDownloader, DouyinConfig
 
-def download_douyin_video(url, output_dir="douyin_downloads"):
+from paths_config import DOUYIN_DOWNLOADS_DIR
+
+
+def download_douyin_video(url, output_dir=DOUYIN_DOWNLOADS_DIR):
     """下载抖音视频"""
     
     print("=" * 60)
@@ -126,8 +129,8 @@ def main():
     )
     
     parser.add_argument("url", help="抖音视频链接")
-    parser.add_argument("-o", "--output", default="douyin_downloads", 
-                       help="下载目录 (默认: douyin_downloads)")
+    parser.add_argument("-o", "--output", default=DOUYIN_DOWNLOADS_DIR, 
+                       help="下载目录 (默认: workspace/douyin_downloads)")
     
     args = parser.parse_args()
     

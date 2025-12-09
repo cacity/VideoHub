@@ -14,14 +14,28 @@ import subprocess
 import json
 import time
 
+# 统一的工作目录和各类子目录（videos/downloads/subtitles/...）
+from paths_config import (
+    WORKSPACE_DIR,
+    VIDEOS_DIR,
+    DOWNLOADS_DIR,
+    SUBTITLES_DIR,
+    TRANSCRIPTS_DIR,
+    SUMMARIES_DIR,
+    VIDEOS_WITH_SUBTITLES_DIR,
+    NATIVE_SUBTITLES_DIR,
+    DIRECTORY_MAP,
+    DEFAULT_SUMMARY_DIR,
+)
+
 # Load environment variables from .env file
 load_dotenv()
 
-# 创建模板目录
+# 创建模板目录（模板通常较小，仍然放在项目根目录下）
 TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
-# 创建日志目录
+# 创建日志目录（日志体积较小，保留在项目根目录下）
 LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 
@@ -468,33 +482,111 @@ def check_youtube_subtitles(youtube_url, cookies_file=None):
             subtitles = info.get('subtitles', {})
             auto_subtitles = info.get('automatic_captions', {})
             
+            manual_languages = list(subtitles.keys())
+            auto_languages = list(auto_subtitles.keys())
+            all_languages = list(set(manual_languages + auto_languages))
+
             result = {
                 'title': info.get('title', 'Unknown'),
                 'has_manual_subtitles': bool(subtitles),
                 'has_auto_subtitles': bool(auto_subtitles),
-                'manual_languages': list(subtitles.keys()),
-                'auto_languages': list(auto_subtitles.keys()),
-                'all_languages': list(set(list(subtitles.keys()) + list(auto_subtitles.keys()))),
-                'preferred_languages': []
+                'manual_languages': manual_languages,
+                'auto_languages': auto_languages,
+                'all_languages': all_languages,
+                'preferred_languages': [],
+                # 下面几个字段用于在上层快速选择“最佳”字幕语言
+                'best_manual_language': None,
+                'best_auto_language': None,
+                'best_overall_language': None,
+                'best_is_auto': False,
             }
             
-            # 按优先级排序语言（中文、英文、其他）
-            priority_langs = ['zh', 'zh-Hans', 'zh-CN', 'en', 'en-US']
+            # 通用语言优先级（越靠前优先级越高）
+            # 主要用于手动字幕，自动字幕会单独再做一层优先级处理
+            priority_groups = [
+                ['zh-CN', 'zh-Hans', 'zh'],
+                ['zh-TW', 'zh-Hant'],
+                ['en-US', 'en-GB', 'en'],
+            ]
+
+            def pick_best_manual(langs):
+                """从手动字幕语言列表中挑选最合适的语言"""
+                if not langs:
+                    return None
+                # 先按通用优先组匹配（支持前缀/包含匹配）
+                for group in priority_groups:
+                    for target in group:
+                        for lang in langs:
+                            if lang == target:
+                                return lang
+                            # 处理类似 zh-Hans, en-US 这种前缀/后缀情况
+                            if lang.startswith(target) or target.startswith(lang.split('-')[0]):
+                                return lang
+                # 如果没有命中优先组，就返回列表中的第一个
+                return langs[0]
+
+            def pick_best_auto(langs):
+                """
+                从自动字幕语言列表中挑选最合适的语言
+                为了避免 YouTube 对机器翻译字幕(如 zh-Hans) 的 429 限流，
+                这里优先选择英文原始轨道(en-orig/en)，再考虑中文等其他语言。
+                """
+                if not langs:
+                    return None
+
+                # 1) 优先使用英文原始/英文自动字幕
+                for key in ['en-orig', 'en', 'en-US', 'en-GB']:
+                    if key in langs:
+                        return key
+
+                # 2) 其次考虑中文自动字幕（如果真的没有英文轨道）
+                for key in ['zh-CN', 'zh-Hans', 'zh', 'zh-TW', 'zh-Hant']:
+                    if key in langs:
+                        return key
+
+                # 3) 其他语言按原有优先规则挑选
+                for group in priority_groups:
+                    for target in group:
+                        for lang in langs:
+                            if lang == target:
+                                return lang
+                            if lang.startswith(target) or target.startswith(lang.split('-')[0]):
+                                return lang
+
+                # 4) 仍然没命中就返回第一个
+                return langs[0]
+
+            best_manual = pick_best_manual(manual_languages)
+            best_auto = pick_best_auto(auto_languages)
+
+            # 组装 preferred_languages（旧字段，保持兼容）
+            # 先按优先级放入中文/英文，再放入其他语言
+            priority_langs = ['zh', 'zh-Hans', 'zh-CN', 'zh-TW', 'zh-Hant', 'en', 'en-US', 'en-GB']
             for lang in priority_langs:
-                if lang in result['all_languages']:
+                if lang in all_languages and lang not in result['preferred_languages']:
                     result['preferred_languages'].append(lang)
-            
-            # 添加其他可用语言
-            for lang in result['all_languages']:
+            for lang in all_languages:
                 if lang not in result['preferred_languages']:
                     result['preferred_languages'].append(lang)
-            
+
+            # 记录最佳语言信息，供上层逻辑直接使用
+            result['best_manual_language'] = best_manual
+            result['best_auto_language'] = best_auto
+
+            # 整体最佳：优先手动字幕，如果没有再用自动字幕
+            if best_manual:
+                result['best_overall_language'] = best_manual
+                result['best_is_auto'] = False
+            elif best_auto:
+                result['best_overall_language'] = best_auto
+                result['best_is_auto'] = True
+
             return result
             
     except Exception as e:
         return {'error': str(e)}
 
-def download_youtube_subtitles(youtube_url, output_dir="native_subtitles", 
+def download_youtube_subtitles(youtube_url, output_dir=NATIVE_SUBTITLES_DIR, 
                              languages=['zh', 'en'], download_auto=True, cookies_file=None):
     """
     下载YouTube视频的原生字幕
@@ -678,6 +770,8 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN'):
             # SRT格式: 序号 -> 时间轴 -> 文本 -> 空行
             blocks = re.split(r'\n\s*\n', content.strip())
             translated_blocks = []
+            # 收集用于生成ASS样式字幕的数据: (timestamp_line, original_text, translated_text)
+            ass_segments = []
             
             for i, block in enumerate(blocks):
                 if not block.strip():
@@ -699,11 +793,81 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN'):
                     # 重新组合
                     translated_block = f"{seq_num}\n{timestamp}\n{translated_text}"
                     translated_blocks.append(translated_block)
+                    
+                     # 记录用于ASS的双语内容
+                    ass_segments.append((timestamp, subtitle_text, translated_text))
             
             # 写入翻译后的文件
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write('\n\n'.join(translated_blocks))
                 f.write('\n')
+
+            # 额外生成带样式的ASS字幕（中英双语）
+            if ass_segments:
+                def srt_time_to_ass(ts: str) -> str:
+                    """将 SRT 时间戳 HH:MM:SS,mmm 转为 ASS 时间戳 H:MM:SS.cc"""
+                    ts = ts.strip()
+                    hms, ms = ts.split(',')
+                    h, m, s = hms.split(':')
+                    h = int(h)
+                    m = int(m)
+                    s = int(s)
+                    ms = int(ms)
+                    cs = int(ms / 10)  # 毫秒转厘秒
+                    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+                ass_path = os.path.join(file_dir, f"{name}_{lang_suffix}.ass")
+                with open(ass_path, 'w', encoding='utf-8') as ass_file:
+                    # ASS 文件头和样式，尽量与 Whisper 转录生成的双语字幕保持一致
+                    ass_file.write("[Script Info]\n")
+                    ass_file.write("Title: 双语字幕\n")
+                    ass_file.write("Original Script: MemoAI\n")
+                    ass_file.write("Original Translation: MemoAI\n")
+                    ass_file.write("WrapStyle: 0\n")
+                    ass_file.write("Synch Point:1\n")
+                    ass_file.write("Collisions:Normal\n")
+                    ass_file.write("ScaledBorderAndShadow:Yes\n\n")
+                    ass_file.write("[V4+ Styles]\n")
+                    ass_file.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
+                    ass_file.write("Style: Default, Fira Code, 10, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
+                    ass_file.write("Style: Secondary, 思源黑体 CN, 16,&H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
+                    ass_file.write("[Events]\n")
+                    ass_file.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+
+                    for timestamp, original_text, translated_text in ass_segments:
+                        try:
+                            start_str, end_str = timestamp.split('-->')
+                            start_ass = srt_time_to_ass(start_str)
+                            end_ass = srt_time_to_ass(end_str)
+                        except Exception:
+                            # 时间解析失败时跳过该条
+                            continue
+
+                        original_text = original_text or ""
+                        translated_text = translated_text or ""
+
+                        # 处理换行和特殊字符，避免ASS解析问题
+                        def escape_ass(text: str) -> str:
+                            return (
+                                text.replace('\\', '\\\\')
+                                .replace('{', '\\{')
+                                .replace('}', '\\}')
+                                .replace('\n', '\\N')
+                            )
+
+                        escaped_orig = escape_ass(original_text.strip())
+                        escaped_trans = escape_ass(translated_text.strip())
+
+                        # 原文使用 Default 样式
+                        if escaped_orig:
+                            ass_file.write(
+                                f"Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{escaped_orig}\n"
+                            )
+                        # 翻译使用 Secondary 样式（中文）
+                        if escaped_trans:
+                            ass_file.write(
+                                f"Dialogue: 0,{start_ass},{end_ass},Secondary,,0,0,0,,{escaped_trans}\n"
+                            )
         
         else:
             # 对于其他格式，简单地翻译文本内容
@@ -993,9 +1157,9 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
     :param cookies_file: cookies文件路径，用于访问需要登录的内容
     :return: 下载文件的完整路径
     """
-    # 根据下载类型选择默认输出目录
+    # 根据下载类型选择默认输出目录（统一挂在 workspace/ 下）
     if output_dir is None:
-        output_dir = "downloads" if audio_only else "videos"
+        output_dir = DOWNLOADS_DIR if audio_only else VIDEOS_DIR
     
     # 创建输出目录
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -1143,7 +1307,7 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
         print(f"下载失败详细信息: {str(e)}")
         raise Exception(f"下载失败: {str(e)}")
 
-def download_youtube_audio(youtube_url, output_dir="downloads", cookies_file=None):
+def download_youtube_audio(youtube_url, output_dir=DOWNLOADS_DIR, cookies_file=None):
     """
     从YouTube视频中下载音频
     :param youtube_url: YouTube视频链接
@@ -1196,7 +1360,7 @@ def download_youtube_audio(youtube_url, output_dir="downloads", cookies_file=Non
     except Exception as e:
         raise Exception(f"下载音频失败: {str(e)}")
 
-def extract_audio_from_video(video_path, output_dir="downloads"):
+def extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR):
     """
     从视频文件中提取音频
     :param video_path: 视频文件路径
@@ -1313,7 +1477,7 @@ def extract_audio_from_video(video_path, output_dir="downloads"):
         print(error_msg)
         raise Exception(error_msg)
 
-def transcribe_audio_unified(audio_path, output_dir="transcripts", subtitle_dir="subtitles", model_size="small", generate_subtitles=False, translate_to_chinese=True, source_language=None):
+def transcribe_audio_unified(audio_path, output_dir=TRANSCRIPTS_DIR, subtitle_dir=SUBTITLES_DIR, model_size="small", generate_subtitles=False, translate_to_chinese=True, source_language=None):
     """
     统一的音频转录函数：一次转录，同时生成文本和字幕文件
     :param audio_path: 音频文件路径
@@ -1489,7 +1653,7 @@ def transcribe_audio_unified(audio_path, output_dir="transcripts", subtitle_dir=
             torch.cuda.empty_cache()
         raise Exception(f"音频转录失败: {str(e)}")
 
-def transcribe_audio_to_text(audio_path, output_dir="transcripts", model_size="small"):
+def transcribe_audio_to_text(audio_path, output_dir=TRANSCRIPTS_DIR, model_size="small"):
     """
     使用Whisper将音频转换为文本（支持CUDA加速）
     :param audio_path: 音频文件路径
@@ -1553,7 +1717,7 @@ def transcribe_audio_to_text(audio_path, output_dir="transcripts", model_size="s
             torch.cuda.empty_cache()
         raise Exception(f"音频转文字失败: {str(e)}")
 
-def transcribe_only(audio_path, whisper_model_size="medium", output_dir="transcripts"):
+def transcribe_only(audio_path, whisper_model_size="medium", output_dir=TRANSCRIPTS_DIR):
     """
     仅将音频转换为文本，不进行摘要生成
     
@@ -1578,7 +1742,7 @@ def transcribe_only(audio_path, whisper_model_size="medium", output_dir="transcr
     print(f"音频转文本完成，文本已保存至: {text_path}")
     return text_path
 
-def create_bilingual_subtitles(audio_path, output_dir="subtitles", model_size="tiny", translate_to_chinese=True, source_language=None):
+def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size="tiny", translate_to_chinese=True, source_language=None):
     """
     创建双语字幕文件
     :param audio_path: 音频文件路径
@@ -1810,7 +1974,7 @@ def create_bilingual_subtitles(audio_path, output_dir="subtitles", model_size="t
         traceback.print_exc()
         return None
 
-def embed_subtitles_to_video(video_path, subtitle_path, output_dir="videos_with_subtitles"):
+def embed_subtitles_to_video(video_path, subtitle_path, output_dir=VIDEOS_WITH_SUBTITLES_DIR):
     """
     将字幕嵌入到视频中
     
@@ -2124,7 +2288,7 @@ def embed_subtitles_to_video(video_path, subtitle_path, output_dir="videos_with_
         print(f"处理过程中出现错误: {str(e)}")
         raise Exception(f"嵌入字幕失败: {str(e)}")
 
-def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, enable_transcription=True, generate_article=True):
+def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, enable_transcription=True, generate_article=True):
     """
     处理本地音频文件的主函数
     :param audio_path: 本地音频文件路径
@@ -2187,7 +2351,7 @@ def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whi
         print(f"处理过程中出现错误: {str(e)}")
         return None
 
-def process_local_video(video_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None):
+def process_local_video(video_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None):
     """
     处理本地视频文件的主函数
     :param video_path: 本地视频文件路径
@@ -2214,15 +2378,15 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
             return "SKIPPED"
             
         print("1. 从视频中提取音频...")
-        audio_path = extract_audio_from_video(video_path, output_dir="downloads")
+        audio_path = extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR)
         print(f"音频已提取到: {audio_path}")
         
         print("2. 开始转录音频...")
         # 使用统一转录函数，一次性完成转录和字幕生成
         text_path, subtitle_path = transcribe_audio_unified(
             audio_path, 
-            output_dir="transcripts",
-            subtitle_dir="subtitles",
+            output_dir=TRANSCRIPTS_DIR,
+            subtitle_dir=SUBTITLES_DIR,
             model_size=whisper_model_size,
             generate_subtitles=generate_subtitles,
             translate_to_chinese=translate_to_chinese,
@@ -2240,7 +2404,7 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
                 video_with_subtitles = embed_subtitles_to_video(
                     video_path,
                     subtitle_path,
-                    output_dir="videos_with_subtitles"
+                    output_dir=VIDEOS_WITH_SUBTITLES_DIR
                 )
                 if video_with_subtitles:
                     print(f"带字幕的视频已生成: {video_with_subtitles}")
@@ -2272,7 +2436,7 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
         print(f"处理过程中出现错误: {str(e)}")
         return None
 
-def process_local_videos_batch(input_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None):
+def process_local_videos_batch(input_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None):
     """
     批量处理本地视频文件（支持单个文件或目录）
     :param input_path: 输入路径（可以是单个视频文件或包含视频文件的目录）
@@ -2421,7 +2585,7 @@ def process_local_videos_batch(input_path, model=None, api_key=None, base_url=No
     
     return results
 
-def summarize_text(text_path, model=None, api_key=None, base_url=None, stream=False, output_dir="summaries", custom_prompt=None, template_path=None):
+def summarize_text(text_path, model=None, api_key=None, base_url=None, stream=False, output_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None):
     """
     使用大语言模型总结文本内容
     :param text_path: 文本文件路径
@@ -3131,7 +3295,7 @@ def check_cookies_file(cookies_file):
     print(f"检测到有效的cookies文件: {cookies_file}")
     return cookies_file
 
-def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True):
+def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True):
     """
     处理YouTube视频的主函数
     :param youtube_url: YouTube视频链接
@@ -3156,9 +3320,9 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
         # 验证cookies文件
         valid_cookies_file = check_cookies_file(cookies_file)
         
-        # 0. 优先检查原生字幕（如果启用了此选项且只需要生成文章摘要）
+        # 0. 优先检查原生字幕（如果启用了此选项，且需要生成文章或字幕/翻译）
         native_subtitle_text = None
-        if prefer_native_subtitles and generate_article:
+        if prefer_native_subtitles and (generate_article or generate_subtitles or embed_subtitles or translate_to_chinese):
             print("0. 检查视频是否有原生字幕...")
             subtitle_info = check_youtube_subtitles(youtube_url, valid_cookies_file)
             
@@ -3170,93 +3334,146 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                 else:
                     print(f"检查字幕时出错: {subtitle_info['error']}")
                     print("将继续使用传统方式...")
-            elif subtitle_info.get('has_manual_subtitles'):
-                print("发现人工制作的字幕，优先使用原生字幕")
-                print(f"可用的手动字幕语言: {subtitle_info['manual_languages']}")
-                
-                # 下载人工字幕
-                subtitle_files = download_youtube_subtitles(
-                    youtube_url, 
-                    output_dir="native_subtitles",
-                    languages=subtitle_info.get('preferred_languages', ['zh', 'en'])[:2], 
-                    download_auto=False,
-                    cookies_file=valid_cookies_file
-                )
-                
-                if subtitle_files:
-                    # 使用第一个下载的字幕文件
-                    subtitle_file = subtitle_files[0]
-                    print(f"使用字幕文件: {subtitle_file}")
-                    native_subtitle_text = convert_subtitle_to_text(subtitle_file)
-                    
-                    if native_subtitle_text:
-                        print("成功从原生字幕获取文本，跳过音频下载和转录步骤")
-                        # 直接进入文章生成步骤
-                        if generate_article:
-                            print(f"\n直接使用原生字幕生成文章摘要...")
-                            summary_path = generate_summary(
-                                native_subtitle_text, 
-                                model, 
-                                api_key, 
-                                base_url, 
-                                stream, 
-                                summary_dir, 
-                                custom_prompt, 
-                                template_path
-                            )
-                            if summary_path:
-                                print(f"摘要已生成: {summary_path}")
-                                return summary_path
-                            else:
-                                print("摘要生成失败")
-                        
-                        # 如果只需要字幕，返回字幕文件路径
-                        return subtitle_file
-                        
-            elif subtitle_info.get('has_auto_subtitles'):
-                print("发现自动生成的字幕，尝试使用")
-                print(f"可用的自动字幕语言: {subtitle_info['auto_languages']}")
-                
-                # 下载自动字幕
-                subtitle_files = download_youtube_subtitles(
-                    youtube_url, 
-                    output_dir="native_subtitles",
-                    languages=subtitle_info.get('preferred_languages', ['zh', 'en'])[:2], 
-                    download_auto=True,
-                    cookies_file=valid_cookies_file
-                )
-                
-                if subtitle_files:
-                    # 使用第一个下载的字幕文件
-                    subtitle_file = subtitle_files[0]
-                    print(f"使用自动字幕文件: {subtitle_file}")
-                    native_subtitle_text = convert_subtitle_to_text(subtitle_file)
-                    
-                    if native_subtitle_text:
-                        print("成功从自动字幕获取文本，跳过音频下载和转录步骤")
-                        # 直接进入文章生成步骤
-                        if generate_article:
-                            print(f"\n直接使用自动字幕生成文章摘要...")
-                            summary_path = generate_summary(
-                                native_subtitle_text, 
-                                model, 
-                                api_key, 
-                                base_url, 
-                                stream, 
-                                summary_dir, 
-                                custom_prompt, 
-                                template_path
-                            )
-                            if summary_path:
-                                print(f"摘要已生成: {summary_path}")
-                                return summary_path
-                            else:
-                                print("摘要生成失败，继续使用Whisper转录")
-                        else:
-                            # 如果只需要字幕，返回字幕文件路径  
-                            return subtitle_file
             else:
-                print("该视频没有可用的原生字幕，将使用Whisper转录")
+                # 如果既没有手动字幕也没有自动字幕，直接给出提示
+                if not subtitle_info.get('has_manual_subtitles') and not subtitle_info.get('has_auto_subtitles'):
+                    print("该视频没有可用的原生字幕，将使用Whisper转录")
+                else:
+                    used_native_subtitles = False
+
+                    # 先尝试手动字幕
+                    if subtitle_info.get('has_manual_subtitles'):
+                        print("发现人工制作的字幕，优先使用原生字幕")
+                        print(f"可用的手动字幕语言: {subtitle_info['manual_languages']}")
+
+                        # 优先使用 check_youtube_subtitles 计算出的最佳手动字幕语言
+                        best_manual_lang = subtitle_info.get('best_manual_language')
+                        if best_manual_lang:
+                            manual_langs = [best_manual_lang]
+                        else:
+                            # 退回到旧逻辑：使用 preferred_languages 的前两个
+                            manual_langs = subtitle_info.get('preferred_languages', ['zh', 'en'])[:2]
+
+                        print(f"尝试下载手动字幕语言: {manual_langs}")
+
+                        subtitle_files = download_youtube_subtitles(
+                            youtube_url,
+                            output_dir=NATIVE_SUBTITLES_DIR,
+                            languages=manual_langs,
+                            download_auto=False,
+                            cookies_file=valid_cookies_file
+                        )
+
+                        if subtitle_files:
+                            subtitle_file = subtitle_files[0]
+                            print(f"使用手动字幕文件: {subtitle_file}")
+
+                            # 如有需要，先基于原生字幕生成中文字幕文件
+                            translated_subtitle_file = None
+                            if translate_to_chinese:
+                                try:
+                                    translated_subtitle_file = translate_subtitle_file(subtitle_file, target_language="zh-CN")
+                                    if translated_subtitle_file:
+                                        print(f"已基于手动原生字幕生成中文字幕文件: {translated_subtitle_file}")
+                                except Exception as e:
+                                    print(f"⚠️ 基于手动原生字幕生成中文字幕失败: {str(e)}")
+
+                            native_subtitle_text = convert_subtitle_to_text(subtitle_file)
+
+                            if native_subtitle_text:
+                                used_native_subtitles = True
+                                print("成功从手动原生字幕获取文本，跳过音频下载和转录步骤")
+                                if generate_article:
+                                    print(f"\n直接使用原生字幕生成文章摘要...")
+                                    summary_path = generate_summary(
+                                        native_subtitle_text,
+                                        model,
+                                        api_key,
+                                        base_url,
+                                        stream,
+                                        summary_dir,
+                                        custom_prompt,
+                                        template_path
+                                    )
+                                    if summary_path:
+                                        print(f"摘要已生成: {summary_path}")
+                                        return summary_path
+                                    else:
+                                        print("摘要生成失败，将退回到音频转写")
+                                # 如果只需要字幕，优先返回已翻译的中文字幕，其次返回原始字幕
+                                return translated_subtitle_file or subtitle_file
+                            else:
+                                print("从手动字幕转换文本失败，将尝试其他方式")
+                        else:
+                            print("未能成功下载任何手动字幕文件")
+
+                    # 如果手动字幕不可用或处理失败，尝试自动字幕
+                    if not used_native_subtitles and subtitle_info.get('has_auto_subtitles'):
+                        print("尝试使用自动生成的字幕")
+                        print(f"可用的自动字幕语言: {subtitle_info['auto_languages']}")
+
+                        best_auto_lang = subtitle_info.get('best_auto_language')
+                        if best_auto_lang:
+                            auto_langs = [best_auto_lang]
+                        else:
+                            auto_langs = subtitle_info.get('preferred_languages', ['zh', 'en'])[:2]
+
+                        print(f"尝试下载自动字幕语言: {auto_langs}")
+
+                        subtitle_files = download_youtube_subtitles(
+                            youtube_url,
+                            output_dir=NATIVE_SUBTITLES_DIR,
+                            languages=auto_langs,
+                            download_auto=True,
+                            cookies_file=valid_cookies_file
+                        )
+
+                        if subtitle_files:
+                            subtitle_file = subtitle_files[0]
+                            print(f"使用自动字幕文件: {subtitle_file}")
+
+                            # 如有需要，先基于原生自动字幕生成中文字幕文件
+                            translated_subtitle_file = None
+                            if translate_to_chinese:
+                                try:
+                                    translated_subtitle_file = translate_subtitle_file(subtitle_file, target_language="zh-CN")
+                                    if translated_subtitle_file:
+                                        print(f"已基于自动原生字幕生成中文字幕文件: {translated_subtitle_file}")
+                                except Exception as e:
+                                    print(f"⚠️ 基于自动原生字幕生成中文字幕失败: {str(e)}")
+
+                            native_subtitle_text = convert_subtitle_to_text(subtitle_file)
+
+                            if native_subtitle_text:
+                                print("成功从自动字幕获取文本，跳过音频下载和转录步骤")
+                                if generate_article:
+                                    print(f"\n直接使用自动字幕生成文章摘要...")
+                                    summary_path = generate_summary(
+                                        native_subtitle_text,
+                                        model,
+                                        api_key,
+                                        base_url,
+                                        stream,
+                                        summary_dir,
+                                        custom_prompt,
+                                        template_path
+                                    )
+                                    if summary_path:
+                                        print(f"摘要已生成: {summary_path}")
+                                        return summary_path
+                                    else:
+                                        print("摘要生成失败，继续使用Whisper转录")
+                                else:
+                                    # 如果只需要字幕，优先返回已翻译的中文字幕，其次返回原始字幕
+                                    return translated_subtitle_file or subtitle_file
+                            else:
+                                print("从自动字幕转换文本失败，将退回到音频转写")
+                        else:
+                            print("未能成功下载任何自动字幕文件")
+
+                    # 如果走到这里，说明即使存在原生字幕也没能成功使用
+                    if subtitle_info.get('has_manual_subtitles') or subtitle_info.get('has_auto_subtitles'):
+                        print("⚠️  检测到原生字幕，但下载或解析失败，将改用Whisper转录")
         
         print("1. 开始下载YouTube内容...")
         audio_path = None
@@ -3265,7 +3482,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
             print("下载视频（最佳画质）...")
             try:
                 # 使用videos目录存储视频
-                file_path = download_youtube_video(youtube_url, output_dir="videos", audio_only=False, cookies_file=valid_cookies_file)
+                file_path = download_youtube_video(youtube_url, output_dir=VIDEOS_DIR, audio_only=False, cookies_file=valid_cookies_file)
                 print(f"视频已下载到: {file_path}")
                 
                 # 检查文件是否存在
@@ -3275,20 +3492,20 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                 # 如果下载的是视频，我们需要提取音频
                 print("从视频中提取音频...")
                 try:
-                    audio_path = extract_audio_from_video(file_path, output_dir="downloads")
+                    audio_path = extract_audio_from_video(file_path, output_dir=DOWNLOADS_DIR)
                     print(f"音频已提取到: {audio_path}")
                 except Exception as e:
                     print(f"从视频提取音频失败: {str(e)}")
                     print("尝试直接下载音频作为备选方案...")
-                    audio_path = download_youtube_video(youtube_url, output_dir="downloads", audio_only=True, cookies_file=valid_cookies_file)
+                    audio_path = download_youtube_video(youtube_url, output_dir=DOWNLOADS_DIR, audio_only=True, cookies_file=valid_cookies_file)
             except Exception as e:
                 print(f"视频下载失败: {str(e)}")
                 print("尝试改为下载音频...")
-                audio_path = download_youtube_video(youtube_url, output_dir="downloads", audio_only=True, cookies_file=valid_cookies_file)
+                audio_path = download_youtube_video(youtube_url, output_dir=DOWNLOADS_DIR, audio_only=True, cookies_file=valid_cookies_file)
         else:
             print("仅下载音频...")
             # 使用downloads目录存储音频
-            audio_path = download_youtube_video(youtube_url, output_dir="downloads", audio_only=True, cookies_file=valid_cookies_file)
+            audio_path = download_youtube_video(youtube_url, output_dir=DOWNLOADS_DIR, audio_only=True, cookies_file=valid_cookies_file)
         
         # 如果只下载视频而不需要转录或生成文章，直接返回
         if not enable_transcription and not generate_article and download_video:
@@ -3306,8 +3523,8 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
             # 使用统一转录函数，一次性完成转录和字幕生成
             text_path, subtitle_path = transcribe_audio_unified(
                 audio_path, 
-                output_dir="transcripts",
-                subtitle_dir="subtitles",
+                output_dir=TRANSCRIPTS_DIR,
+                subtitle_dir=SUBTITLES_DIR,
                 model_size=whisper_model_size,
                 generate_subtitles=(generate_subtitles or embed_subtitles),
                 translate_to_chinese=translate_to_chinese
@@ -3338,7 +3555,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
             video_with_subtitles = embed_subtitles_to_video(
                 video_path,
                 subtitle_path,
-                output_dir="videos_with_subtitles"
+                output_dir=VIDEOS_WITH_SUBTITLES_DIR
             )
             if video_with_subtitles:
                 print(f"带字幕的视频已生成: {video_with_subtitles}")
@@ -3429,7 +3646,7 @@ def cleanup_files(directories_to_clean=None, dry_run=False):
     import os
     import glob
     
-    # 默认的清理目录和文件类型
+    # 默认的清理目录和文件类型（逻辑名称），实际路径通过 DIRECTORY_MAP 解析到 workspace 子目录
     all_directories = {
         "videos": ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"],
         "downloads": ["*.mp3", "*.wav", "*.m4a", "*.aac", "*.ogg"],
@@ -3457,20 +3674,22 @@ def cleanup_files(directories_to_clean=None, dry_run=False):
         if dir_name not in all_directories:
             print(f"⚠️ 未知目录: {dir_name}")
             continue
-            
-        if not os.path.exists(dir_name):
-            print(f"⚠️ 目录不存在: {dir_name}")
+
+        # 将逻辑目录名映射到实际路径（workspace/xxx）
+        dir_path = DIRECTORY_MAP.get(dir_name, dir_name)
+        if not os.path.exists(dir_path):
+            print(f"⚠️ 目录不存在: {dir_path}")
             continue
         
         extensions = all_directories[dir_name]
-        print(f"\n🔄 {'预览' if dry_run else '清理'} {dir_name} 目录...")
+        print(f"\n🔄 {'预览' if dry_run else '清理'} {dir_path} 目录...")
         
         dir_files = 0
         dir_size = 0
         deleted_files = []
         
         for ext in extensions:
-            pattern = os.path.join(dir_name, "**", ext)
+            pattern = os.path.join(dir_path, "**", ext)
             files = glob.glob(pattern, recursive=True)
             
             for file_path in files:
@@ -3493,7 +3712,7 @@ def cleanup_files(directories_to_clean=None, dry_run=False):
         if not dry_run and dir_files > 0:
             # 清理空目录
             try:
-                for root, dirs, files in os.walk(dir_name, topdown=False):
+                for root, dirs, files in os.walk(dir_path, topdown=False):
                     for d in dirs:
                         dir_path = os.path.join(root, d)
                         try:

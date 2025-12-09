@@ -21,6 +21,8 @@ import re
 import json
 import requests
 
+from paths_config import LIVE_DOWNLOADS_DIR
+
 # 添加live_recorder到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'live_recorder'))
 
@@ -53,7 +55,7 @@ class LiveRecorderConfig:
                 'max_request': '10',
                 'video_format': 'ts',
                 'video_quality': '原画',
-                'save_path': './live_downloads',
+                'save_path': LIVE_DOWNLOADS_DIR,
                 'show_ffmpeg_log': '0',
                 'save_log': '1'
             },

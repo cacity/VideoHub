@@ -256,13 +256,14 @@ class APIServer:
         platform = data['platform']
         
         # 基础参数模板
+        from paths_config import DEFAULT_SUMMARY_DIR
         base_params = {
             "model": None,
             "api_key": None,
             "base_url": None,
             "whisper_model_size": "small",
             "stream": True,
-            "summary_dir": "summaries",
+            "summary_dir": DEFAULT_SUMMARY_DIR,
             "download_video": True,
             "custom_prompt": None,
             "template_path": None,
