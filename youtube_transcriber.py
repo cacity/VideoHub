@@ -3411,6 +3411,19 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                             if native_subtitle_text:
                                 used_native_subtitles = True
                                 print("成功从手动原生字幕获取文本，跳过音频下载和转录步骤")
+                                # 如果用户勾选了下载视频，这里也顺便下载/复用本地视频文件
+                                if download_video:
+                                    try:
+                                        print("\n检测到用户勾选了“下载视频”，将同时下载/复用视频文件...")
+                                        video_file_for_native = download_youtube_video(
+                                            youtube_url,
+                                            output_dir=VIDEOS_DIR,
+                                            audio_only=False,
+                                            cookies_file=valid_cookies_file,
+                                        )
+                                        print(f"视频文件已就绪: {video_file_for_native}")
+                                    except Exception as e:
+                                        print(f"⚠️ 使用原生字幕时下载视频失败: {str(e)}")
                                 if generate_article:
                                     print(f"\n直接使用原生字幕生成文章摘要...")
                                     summary_path = generate_summary(
@@ -3474,6 +3487,19 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
 
                             if native_subtitle_text:
                                 print("成功从自动字幕获取文本，跳过音频下载和转录步骤")
+                                # 如果用户勾选了下载视频，这里也顺便下载/复用视频文件
+                                if download_video:
+                                    try:
+                                        print("\n检测到用户勾选了“下载视频”，将同时下载/复用视频文件...")
+                                        video_file_for_native = download_youtube_video(
+                                            youtube_url,
+                                            output_dir=VIDEOS_DIR,
+                                            audio_only=False,
+                                            cookies_file=valid_cookies_file,
+                                        )
+                                        print(f"视频文件已就绪: {video_file_for_native}")
+                                    except Exception as e:
+                                        print(f"⚠️ 使用原生字幕时下载视频失败: {str(e)}")
                                 if generate_article:
                                     print(f"\n直接使用自动字幕生成文章摘要...")
                                     summary_path = generate_summary(
