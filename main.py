@@ -686,6 +686,7 @@ class WorkerThread(QThread):
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
         prefer_native_subtitles = self.params.get("prefer_native_subtitles", True)
+        show_translation_logs = self.params.get("show_translation_logs", True)
         
         # 重定向print输出到信号
         original_print = print
@@ -697,6 +698,13 @@ class WorkerThread(QThread):
         # 替换全局print函数
         import builtins
         builtins.print = custom_print
+
+        # 控制翻译日志详细程度
+        try:
+            from youtube_transcriber import set_translation_verbose
+            set_translation_verbose(show_translation_logs)
+        except Exception:
+            pass
         
         try:
             # 检查是否为抖音URL
@@ -1423,6 +1431,11 @@ class MainWindow(QMainWindow):
         )
         
         right_options.addLayout(model_layout)
+
+        # 翻译日志开关（仅影响字幕翻译等详细日志输出）
+        self.show_translation_logs_checkbox = QCheckBox("显示翻译日志")
+        self.show_translation_logs_checkbox.setChecked(True)  # 默认保持原有行为：显示详细日志
+        right_options.addWidget(self.show_translation_logs_checkbox)
         right_options.addLayout(cookies_layout)
         right_options.addStretch()
         
@@ -3486,7 +3499,8 @@ class MainWindow(QMainWindow):
             "cookies_file": self.cookies_path_input.text() if self.cookies_path_input.text() else None,
             "prefer_native_subtitles": self.prefer_native_subtitles_checkbox.isChecked(),
             "enable_transcription": self.enable_transcription_checkbox.isChecked(),
-            "generate_article": self.generate_article_checkbox.isChecked()
+            "generate_article": self.generate_article_checkbox.isChecked(),
+            "show_translation_logs": self.show_translation_logs_checkbox.isChecked(),
         }
         
         # 验证至少选择一个处理选项
@@ -5766,7 +5780,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         }
         
         config = DouyinConfig({
-            "download_dir": self.douyin_download_dir_input.text().strip() or "douyin_downloads",
+            "download_dir": self.douyin_download_dir_input.text().strip() or DOUYIN_DOWNLOADS_DIR,
             "video_quality": quality_map.get(self.douyin_quality_combo.currentText(), "high"),
             "download_cover": self.douyin_download_cover_cb.isChecked(),
             "download_music": self.douyin_download_music_cb.isChecked(),
@@ -6342,8 +6356,8 @@ class DownloadSubtitleThread(QThread):
             
             from youtube_transcriber import download_youtube_subtitles
             
-            # 创建输出目录
-            output_dir = "native_subtitles"
+            # 创建输出目录（统一使用 workspace/native_subtitles）
+            output_dir = NATIVE_SUBTITLES_DIR
             os.makedirs(output_dir, exist_ok=True)
             
             print(f"开始下载字幕: URL={self.url}, 语言={self.language}")

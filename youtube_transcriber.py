@@ -43,6 +43,17 @@ os.makedirs(LOGS_DIR, exist_ok=True)
 COMMAND_LOG_FILE = os.path.join(LOGS_DIR, "command_history.log")
 VIDEO_LIST_FILE = os.path.join(LOGS_DIR, "downloaded_videos.json")
 
+# 翻译日志开关：默认开启详细日志，GUI 可通过 set_translation_verbose 控制
+TRANSLATION_VERBOSE = True
+
+def set_translation_verbose(verbose: bool):
+    """
+    控制是否输出详细的翻译日志。
+    :param verbose: True 显示详细日志，False 仅显示简要进度
+    """
+    global TRANSLATION_VERBOSE
+    TRANSLATION_VERBOSE = bool(verbose)
+
 # 默认模板
 DEFAULT_TEMPLATE = """请将以下文本改写成一篇完整、连贯、专业的文章。
 
@@ -221,7 +232,8 @@ def translate_with_llm(text, target_language='zh-CN', source_language='auto'):
         proxy = os.getenv("PROXY", "")
 
         if not deepseek_api_key and not openai_api_key:
-            print("警告: 未配置大模型API密钥，使用谷歌翻译作为后备")
+            if TRANSLATION_VERBOSE:
+                print("警告: 未配置大模型API密钥，使用谷歌翻译作为后备")
             return translate_with_google(text, target_language, source_language)
 
         # 配置代理
@@ -325,10 +337,12 @@ def translate_text(text, target_language='zh-CN', source_language='auto'):
     translation_method = os.getenv("TRANSLATION_METHOD", "google")
 
     if translation_method == "llm":
-        print(f"使用大模型翻译: {text[:50]}...")
+        if TRANSLATION_VERBOSE:
+            print(f"使用大模型翻译: {text[:50]}...")
         return translate_with_llm(text, target_language, source_language)
     else:
-        print(f"使用谷歌翻译: {text[:50]}...")
+        if TRANSLATION_VERBOSE:
+            print(f"使用谷歌翻译: {text[:50]}...")
         return translate_with_google(text, target_language, source_language)
 
 def format_timestamp(seconds):
@@ -744,8 +758,9 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN'):
     try:
         import re
         
-        print(f"开始翻译字幕文件: {subtitle_path}")
-        print(f"目标语言: {target_language}")
+        if TRANSLATION_VERBOSE:
+            print(f"开始翻译字幕文件: {subtitle_path}")
+            print(f"目标语言: {target_language}")
         
         # 验证文件存在
         if not os.path.exists(subtitle_path):
@@ -783,18 +798,25 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN'):
                     seq_num = lines[0]
                     # 第二行是时间轴
                     timestamp = lines[1]
-                    # 剩余行是文本
-                    subtitle_text = '\n'.join(lines[2:])
+                    # 剩余行是文本（去掉块内的强制换行，合并成一句，避免一大堆很短的行）
+                    subtitle_text = ' '.join(l.strip() for l in lines[2:] if l.strip())
                     
                     # 翻译文本
-                    print(f"翻译字幕 {i+1}/{len(blocks)}: {subtitle_text[:50]}...")
+                    # 日志：详细模式下显示前50个字符；非详细模式下，定期输出进度
+                    if TRANSLATION_VERBOSE:
+                        print(f"翻译字幕 {i+1}/{len(blocks)}: {subtitle_text[:50]}...")
+                    elif i % 50 == 0:
+                        # 每隔约 50 条输出一次简要进度，避免刷屏
+                        print(f"翻译进度: {i+1}/{len(blocks)}")
                     translated_text = translate_text(subtitle_text, target_language)
+                    # 去掉翻译结果中的换行，避免同一时间段出现多行超短句
+                    translated_text = translated_text.replace('\n', ' ').strip()
                     
                     # 重新组合
                     translated_block = f"{seq_num}\n{timestamp}\n{translated_text}"
                     translated_blocks.append(translated_block)
                     
-                     # 记录用于ASS的双语内容
+                    # 记录用于ASS的双语内容
                     ass_segments.append((timestamp, subtitle_text, translated_text))
             
             # 写入翻译后的文件
@@ -875,7 +897,8 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN'):
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(translated_content)
         
-        print(f"翻译完成，输出文件: {output_path}")
+        if TRANSLATION_VERBOSE:
+            print(f"翻译完成，输出文件: {output_path}")
         return output_path
         
     except Exception as e:
