@@ -400,7 +400,7 @@ from youtube_transcriber import (
     check_cookies_file, process_youtube_video, show_download_history,
     process_youtube_videos_batch, process_local_text, create_template,
     list_templates, clean_markdown_formatting, load_template,
-    is_youtube_playlist_url, process_youtube_playlist
+    is_youtube_playlist_url, process_youtube_playlist, normalize_youtube_video_url
 )
 
 # 统一的工作目录与子目录
@@ -3473,8 +3473,17 @@ class MainWindow(QMainWindow):
             self.youtube_url_input.setFocus()
             return
         
-        # 清理URL中的空格和其他空白字符（常见于复制粘贴的抖音链接）
+        # 清理URL中的空格和其他空白字符（常见于复制粘贴的抖音/YouTube链接）
         youtube_url = youtube_url.replace(' ', '').replace('\t', '').replace('\n', '').replace('\r', '')
+
+        # 对YouTube视频链接进行规范化处理：
+        # 如果是 watch?v=xxx&list=...&index=... 这类“列表中的单个视频”，
+        # 自动提取真实的视频地址 https://www.youtube.com/watch?v=xxx
+        normalized_url = normalize_youtube_video_url(youtube_url)
+        if normalized_url != youtube_url:
+            youtube_url = normalized_url
+            # 在主线程中更新输入框，方便用户看到已经被清理过的真实视频地址
+            self.youtube_url_input.setText(youtube_url)
         
         # 设置代理环境变量
         os.environ["PROXY"] = self.proxy_input.text()

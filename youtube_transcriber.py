@@ -13,6 +13,7 @@ import html
 import subprocess
 import json
 import time
+from urllib.parse import urlparse, parse_qs
 
 # 统一的工作目录和各类子目录（videos/downloads/subtitles/...）
 from paths_config import (
@@ -748,7 +749,7 @@ def download_youtube_subtitles(youtube_url, output_dir=NATIVE_SUBTITLES_DIR,
         print(f"下载字幕时出错: {str(e)}")
         return []
 
-def translate_subtitle_file(subtitle_path, target_language='zh-CN'):
+def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=None, output_dir=None, keep_lang_suffix=True):
     """
     翻译字幕文件
     :param subtitle_path: 字幕文件路径
@@ -772,13 +773,30 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN'):
             content = f.read()
         
         # 生成输出文件名
-        file_dir = os.path.dirname(subtitle_path)
+        # 默认输出到原字幕同目录；如果指定了 output_dir，则优先使用
+        file_dir = output_dir if output_dir else os.path.dirname(subtitle_path)
+        os.makedirs(file_dir, exist_ok=True)
+
         file_name = os.path.basename(subtitle_path)
-        name, ext = os.path.splitext(file_name)
-        
-        # 添加语言标识
+        original_name, ext = os.path.splitext(file_name)
+
+        # 如果指定了基准名称（通常是视频文件名），则优先使用它作为输出文件的基础名
+        # 这样可以保证“视频名”和“字幕名”完全一致，只是扩展名不同
+        if base_name:
+            # base_name 既可以是完整路径，也可以是裸文件名；统一取 stem 再做一次清理
+            base_stem = Path(base_name).stem
+            name = sanitize_filename(base_stem)
+        else:
+            name = original_name
+
+        # 是否在文件名中保留语言后缀（例如 _zh_CN）
         lang_suffix = target_language.replace('-', '_')
-        output_path = os.path.join(file_dir, f"{name}_{lang_suffix}{ext}")
+        if keep_lang_suffix:
+            filename_base = f"{name}_{lang_suffix}"
+        else:
+            filename_base = name
+
+        output_path = os.path.join(file_dir, f"{filename_base}{ext}")
         
         # 解析SRT格式
         if ext.lower() == '.srt':
@@ -838,7 +856,7 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN'):
                     cs = int(ms / 10)  # 毫秒转厘秒
                     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
-                ass_path = os.path.join(file_dir, f"{name}_{lang_suffix}.ass")
+                ass_path = os.path.join(file_dir, f"{filename_base}.ass")
                 with open(ass_path, 'w', encoding='utf-8') as ass_file:
                     # ASS 文件头和样式，尽量与 Whisper 转录生成的双语字幕保持一致
                     ass_file.write("[Script Info]\n")
@@ -1528,7 +1546,16 @@ def extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR):
         print(error_msg)
         raise Exception(error_msg)
 
-def transcribe_audio_unified(audio_path, output_dir=TRANSCRIPTS_DIR, subtitle_dir=SUBTITLES_DIR, model_size="small", generate_subtitles=False, translate_to_chinese=True, source_language=None):
+def transcribe_audio_unified(
+    audio_path,
+    output_dir=TRANSCRIPTS_DIR,
+    subtitle_dir=SUBTITLES_DIR,
+    model_size="small",
+    generate_subtitles=False,
+    translate_to_chinese=True,
+    source_language=None,
+    output_basename=None,
+):
     """
     统一的音频转录函数：一次转录，同时生成文本和字幕文件
     :param audio_path: 音频文件路径
@@ -1538,6 +1565,7 @@ def transcribe_audio_unified(audio_path, output_dir=TRANSCRIPTS_DIR, subtitle_di
     :param generate_subtitles: 是否生成字幕文件
     :param translate_to_chinese: 是否翻译成中文
     :param source_language: 源语言
+    :param output_basename: 输出文件基础名（可选，一般传入视频文件路径以保证字幕名与视频名一致）
     :return: (text_path, subtitle_path) 元组，如果不生成字幕则 subtitle_path 为 None
     """
     # 创建输出目录
@@ -1580,7 +1608,12 @@ def transcribe_audio_unified(audio_path, output_dir=TRANSCRIPTS_DIR, subtitle_di
                 print(f"转录速度: {speed_ratio:.1f}x 实时速度（{total_duration:.1f}秒音频用时{transcribe_time:.2f}秒）")
         
         # 生成输出文件路径
-        base_name = Path(audio_path).stem
+        # 默认以音频文件名为基础；如果指定了 output_basename（通常是视频文件路径），则优先使用，
+        # 这样可以保证“视频文件名”和“字幕文件名”完全一致，只是扩展名不同。
+        if output_basename:
+            base_name = Path(output_basename).stem
+        else:
+            base_name = Path(audio_path).stem
         sanitized_name = sanitize_filename(base_name)
         
         # 保存转录文本
@@ -1599,10 +1632,10 @@ def transcribe_audio_unified(audio_path, output_dir=TRANSCRIPTS_DIR, subtitle_di
                 final_source_language = detected_language
             print(f"检测到的语言: {final_source_language}")
             
-            # 生成字幕文件路径
-            srt_path = os.path.join(subtitle_dir, f"{sanitized_name}_bilingual.srt")
-            vtt_path = os.path.join(subtitle_dir, f"{sanitized_name}_bilingual.vtt")
-            ass_path = os.path.join(subtitle_dir, f"{sanitized_name}_bilingual.ass")
+            # 生成字幕文件路径（与视频同名，无额外后缀，便于播放器自动匹配）
+            srt_path = os.path.join(subtitle_dir, f"{sanitized_name}.srt")
+            vtt_path = os.path.join(subtitle_dir, f"{sanitized_name}.vtt")
+            ass_path = os.path.join(subtitle_dir, f"{sanitized_name}.ass")
             
             # 创建SRT字幕文件
             with open(srt_path, "w", encoding="utf-8") as srt_file:
@@ -2366,12 +2399,13 @@ def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whi
         print("1. 开始转录音频...")
         # 使用统一转录函数，一次性完成转录和字幕生成
         text_path, subtitle_path = transcribe_audio_unified(
-            audio_path, 
-            output_dir="transcripts",
-            subtitle_dir="subtitles",
+            audio_path,
+            output_dir=TRANSCRIPTS_DIR,
+            subtitle_dir=SUBTITLES_DIR,
             model_size=whisper_model_size,
             generate_subtitles=generate_subtitles,
-            translate_to_chinese=translate_to_chinese
+            translate_to_chinese=translate_to_chinese,
+            output_basename=audio_path,
         )
         print(f"转录文本已保存到: {text_path}")
         if subtitle_path:
@@ -2435,13 +2469,14 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
         print("2. 开始转录音频...")
         # 使用统一转录函数，一次性完成转录和字幕生成
         text_path, subtitle_path = transcribe_audio_unified(
-            audio_path, 
+            audio_path,
             output_dir=TRANSCRIPTS_DIR,
             subtitle_dir=SUBTITLES_DIR,
             model_size=whisper_model_size,
             generate_subtitles=generate_subtitles,
             translate_to_chinese=translate_to_chinese,
-            source_language=source_language
+            source_language=source_language,
+            output_basename=video_path,
         )
         print(f"转录文本已保存到: {text_path}")
         
@@ -3419,11 +3454,27 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                             subtitle_file = subtitle_files[0]
                             print(f"使用手动字幕文件: {subtitle_file}")
 
-                            # 如有需要，先基于原生字幕生成中文字幕文件
+                            # 统一生成与视频同名的双语字幕文件（放在全局 subtitles 目录下）
                             translated_subtitle_file = None
                             if translate_to_chinese:
                                 try:
-                                    translated_subtitle_file = translate_subtitle_file(subtitle_file, target_language="zh-CN")
+                                    # 从原始字幕文件名中去掉语言后缀和 .auto 等标记，得到原始视频标题
+                                    subtitle_basename = os.path.splitext(os.path.basename(subtitle_file))[0]  # 去掉 .srt
+                                    if subtitle_basename.endswith('.auto'):
+                                        subtitle_basename = subtitle_basename[:-5]  # 去掉 .auto
+                                    video_title_base = subtitle_basename
+                                    if '.' in subtitle_basename:
+                                        possible_lang = subtitle_basename.split('.')[-1]
+                                        if len(possible_lang) <= 7 and all(c.isalpha() or c in ('-', '_') for c in possible_lang):
+                                            video_title_base = subtitle_basename[:-(len(possible_lang) + 1)]
+
+                                    translated_subtitle_file = translate_subtitle_file(
+                                        subtitle_file,
+                                        target_language="zh-CN",
+                                        base_name=video_title_base,
+                                        output_dir=SUBTITLES_DIR,
+                                        keep_lang_suffix=False,  # 与视频完全同名，只保留扩展名不同
+                                    )
                                     if translated_subtitle_file:
                                         print(f"已基于手动原生字幕生成中文字幕文件: {translated_subtitle_file}")
                                 except Exception as e:
@@ -3500,7 +3551,22 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                             translated_subtitle_file = None
                             if translate_to_chinese:
                                 try:
-                                    translated_subtitle_file = translate_subtitle_file(subtitle_file, target_language="zh-CN")
+                                    subtitle_basename = os.path.splitext(os.path.basename(subtitle_file))[0]
+                                    if subtitle_basename.endswith('.auto'):
+                                        subtitle_basename = subtitle_basename[:-5]
+                                    video_title_base = subtitle_basename
+                                    if '.' in subtitle_basename:
+                                        possible_lang = subtitle_basename.split('.')[-1]
+                                        if len(possible_lang) <= 7 and all(c.isalpha() or c in ('-', '_') for c in possible_lang):
+                                            video_title_base = subtitle_basename[:-(len(possible_lang) + 1)]
+
+                                    translated_subtitle_file = translate_subtitle_file(
+                                        subtitle_file,
+                                        target_language="zh-CN",
+                                        base_name=video_title_base,
+                                        output_dir=SUBTITLES_DIR,
+                                        keep_lang_suffix=False,
+                                    )
                                     if translated_subtitle_file:
                                         print(f"已基于自动原生字幕生成中文字幕文件: {translated_subtitle_file}")
                                 except Exception as e:
@@ -3598,13 +3664,19 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
         if enable_transcription:
             print("\n2. 开始转录音频...")
             # 使用统一转录函数，一次性完成转录和字幕生成
+            # 如果已经成功下载了视频，则以视频文件名作为输出基础名，保证字幕名与视频名一致
+            output_basename = None
+            if download_video and 'file_path' in locals() and os.path.exists(file_path):
+                output_basename = file_path
+
             text_path, subtitle_path = transcribe_audio_unified(
-                audio_path, 
+                audio_path,
                 output_dir=TRANSCRIPTS_DIR,
                 subtitle_dir=SUBTITLES_DIR,
                 model_size=whisper_model_size,
                 generate_subtitles=(generate_subtitles or embed_subtitles),
-                translate_to_chinese=translate_to_chinese
+                translate_to_chinese=translate_to_chinese,
+                output_basename=output_basename,
             )
             print(f"转录文本已保存到: {text_path}")
             if subtitle_path:
@@ -4003,13 +4075,67 @@ def is_youtube_playlist_url(url):
     if not url:
         return False
     
-    # YouTube播放列表的常见模式
-    playlist_patterns = [
-        'list=',  # 包含播放列表ID
-        'playlist?list=',  # 直接播放列表链接
-    ]
-    
-    return any(pattern in url for pattern in playlist_patterns)
+    try:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        path = parsed.path or ""
+
+        # 1) 明确的播放列表页面，例如:
+        #    https://www.youtube.com/playlist?list=PLxxxx
+        if path.startswith("/playlist") and "list" in query:
+            return True
+
+        # 2) 特殊情况: /watch?list=... 但没有 v 参数，这种也视为播放列表入口
+        if path.startswith("/watch") and "list" in query and "v" not in query:
+            return True
+
+        # 3) 其他情况（包括 watch?v=xxx&list=... ）都按“单个视频”处理
+        return False
+    except Exception:
+        # 回退到简单字符串判断（极端异常情况下）
+        return ("playlist?list=" in url) and ("v=" not in url)
+
+
+def normalize_youtube_video_url(url: str) -> str:
+    """
+    规范化YouTube单个视频链接：
+    - 对于包含播放列表参数的 watch 链接，只保留 v 参数，去掉 list/index 等
+      例如: https://www.youtube.com/watch?v=pdqofxJeBN8&list=XXX&index=2
+      规范化为: https://www.youtube.com/watch?v=pdqofxJeBN8
+    - 对于短链 youtu.be/xxx，去掉多余的查询参数
+    - 对于真正的播放列表链接（/playlist?list=...），保持不变
+    """
+    if not url:
+        return url
+
+    try:
+        parsed = urlparse(url)
+        host = (parsed.netloc or "").lower()
+        path = parsed.path or ""
+        query = parse_qs(parsed.query)
+
+        # 1) 非 YouTube 链接，直接返回
+        if "youtube.com" not in host and "youtu.be" not in host:
+            return url
+
+        # 2) 播放列表链接保持不变
+        if is_youtube_playlist_url(url):
+            return url
+
+        # 3) 短链形式: https://youtu.be/VIDEO_ID?xxx
+        if "youtu.be" in host and path:
+            # 去掉所有查询和片段，只保留基础短链
+            return f"{parsed.scheme}://{parsed.netloc}{path}"
+
+        # 4) 正常 watch 链接，只保留 v 参数
+        if "youtube.com" in host and path.startswith("/watch") and "v" in query:
+            video_id = query["v"][0]
+            # 返回标准化的 watch 链接，去掉其他多余参数（list、index、si 等）
+            return f"https://www.youtube.com/watch?v={video_id}"
+
+        return url
+    except Exception:
+        return url
 
 def process_youtube_playlist(playlist_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True):
     """
