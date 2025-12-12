@@ -127,8 +127,9 @@ class DouyinUtils:
         illegal_chars = r'[<>:"/\\|?*]'
         filename = re.sub(illegal_chars, '_', filename)
         
-        # 移除多余空格
-        filename = re.sub(r'\s+', ' ', filename).strip()
+        # 将所有空白字符折叠为一个下划线，避免文件名中出现空格
+        # 这样可以与 YouTube 下载部分使用的 sanitize_filename 行为保持一致
+        filename = re.sub(r'\s+', '_', filename).strip('_')
         
         # 限制长度
         if len(filename) > max_length:
