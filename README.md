@@ -4,7 +4,7 @@
 
 ## ✨ 加入讨论群
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251208090842654.png)
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215172334725.png)
 
 ## ✨ 核心功能
 
@@ -26,9 +26,55 @@
 
 正确安装插件后，在X/YouTube等视频网站，视频下方会出现下载按钮，后台运行主程序，点下载按钮，直接把下载任务加入到下载列表中。
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251105153043895.png)
+## 使用方法
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251105153238077.png)
+### 1.下载油管视频列表
+
+比如斯坦福CS231N这个视频列表：
+
+```
+https://www.youtube.com/playlist?list=PLoROMvodv4rOmsNzYBMe0gJY2XS8AQg16
+```
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215161701139.png)
+
+复制好视频列表连接，在软件`视频URL`中右键，会直接粘贴视频的连接。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215161801204.png)
+
+勾选下面的选项，可以下载视频，下载原生英文字幕，如果没有原生字幕，可以用whisper转语音转字幕，勾选生成字幕，同时让它翻译，这样就有了视频和双语字幕，方便学习研究。翻译字幕使用的是谷歌翻译，翻译时间会比较久，如果列表中文件比较多，可以先下载视频，视频下载结束后，再选中视频目录，进行单独的字幕提取和翻译。下图就是显示出来的双语字幕。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215162320373.png)
+
+### 2.批量翻译字幕
+
+在软件中选中本地视频，勾选批量处理，选中要处理的目录，把要处理的项勾选上，让它自己处理就可以了，这个列表共有18个视频，翻译花了好长时间。仅供参考。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215162505994.png)
+
+### 3.抖音视频下载
+
+在抖音PC版上点分享，复制连接，直接在`视频URL`中右键直接粘贴连接，勾选你要处理的项，可以下载和摘取摘要等。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215162943458.png)
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215171532304.png)
+
+### 4.下载X视频
+
+类似这种连接，页面有一个视频。
+
+```
+https://x.com/tanchibu37099/status/2000362448982102119
+```
+
+复制好连接，在`视频URL`中右键直接粘贴连接，即可完成下载。
+
+### 5.插件下载
+
+把项目中的`chrome_extension`整个文件夹拖到Edge或者Chrome浏览器中的扩展中，就完成了插件的安装。安装成功插件栏会有一个图标。在支持的视频正下方会有下载按钮，点击下载按钮，视频就会加入到视频下载列表中进行下载。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215172127386.png)
 
 
 
