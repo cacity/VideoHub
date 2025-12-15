@@ -1227,13 +1227,54 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
         if not os.path.isabs(candidate_path):
             candidate_path = os.path.abspath(candidate_path)
         if os.path.exists(candidate_path) and _has_expected_type(candidate_path, audio_only):
-            print(f"检测到本地已存在下载文件，跳过重新下载: {candidate_path}")
-            return candidate_path
+            # 如果有记录下来的标题，优先校验一下文件名与标题是否大致匹配，
+            # 避免历史上因为回退逻辑把别的视频文件错误地记录到当前URL。
+            title = item.get("title")
+            if title:
+                expected_stem = sanitize_filename(title)
+                # 为了对比公平，当前文件名也先做一遍相同的清理。
+                # 注意 file_path 可能是 Windows 风格路径（包含反斜杠），不能直接用 Path().stem。
+                tmp = candidate_path.replace("/", "\\")
+                basename = tmp.split("\\")[-1]
+                current_stem = sanitize_filename(os.path.splitext(basename)[0])
+                if expected_stem and current_stem and expected_stem != current_stem:
+                    print(
+                        "警告: 已有下载记录的文件名与标题不匹配，"
+                        f"可能是旧版本逻辑造成的错误映射，忽略此记录并重新下载: {candidate_path}"
+                    )
+                    continue
+
+            # 如果历史文件名中仍然包含空格或不安全字符，这里顺便做一次清理，
+            # 保证后续使用的都是 sanitize_filename 规则下的“干净文件名”。
+            dir_name = os.path.dirname(candidate_path)
+            stem = Path(candidate_path).stem
+            ext = os.path.splitext(candidate_path)[1]
+            sanitized_stem = sanitize_filename(stem)
+            final_path = candidate_path
+            if sanitized_stem != stem:
+                sanitized_path = os.path.join(dir_name, f"{sanitized_stem}{ext}")
+                try:
+                    os.rename(candidate_path, sanitized_path)
+                    print(f"已清理已有下载文件名: {candidate_path} -> {sanitized_path}")
+                    final_path = sanitized_path
+                    try:
+                        # 更新下载记录中的路径
+                        log_downloaded_video(youtube_url, final_path)
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"重命名已下载文件失败: {str(e)}")
+
+            print(f"检测到本地已存在下载文件，跳过重新下载: {final_path}")
+            return final_path
     
     # 创建输出目录
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     print(f"输出目录: {os.path.abspath(output_dir)}")
-    
+
+    # 记录下载前目录中已有的文件，后面回退时只在“新增文件”里查找，避免误把旧文件当成结果
+    existing_files = {str(p) for p in Path(output_dir).glob("*.*")}
+
     # 设置yt-dlp的选项
     if audio_only:
         # 音频下载选项
@@ -1285,11 +1326,20 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
     try:
         print(f"开始{'音频' if audio_only else '视频'}下载: {youtube_url}")
         print(f"下载选项: {'仅音频' if audio_only else '完整视频'}")
-        
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             # 获取视频信息
             print(f"正在获取视频信息...")
             info = ydl.extract_info(youtube_url, download=True)
+
+            # 尝试从info中获取实际导出的文件扩展名，避免与预期扩展名不一致导致找不到文件
+            try:
+                info_ext = info.get("ext")
+                if isinstance(info_ext, str) and info_ext:
+                    expected_ext = info_ext.lower()
+                    print(f"检测到实际文件扩展名: .{expected_ext}")
+            except Exception:
+                pass
             
             # 检查是否成功获取视频信息
             if not info:
@@ -1342,24 +1392,42 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
                 log_downloaded_video(youtube_url, original_path, info)
                 return original_path
             else:
-                # 尝试查找可能的文件
-                possible_files = list(Path(output_dir).glob(f"*.{expected_ext}"))
-                if possible_files:
-                    newest_file = max(possible_files, key=os.path.getctime)
-                    print(f"找到可能的文件: {newest_file}")
+                # 回退：只在“本次下载新增”的文件中查找，避免误把旧文件当成下载结果
+                all_files_after = list(Path(output_dir).glob("*.*"))
+                new_files = [p for p in all_files_after if str(p) not in existing_files]
+
+                newest_file = None
+                if new_files:
+                    # 优先选择与期望扩展名一致的新增文件
+                    expected_files = [
+                        p for p in new_files
+                        if p.suffix.lower().lstrip(".") == expected_ext.lower()
+                    ]
+                    candidate_files = expected_files or new_files
+                    newest_file = max(candidate_files, key=os.path.getctime)
+                    print(f"找到可能的本次下载文件: {newest_file}")
+                else:
+                    print("未检测到本次下载产生的新文件，可能下载失败或输出目录被其他程序修改")
+
+                if newest_file:
+                    final_path = str(newest_file)
+                    # 尝试将该文件重命名为清理后的标题，确保没有空格和不安全字符
+                    try:
+                        stem = Path(final_path).stem
+                        ext = Path(final_path).suffix
+                        sanitized_stem = sanitize_filename(stem)
+                        sanitized_candidate = os.path.join(output_dir, f"{sanitized_stem}{ext}")
+                        if sanitized_candidate != final_path:
+                            os.rename(final_path, sanitized_candidate)
+                            print(f"已重命名下载文件: {final_path} -> {sanitized_candidate}")
+                            final_path = sanitized_candidate
+                    except Exception as e:
+                        print(f"重命名下载文件失败: {str(e)}")
+
                     # 更新下载记录中的文件路径
-                    log_downloaded_video(youtube_url, str(newest_file), info)
-                    return str(newest_file)
-                
-                # 如果找不到预期扩展名的文件，尝试查找任何新文件
-                all_files = list(Path(output_dir).glob("*.*"))
-                if all_files:
-                    newest_file = max(all_files, key=os.path.getctime)
-                    print(f"找到可能的文件（不同扩展名）: {newest_file}")
-                    # 更新下载记录中的文件路径
-                    log_downloaded_video(youtube_url, str(newest_file), info)
-                    return str(newest_file)
-                
+                    log_downloaded_video(youtube_url, final_path, info)
+                    return final_path
+
                 raise Exception(f"下载成功但找不到文件，请检查 {output_dir} 目录")
     except yt_dlp.utils.DownloadError as e:
         print(f"下载失败详细信息: {str(e)}")
