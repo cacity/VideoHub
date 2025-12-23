@@ -1,0 +1,59 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# 轻量版依赖（No-Whisper / No-Torch）
+#
+# 说明：
+# - 不依赖 openai-whisper、torch、torchaudio 等大体积包
+# - 适合仅做：视频下载 / 原生字幕下载 / 字幕翻译 / 摘要 / GUI 的打包场景
+# - GUI 和大部分功能与完整版保持一致，只是语音转文字不会真正执行
+
+# GUI Framework
+PyQt6>=6.4.0,<7.0.0
+PyQt6-Qt6>=6.4.0,<7.0.0
+
+# Video Processing and Download
+yt-dlp>=2023.12.30
+
+# AI/LLM Integration（仅用于摘要/翻译，可选）
+openai>=1.0.0,<2.0.0
+
+# Web Scraping and Automation（抖音等功能需要）
+selenium>=4.15.0,<5.0.0
+webdriver-manager>=4.0.0,<5.0.0
+requests>=2.28.0,<3.0.0
+
+# HTTP Server and API（Chrome 插件 / 本地 API）
+flask>=2.3.0,<4.0.0
+flask-cors>=4.0.0,<5.0.0
+
+# Async Operations
+aiohttp>=3.8.0,<4.0.0
+aiofiles>=23.0.0,<25.0.0
+
+# Environment and Configuration
+python-dotenv>=1.0.0,<2.0.0
+
+# HTML Processing
+beautifulsoup4>=4.11.0,<5.0.0
+lxml>=4.9.0,<6.0.0
+
+# Media Processing（可选，用于 ffmpeg-python；如果只用命令行 ffmpeg，可去掉）
+ffmpeg-python>=0.2.0,<1.0.0
+
+# System Integration
+pywin32>=304;platform_system=="Windows"
+psutil>=5.9.0,<7.0.0
+
+# Additional Utilities
+packaging>=21.0
+typing-extensions>=4.0.0;python_version<"3.8"
+
+# Live Stream Recording Dependencies（来自 DouyinLiveRecorder，可选）
+loguru>=0.7.3
+pycryptodome>=3.20.0
+distro>=1.9.0
+tqdm>=4.67.1
+httpx[http2]>=0.28.1
+PyExecJS>=1.5.1
+
