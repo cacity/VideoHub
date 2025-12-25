@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QTabWidget, QFileDialog, QMessageBox, QProgressBar,
     QGroupBox, QRadioButton, QScrollArea, QSplitter, QListWidget,
     QListWidgetItem, QButtonGroup, QSpinBox, QStatusBar, QDialog,
-    QDialogButtonBox, QInputDialog, QMenu
+    QDialogButtonBox, QInputDialog, QMenu, QFontComboBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QUrl, QTimer, QObject
 from PyQt6.QtGui import QIcon, QPixmap, QFont, QDesktopServices, QTextCursor, QAction, QClipboard, QEnterEvent
@@ -3282,6 +3282,75 @@ class MainWindow(QMainWindow):
         translate_method_layout.addWidget(self.translate_method_combo)
         api_layout.addLayout(translate_method_layout)
 
+        # 字幕字体设置（双语字幕）
+        subtitle_font_group = QGroupBox("字幕字体设置（双语字幕）")
+        subtitle_font_layout = QVBoxLayout(subtitle_font_group)
+
+        def safe_int(value: str, default: int) -> int:
+            try:
+                return int(value)
+            except Exception:
+                return default
+
+        # 中文字体
+        zh_layout = QHBoxLayout()
+        zh_label = QLabel("中文字体:")
+        self.subtitle_font_zh_combo = QFontComboBox()
+        self.subtitle_font_zh_combo.setFontFilters(QFontComboBox.FontFilter.ScalableFonts)
+        self.subtitle_font_zh_combo.setEditable(True)
+        self.subtitle_font_zh_combo.setCurrentFont(QFont(os.getenv("SUBTITLE_FONT_ZH", "思源黑体 CN")))
+        zh_size_label = QLabel("字号:")
+        self.subtitle_font_zh_size = QSpinBox()
+        self.subtitle_font_zh_size.setRange(6, 72)
+        self.subtitle_font_zh_size.setValue(safe_int(os.getenv("SUBTITLE_FONT_ZH_SIZE", "16"), 16))
+        zh_layout.addWidget(zh_label)
+        zh_layout.addWidget(self.subtitle_font_zh_combo)
+        zh_layout.addWidget(zh_size_label)
+        zh_layout.addWidget(self.subtitle_font_zh_size)
+        zh_layout.addStretch()
+        subtitle_font_layout.addLayout(zh_layout)
+
+        # 英文字体
+        en_layout = QHBoxLayout()
+        en_label = QLabel("英文字体:")
+        self.subtitle_font_en_combo = QFontComboBox()
+        self.subtitle_font_en_combo.setFontFilters(QFontComboBox.FontFilter.ScalableFonts)
+        self.subtitle_font_en_combo.setEditable(True)
+        self.subtitle_font_en_combo.setCurrentFont(QFont(os.getenv("SUBTITLE_FONT_EN", "Fira Code")))
+        en_size_label = QLabel("字号:")
+        self.subtitle_font_en_size = QSpinBox()
+        self.subtitle_font_en_size.setRange(6, 72)
+        self.subtitle_font_en_size.setValue(safe_int(os.getenv("SUBTITLE_FONT_EN_SIZE", "10"), 10))
+        en_layout.addWidget(en_label)
+        en_layout.addWidget(self.subtitle_font_en_combo)
+        en_layout.addWidget(en_size_label)
+        en_layout.addWidget(self.subtitle_font_en_size)
+        en_layout.addStretch()
+        subtitle_font_layout.addLayout(en_layout)
+
+        # 日文字体
+        ja_layout = QHBoxLayout()
+        ja_label = QLabel("日文字体:")
+        self.subtitle_font_ja_combo = QFontComboBox()
+        self.subtitle_font_ja_combo.setFontFilters(QFontComboBox.FontFilter.ScalableFonts)
+        self.subtitle_font_ja_combo.setEditable(True)
+        self.subtitle_font_ja_combo.setCurrentFont(QFont(os.getenv("SUBTITLE_FONT_JA", "思源黑体 JP")))
+        ja_size_label = QLabel("字号:")
+        self.subtitle_font_ja_size = QSpinBox()
+        self.subtitle_font_ja_size.setRange(6, 72)
+        self.subtitle_font_ja_size.setValue(safe_int(os.getenv("SUBTITLE_FONT_JA_SIZE", "16"), 16))
+        ja_layout.addWidget(ja_label)
+        ja_layout.addWidget(self.subtitle_font_ja_combo)
+        ja_layout.addWidget(ja_size_label)
+        ja_layout.addWidget(self.subtitle_font_ja_size)
+        ja_layout.addStretch()
+        subtitle_font_layout.addLayout(ja_layout)
+
+        subtitle_font_info = QLabel("提示：该设置用于生成双语 .ass 字幕（原文/译文两行）；请确保系统已安装对应字体。")
+        subtitle_font_info.setStyleSheet("color: #666; font-size: 11px;")
+        subtitle_font_info.setWordWrap(True)
+        subtitle_font_layout.addWidget(subtitle_font_info)
+
         # 摘要生成设置组
         summary_group = QGroupBox("摘要生成设置")
         summary_layout = QVBoxLayout(summary_group)
@@ -3389,6 +3458,7 @@ class MainWindow(QMainWindow):
         
         # 添加到主布局
         layout.addWidget(api_group)
+        layout.addWidget(subtitle_font_group)
         layout.addWidget(summary_group)
         layout.addWidget(template_group)
         layout.addWidget(idle_group)
@@ -4325,6 +4395,12 @@ class MainWindow(QMainWindow):
         os.environ["OPENAI_BASE_URL"] = self.openai_base_url_input.text()
         os.environ["DEEPSEEK_MODEL"] = self.deepseek_model_input.text()
         os.environ["DEEPSEEK_BASE_URL"] = self.deepseek_base_url_input.text()
+        os.environ["SUBTITLE_FONT_ZH"] = self.subtitle_font_zh_combo.currentFont().family()
+        os.environ["SUBTITLE_FONT_ZH_SIZE"] = str(self.subtitle_font_zh_size.value())
+        os.environ["SUBTITLE_FONT_EN"] = self.subtitle_font_en_combo.currentFont().family()
+        os.environ["SUBTITLE_FONT_EN_SIZE"] = str(self.subtitle_font_en_size.value())
+        os.environ["SUBTITLE_FONT_JA"] = self.subtitle_font_ja_combo.currentFont().family()
+        os.environ["SUBTITLE_FONT_JA_SIZE"] = str(self.subtitle_font_ja_size.value())
 
         # 保存翻译方式设置
         translation_method = "llm" if self.translate_method_combo.currentText() == "大模型翻译" else "google"
@@ -4369,6 +4445,12 @@ class MainWindow(QMainWindow):
                 "DEEPSEEK_MODEL": self.deepseek_model_input.text(),
                 "DEEPSEEK_BASE_URL": self.deepseek_base_url_input.text(),
                 "PROXY": self.proxy_input.text(),
+                "SUBTITLE_FONT_ZH": self.subtitle_font_zh_combo.currentFont().family(),
+                "SUBTITLE_FONT_ZH_SIZE": str(self.subtitle_font_zh_size.value()),
+                "SUBTITLE_FONT_EN": self.subtitle_font_en_combo.currentFont().family(),
+                "SUBTITLE_FONT_EN_SIZE": str(self.subtitle_font_en_size.value()),
+                "SUBTITLE_FONT_JA": self.subtitle_font_ja_combo.currentFont().family(),
+                "SUBTITLE_FONT_JA_SIZE": str(self.subtitle_font_ja_size.value()),
                 "TRANSLATION_METHOD": translation_method,
                 "SUMMARY_GENERATION_MODE": summary_mode,
                 "THINKING_MODEL": self.thinking_model_combo.currentText(),

@@ -55,6 +55,55 @@ def set_translation_verbose(verbose: bool):
     global TRANSLATION_VERBOSE
     TRANSLATION_VERBOSE = bool(verbose)
 
+def _safe_int(value: str, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+_SUBTITLE_FONT_DEFAULTS = {
+    "zh": ("思源黑体 CN", 16),
+    "en": ("Fira Code", 10),
+    "ja": ("思源黑体 JP", 16),
+}
+
+def _normalize_lang_key(lang_code: str) -> str:
+    if not lang_code:
+        return "en"
+    code = str(lang_code).strip().lower()
+    if code.startswith("zh") or code in {"chi", "zho"}:
+        return "zh"
+    if code.startswith("ja") or code in {"jpn"}:
+        return "ja"
+    if code.startswith("en"):
+        return "en"
+    return "en"
+
+def _detect_text_lang_key(text: str) -> str:
+    # 日文：优先检测假名（平假名/片假名）；其余 CJK 统一按中文处理
+    if not text:
+        return "en"
+    import re
+    if re.search(r"[\u3040-\u309F\u30A0-\u30FF]", text):
+        return "ja"
+    if re.search(r"[\u4E00-\u9FFF]", text):
+        return "zh"
+    return "en"
+
+def get_subtitle_font_settings():
+    """
+    读取双语 ASS 字幕的字体设置（来自环境变量/设置页）。
+    返回: {"zh": {"font": str, "size": int}, "en": {...}, "ja": {...}}
+    """
+    settings = {}
+    for key, (default_font, default_size) in _SUBTITLE_FONT_DEFAULTS.items():
+        font = os.getenv(f"SUBTITLE_FONT_{key.upper()}", default_font) or default_font
+        # ASS 的 Fontname 不能包含逗号，否则会破坏字段分隔
+        font = str(font).replace(",", " ").strip() or default_font
+        size = _safe_int(os.getenv(f"SUBTITLE_FONT_{key.upper()}_SIZE", str(default_size)), default_size)
+        settings[key] = {"font": font, "size": size}
+    return settings
+
 # 默认模板
 DEFAULT_TEMPLATE = """请将以下文本改写成一篇完整、连贯、专业的文章。
 
@@ -844,6 +893,20 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
 
             # 额外生成带样式的ASS字幕（中英双语）
             if ass_segments:
+                font_settings = get_subtitle_font_settings()
+                target_key = _normalize_lang_key(target_language)
+
+                # 估算源语言：统计原文片段里中/英/日出现频率
+                source_counts = {"en": 0, "zh": 0, "ja": 0}
+                for _ts, original_text, _tt in ass_segments[:200]:
+                    source_counts[_detect_text_lang_key(original_text)] += 1
+                source_key = max(source_counts.items(), key=lambda x: x[1])[0] if any(source_counts.values()) else "en"
+
+                source_font = font_settings[source_key]["font"]
+                source_size = font_settings[source_key]["size"]
+                target_font = font_settings[target_key]["font"]
+                target_size = font_settings[target_key]["size"]
+
                 def srt_time_to_ass(ts: str) -> str:
                     """将 SRT 时间戳 HH:MM:SS,mmm 转为 ASS 时间戳 H:MM:SS.cc"""
                     ts = ts.strip()
@@ -869,8 +932,8 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
                     ass_file.write("ScaledBorderAndShadow:Yes\n\n")
                     ass_file.write("[V4+ Styles]\n")
                     ass_file.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-                    ass_file.write("Style: Default, Fira Code, 10, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
-                    ass_file.write("Style: Secondary, 思源黑体 CN, 16,&H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
+                    ass_file.write(f"Style: Default, {source_font}, {source_size}, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
+                    ass_file.write(f"Style: Secondary, {target_font}, {target_size}, &H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
                     ass_file.write("[Events]\n")
                     ass_file.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
 
@@ -1753,14 +1816,22 @@ def transcribe_audio_unified(
             
             # 创建ASS字幕文件
             with open(ass_path, "w", encoding="utf-8") as ass_file:
+                font_settings = get_subtitle_font_settings()
+                source_key = _normalize_lang_key(final_source_language)
+                target_key = "zh" if translate_to_chinese else source_key
+                source_font = font_settings[source_key]["font"]
+                source_size = font_settings[source_key]["size"]
+                target_font = font_settings[target_key]["font"]
+                target_size = font_settings[target_key]["size"]
+
                 # ASS文件头
                 ass_file.write("[Script Info]\n")
                 ass_file.write("Title: Bilingual Subtitles\n")
                 ass_file.write("ScriptType: v4.00+\n\n")
                 ass_file.write("[V4+ Styles]\n")
                 ass_file.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-                ass_file.write("Style: Default, Fira Code, 10, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
-                ass_file.write("Style: Secondary, 思源黑体 CN, 16,&H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
+                ass_file.write(f"Style: Default, {source_font}, {source_size}, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
+                ass_file.write(f"Style: Secondary, {target_font}, {target_size}, &H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
                 ass_file.write("[Events]\n")
                 ass_file.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
                 
@@ -2044,6 +2115,14 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
         
         # 创建ASS字幕文件（高级字幕格式，支持更多样式）
         with open(ass_path, "w", encoding="utf-8") as ass_file:
+            font_settings = get_subtitle_font_settings()
+            source_key = _normalize_lang_key(final_source_language)
+            target_key = "zh" if translate_to_chinese else source_key
+            source_font = font_settings[source_key]["font"]
+            source_size = font_settings[source_key]["size"]
+            target_font = font_settings[target_key]["font"]
+            target_size = font_settings[target_key]["size"]
+
             # 写入ASS头部
             ass_file.write("[Script Info]\n")
             ass_file.write("Title: 双语字幕\n")
@@ -2057,8 +2136,8 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
             # 写入样式
             ass_file.write("[V4+ Styles]\n")
             ass_file.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-            ass_file.write("Style: Default, Fira Code, 10, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
-            ass_file.write("Style: Secondary, 思源黑体 CN, 16,&H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
+            ass_file.write(f"Style: Default, {source_font}, {source_size}, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
+            ass_file.write(f"Style: Secondary, {target_font}, {target_size}, &H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
             
             # 写入事件
             ass_file.write("[Events]\n")
