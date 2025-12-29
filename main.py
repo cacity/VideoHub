@@ -17,15 +17,18 @@ from pathlib import Path
 
 # 导入 PyQt6 相关模块
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox, 
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox,
     QCheckBox, QTabWidget, QFileDialog, QMessageBox, QProgressBar,
     QGroupBox, QRadioButton, QScrollArea, QSplitter, QListWidget,
     QListWidgetItem, QButtonGroup, QSpinBox, QStatusBar, QDialog,
-    QDialogButtonBox, QInputDialog, QMenu, QFontComboBox
+    QDialogButtonBox, QInputDialog, QMenu, QFontComboBox, QDoubleSpinBox,
+    QFrame, QColorDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QUrl, QTimer, QObject
-from PyQt6.QtGui import QIcon, QPixmap, QFont, QDesktopServices, QTextCursor, QAction, QClipboard, QEnterEvent
+from PyQt6.QtGui import (QIcon, QPixmap, QFont, QDesktopServices, QTextCursor,
+                         QAction, QClipboard, QEnterEvent, QColor, QPainter,
+                         QPen, QPainterPath)
 
 # 导入原始代码中的功能模块
 import yt_dlp
@@ -3351,6 +3354,159 @@ class MainWindow(QMainWindow):
         subtitle_font_info.setWordWrap(True)
         subtitle_font_layout.addWidget(subtitle_font_info)
 
+        # 字幕样式设置（双语字幕）
+        subtitle_style_group = QGroupBox("字幕样式设置（双语字幕）")
+        subtitle_style_layout = QVBoxLayout(subtitle_style_group)
+
+        # 辅助函数：解析颜色字符串
+        def parse_color(color_str: str, default: str = "#FFFFFF") -> str:
+            color_str = os.getenv(color_str, default)
+            if not color_str.startswith("#"):
+                color_str = "#" + color_str
+            return color_str
+
+        # 原文字幕样式
+        primary_style_label = QLabel("原文字幕样式:")
+        primary_style_label.setStyleSheet("font-weight: bold;")
+        subtitle_style_layout.addWidget(primary_style_label)
+
+        # 原文颜色和边框设置
+        primary_color_layout = QHBoxLayout()
+
+        # 文字颜色
+        primary_color_label = QLabel("文字颜色:")
+        self.primary_color_btn = QPushButton()
+        self.primary_color_btn.setFixedSize(60, 25)
+        primary_color = parse_color("SUBTITLE_PRIMARY_COLOR", "#FFFFFF")
+        self.primary_color_btn.setStyleSheet(f"background-color: {primary_color}; border: 1px solid #ccc;")
+        self.primary_color_btn.clicked.connect(lambda: self.choose_subtitle_color("primary", "color"))
+
+        # 边框颜色
+        primary_outline_label = QLabel("边框颜色:")
+        self.primary_outline_btn = QPushButton()
+        self.primary_outline_btn.setFixedSize(60, 25)
+        primary_outline = parse_color("SUBTITLE_PRIMARY_OUTLINE_COLOR", "#000000")
+        self.primary_outline_btn.setStyleSheet(f"background-color: {primary_outline}; border: 1px solid #ccc;")
+        self.primary_outline_btn.clicked.connect(lambda: self.choose_subtitle_color("primary", "outline"))
+
+        # 边框宽度
+        primary_outline_width_label = QLabel("边框宽度:")
+        self.primary_outline_width = QDoubleSpinBox()
+        self.primary_outline_width.setRange(0, 10)
+        self.primary_outline_width.setSingleStep(0.1)
+        self.primary_outline_width.setDecimals(1)
+        self.primary_outline_width.setValue(float(os.getenv("SUBTITLE_PRIMARY_OUTLINE_WIDTH", "0.5")))
+
+        # 阴影深度
+        primary_shadow_label = QLabel("阴影深度:")
+        self.primary_shadow = QDoubleSpinBox()
+        self.primary_shadow.setRange(0, 10)
+        self.primary_shadow.setSingleStep(0.1)
+        self.primary_shadow.setDecimals(1)
+        self.primary_shadow.setValue(float(os.getenv("SUBTITLE_PRIMARY_SHADOW_DEPTH", "0")))
+
+        primary_color_layout.addWidget(primary_color_label)
+        primary_color_layout.addWidget(self.primary_color_btn)
+        primary_color_layout.addWidget(primary_outline_label)
+        primary_color_layout.addWidget(self.primary_outline_btn)
+        primary_color_layout.addWidget(primary_outline_width_label)
+        primary_color_layout.addWidget(self.primary_outline_width)
+        primary_color_layout.addWidget(primary_shadow_label)
+        primary_color_layout.addWidget(self.primary_shadow)
+        primary_color_layout.addStretch()
+        subtitle_style_layout.addLayout(primary_color_layout)
+
+        # 原文字体样式
+        primary_font_style_layout = QHBoxLayout()
+        self.primary_bold = QCheckBox("粗体")
+        self.primary_bold.setChecked(os.getenv("SUBTITLE_PRIMARY_BOLD", "False").lower() in ("true", "1"))
+        self.primary_italic = QCheckBox("斜体")
+        self.primary_italic.setChecked(os.getenv("SUBTITLE_PRIMARY_ITALIC", "False").lower() in ("true", "1"))
+
+        primary_font_style_layout.addWidget(self.primary_bold)
+        primary_font_style_layout.addWidget(self.primary_italic)
+        primary_font_style_layout.addStretch()
+        subtitle_style_layout.addLayout(primary_font_style_layout)
+
+        # 分隔线
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        subtitle_style_layout.addWidget(separator)
+
+        # 译文字幕样式
+        secondary_style_label = QLabel("译文字幕样式:")
+        secondary_style_label.setStyleSheet("font-weight: bold;")
+        subtitle_style_layout.addWidget(secondary_style_label)
+
+        # 译文颜色和边框设置
+        secondary_color_layout = QHBoxLayout()
+
+        # 文字颜色
+        secondary_color_label = QLabel("文字颜色:")
+        self.secondary_color_btn = QPushButton()
+        self.secondary_color_btn.setFixedSize(60, 25)
+        secondary_color = parse_color("SUBTITLE_SECONDARY_COLOR", "#FFD700")
+        self.secondary_color_btn.setStyleSheet(f"background-color: {secondary_color}; border: 1px solid #ccc;")
+        self.secondary_color_btn.clicked.connect(lambda: self.choose_subtitle_color("secondary", "color"))
+
+        # 边框颜色
+        secondary_outline_label = QLabel("边框颜色:")
+        self.secondary_outline_btn = QPushButton()
+        self.secondary_outline_btn.setFixedSize(60, 25)
+        secondary_outline = parse_color("SUBTITLE_SECONDARY_OUTLINE_COLOR", "#000000")
+        self.secondary_outline_btn.setStyleSheet(f"background-color: {secondary_outline}; border: 1px solid #ccc;")
+        self.secondary_outline_btn.clicked.connect(lambda: self.choose_subtitle_color("secondary", "outline"))
+
+        # 边框宽度
+        secondary_outline_width_label = QLabel("边框宽度:")
+        self.secondary_outline_width = QDoubleSpinBox()
+        self.secondary_outline_width.setRange(0, 10)
+        self.secondary_outline_width.setSingleStep(0.1)
+        self.secondary_outline_width.setDecimals(1)
+        self.secondary_outline_width.setValue(float(os.getenv("SUBTITLE_SECONDARY_OUTLINE_WIDTH", "0.5")))
+
+        # 阴影深度
+        secondary_shadow_label = QLabel("阴影深度:")
+        self.secondary_shadow = QDoubleSpinBox()
+        self.secondary_shadow.setRange(0, 10)
+        self.secondary_shadow.setSingleStep(0.1)
+        self.secondary_shadow.setDecimals(1)
+        self.secondary_shadow.setValue(float(os.getenv("SUBTITLE_SECONDARY_SHADOW_DEPTH", "0")))
+
+        secondary_color_layout.addWidget(secondary_color_label)
+        secondary_color_layout.addWidget(self.secondary_color_btn)
+        secondary_color_layout.addWidget(secondary_outline_label)
+        secondary_color_layout.addWidget(self.secondary_outline_btn)
+        secondary_color_layout.addWidget(secondary_outline_width_label)
+        secondary_color_layout.addWidget(self.secondary_outline_width)
+        secondary_color_layout.addWidget(secondary_shadow_label)
+        secondary_color_layout.addWidget(self.secondary_shadow)
+        secondary_color_layout.addStretch()
+        subtitle_style_layout.addLayout(secondary_color_layout)
+
+        # 译文字体样式
+        secondary_font_style_layout = QHBoxLayout()
+        self.secondary_bold = QCheckBox("粗体")
+        self.secondary_bold.setChecked(os.getenv("SUBTITLE_SECONDARY_BOLD", "False").lower() in ("true", "1"))
+        self.secondary_italic = QCheckBox("斜体")
+        self.secondary_italic.setChecked(os.getenv("SUBTITLE_SECONDARY_ITALIC", "False").lower() in ("true", "1"))
+
+        secondary_font_style_layout.addWidget(self.secondary_bold)
+        secondary_font_style_layout.addWidget(self.secondary_italic)
+        secondary_font_style_layout.addStretch()
+        subtitle_style_layout.addLayout(secondary_font_style_layout)
+
+        # 字幕样式预览按钮
+        preview_btn = QPushButton("预览字幕样式效果")
+        preview_btn.clicked.connect(self.preview_subtitle_style)
+        subtitle_style_layout.addWidget(preview_btn)
+
+        subtitle_style_info = QLabel("提示：调整文字颜色、边框、阴影等样式，实时预览效果。")
+        subtitle_style_info.setStyleSheet("color: #666; font-size: 11px;")
+        subtitle_style_info.setWordWrap(True)
+        subtitle_style_layout.addWidget(subtitle_style_info)
+
         # 摘要生成设置组
         summary_group = QGroupBox("摘要生成设置")
         summary_layout = QVBoxLayout(summary_group)
@@ -3459,6 +3615,7 @@ class MainWindow(QMainWindow):
         # 添加到主布局
         layout.addWidget(api_group)
         layout.addWidget(subtitle_font_group)
+        layout.addWidget(subtitle_style_group)
         layout.addWidget(summary_group)
         layout.addWidget(template_group)
         layout.addWidget(idle_group)
@@ -4385,7 +4542,164 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """应用程序关闭时清理"""
         super().closeEvent(event)
-    
+
+    def choose_subtitle_color(self, style_type: str, color_type: str):
+        """
+        选择字幕颜色
+        :param style_type: 'primary' 或 'secondary'
+        :param color_type: 'color' 或 'outline'
+        """
+        # 获取当前颜色
+        if style_type == "primary":
+            btn = self.primary_color_btn if color_type == "color" else self.primary_outline_btn
+        else:
+            btn = self.secondary_color_btn if color_type == "color" else self.secondary_outline_btn
+
+        current_color_str = btn.styleSheet().split("background-color: ")[1].split(";")[0]
+        current_color = QColor(current_color_str)
+
+        # 打开颜色选择对话框
+        color = QColorDialog.getColor(current_color, self, f"选择{style_type}字幕{'文字' if color_type == 'color' else '边框'}颜色")
+
+        if color.isValid():
+            # 更新按钮颜色
+            btn.setStyleSheet(f"background-color: {color.name()}; border: 1px solid #ccc;")
+
+    def preview_subtitle_style(self):
+        """预览字幕样式效果"""
+        class SubtitlePreviewDialog(QDialog):
+            def __init__(self, parent, primary_style, secondary_style, primary_font, secondary_font):
+                super().__init__(parent)
+                self.setWindowTitle("字幕样式预览")
+                self.setFixedSize(800, 400)
+
+                self.primary_style = primary_style
+                self.secondary_style = secondary_style
+                self.primary_font = primary_font
+                self.secondary_font = secondary_font
+
+                layout = QVBoxLayout(self)
+
+                # 预览标签
+                self.preview_label = QLabel(self)
+                self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.preview_label.setMinimumHeight(300)
+                self.preview_label.setStyleSheet("background-color: #1a1a1a;")
+
+                layout.addWidget(self.preview_label)
+
+                # 说明文字
+                info_label = QLabel("上方显示原文字幕样式（白色），下方显示译文字幕样式（金色）")
+                info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                info_label.setStyleSheet("color: #666; font-size: 11px; padding: 10px;")
+                layout.addWidget(info_label)
+
+                # 渲染预览
+                self.render_preview()
+
+            def render_preview(self):
+                """渲染字幕预览"""
+                pixmap = QPixmap(800, 300)
+                pixmap.fill(QColor("#1a1a1a"))
+
+                painter = QPainter(pixmap)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+                # 渲染原文字幕（上方）
+                primary_color = QColor(self.primary_style["color"])
+                outline_color = QColor(self.primary_style["outline_color"])
+
+                font = QFont(self.primary_font["name"], self.primary_font["size"])
+                font.setBold(self.primary_style["bold"])
+                font.setItalic(self.primary_style["italic"])
+                painter.setFont(font)
+
+                # 绘制原文（带边框和阴影效果）
+                primary_text = "This is the original subtitle"
+                path = QPainterPath()
+                path.addText(400 - len(primary_text) * self.primary_font["size"] / 4, 100, font, primary_text)
+
+                # 阴影
+                if self.primary_style["shadow"] > 0:
+                    painter.translate(self.primary_style["shadow"], self.primary_style["shadow"])
+                    painter.fillPath(path, QColor("#000000"))
+                    painter.translate(-self.primary_style["shadow"], -self.primary_style["shadow"])
+
+                # 边框
+                if self.primary_style["outline_width"] > 0:
+                    pen = QPen(outline_color)
+                    pen.setWidthF(self.primary_style["outline_width"] * 2)
+                    painter.strokePath(path, pen)
+
+                # 文字
+                painter.fillPath(path, primary_color)
+
+                # 渲染译文字幕（下方）
+                secondary_color = QColor(self.secondary_style["color"])
+                sec_outline_color = QColor(self.secondary_style["outline_color"])
+
+                sec_font = QFont(self.secondary_font["name"], self.secondary_font["size"])
+                sec_font.setBold(self.secondary_style["bold"])
+                sec_font.setItalic(self.secondary_style["italic"])
+                painter.setFont(sec_font)
+
+                # 绘制译文（带边框和阴影效果）
+                secondary_text = "这是译文字幕"
+                sec_path = QPainterPath()
+                sec_path.addText(400 - len(secondary_text) * self.secondary_font["size"] / 2, 200, sec_font, secondary_text)
+
+                # 阴影
+                if self.secondary_style["shadow"] > 0:
+                    painter.translate(self.secondary_style["shadow"], self.secondary_style["shadow"])
+                    painter.fillPath(sec_path, QColor("#000000"))
+                    painter.translate(-self.secondary_style["shadow"], -self.secondary_style["shadow"])
+
+                # 边框
+                if self.secondary_style["outline_width"] > 0:
+                    pen = QPen(sec_outline_color)
+                    pen.setWidthF(self.secondary_style["outline_width"] * 2)
+                    painter.strokePath(sec_path, pen)
+
+                # 文字
+                painter.fillPath(sec_path, secondary_color)
+
+                painter.end()
+
+                self.preview_label.setPixmap(pixmap)
+
+        # 获取当前样式配置
+        primary_style = {
+            "color": self.primary_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
+            "outline_color": self.primary_outline_btn.styleSheet().split("background-color: ")[1].split(";")[0],
+            "outline_width": self.primary_outline_width.value(),
+            "shadow": self.primary_shadow.value(),
+            "bold": self.primary_bold.isChecked(),
+            "italic": self.primary_italic.isChecked(),
+        }
+
+        secondary_style = {
+            "color": self.secondary_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
+            "outline_color": self.secondary_outline_btn.styleSheet().split("background-color: ")[1].split(";")[0],
+            "outline_width": self.secondary_outline_width.value(),
+            "shadow": self.secondary_shadow.value(),
+            "bold": self.secondary_bold.isChecked(),
+            "italic": self.secondary_italic.isChecked(),
+        }
+
+        primary_font = {
+            "name": self.subtitle_font_en_combo.currentFont().family(),
+            "size": self.subtitle_font_en_size.value(),
+        }
+
+        secondary_font = {
+            "name": self.subtitle_font_zh_combo.currentFont().family(),
+            "size": self.subtitle_font_zh_size.value(),
+        }
+
+        # 打开预览对话框
+        dialog = SubtitlePreviewDialog(self, primary_style, secondary_style, primary_font, secondary_font)
+        dialog.exec()
+
     def save_settings(self):
         """保存设置"""
         # 保存API密钥到环境变量
@@ -4454,7 +4768,21 @@ class MainWindow(QMainWindow):
                 "TRANSLATION_METHOD": translation_method,
                 "SUMMARY_GENERATION_MODE": summary_mode,
                 "THINKING_MODEL": self.thinking_model_combo.currentText(),
-                "OUTPUT_MODEL": self.output_model_combo.currentText()
+                "OUTPUT_MODEL": self.output_model_combo.currentText(),
+                # 字幕样式配置 - 原文
+                "SUBTITLE_PRIMARY_COLOR": self.primary_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
+                "SUBTITLE_PRIMARY_OUTLINE_COLOR": self.primary_outline_btn.styleSheet().split("background-color: ")[1].split(";")[0],
+                "SUBTITLE_PRIMARY_OUTLINE_WIDTH": str(self.primary_outline_width.value()),
+                "SUBTITLE_PRIMARY_SHADOW_DEPTH": str(self.primary_shadow.value()),
+                "SUBTITLE_PRIMARY_BOLD": str(self.primary_bold.isChecked()),
+                "SUBTITLE_PRIMARY_ITALIC": str(self.primary_italic.isChecked()),
+                # 字幕样式配置 - 译文
+                "SUBTITLE_SECONDARY_COLOR": self.secondary_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
+                "SUBTITLE_SECONDARY_OUTLINE_COLOR": self.secondary_outline_btn.styleSheet().split("background-color: ")[1].split(";")[0],
+                "SUBTITLE_SECONDARY_OUTLINE_WIDTH": str(self.secondary_outline_width.value()),
+                "SUBTITLE_SECONDARY_SHADOW_DEPTH": str(self.secondary_shadow.value()),
+                "SUBTITLE_SECONDARY_BOLD": str(self.secondary_bold.isChecked()),
+                "SUBTITLE_SECONDARY_ITALIC": str(self.secondary_italic.isChecked())
             }
 
             # 更新env_vars字典

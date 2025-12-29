@@ -67,6 +67,41 @@ _SUBTITLE_FONT_DEFAULTS = {
     "ja": ("思源黑体 JP", 16),
 }
 
+# 字幕样式默认值
+_SUBTITLE_STYLE_DEFAULTS = {
+    "primary_color": "#FFFFFF",      # 原文字幕颜色（白色）
+    "secondary_color": "#FFD700",    # 译文字幕颜色（金色）
+    "outline_color": "#000000",      # 边框颜色（黑色）
+    "back_color": "#000000",         # 背景颜色（黑色）
+    "outline_width": 0.5,            # 边框宽度
+    "shadow_depth": 0,               # 阴影深度
+    "bold": False,                   # 粗体
+    "italic": False,                 # 斜体
+}
+
+def rgb_to_ass_color(rgb_hex: str, alpha: int = 0) -> str:
+    """
+    将RGB十六进制颜色转换为ASS颜色格式 &HAABBGGRR
+
+    Args:
+        rgb_hex: RGB颜色，格式如 "#FFFFFF" 或 "FFFFFF"
+        alpha: 透明度 (0-255)，0为完全不透明
+
+    Returns:
+        ASS颜色字符串，如 "&H00FFFFFF"
+    """
+    rgb_hex = rgb_hex.lstrip('#')
+    if len(rgb_hex) != 6:
+        rgb_hex = "FFFFFF"  # 默认白色
+
+    try:
+        r = int(rgb_hex[0:2], 16)
+        g = int(rgb_hex[2:4], 16)
+        b = int(rgb_hex[4:6], 16)
+        return f"&H{alpha:02X}{b:02X}{g:02X}{r:02X}"
+    except ValueError:
+        return "&H00FFFFFF"  # 默认白色
+
 def _normalize_lang_key(lang_code: str) -> str:
     if not lang_code:
         return "en"
@@ -103,6 +138,46 @@ def get_subtitle_font_settings():
         size = _safe_int(os.getenv(f"SUBTITLE_FONT_{key.upper()}_SIZE", str(default_size)), default_size)
         settings[key] = {"font": font, "size": size}
     return settings
+
+def get_subtitle_style_settings():
+    """
+    读取双语 ASS 字幕的样式设置（来自环境变量/设置页）。
+    返回字典包含原文和译文的样式配置。
+    """
+    def get_color(env_key: str, default: str) -> str:
+        color = os.getenv(env_key, default)
+        return rgb_to_ass_color(color)
+
+    def get_float(env_key: str, default: float) -> float:
+        try:
+            return float(os.getenv(env_key, str(default)))
+        except:
+            return default
+
+    def get_bool(env_key: str, default: bool) -> int:
+        value = os.getenv(env_key, str(default)).lower()
+        return 1 if value in ("true", "1", "yes") else 0
+
+    return {
+        "primary": {
+            "color": get_color("SUBTITLE_PRIMARY_COLOR", _SUBTITLE_STYLE_DEFAULTS["primary_color"]),
+            "outline_color": get_color("SUBTITLE_PRIMARY_OUTLINE_COLOR", _SUBTITLE_STYLE_DEFAULTS["outline_color"]),
+            "back_color": get_color("SUBTITLE_PRIMARY_BACK_COLOR", _SUBTITLE_STYLE_DEFAULTS["back_color"]),
+            "outline_width": get_float("SUBTITLE_PRIMARY_OUTLINE_WIDTH", _SUBTITLE_STYLE_DEFAULTS["outline_width"]),
+            "shadow_depth": get_float("SUBTITLE_PRIMARY_SHADOW_DEPTH", _SUBTITLE_STYLE_DEFAULTS["shadow_depth"]),
+            "bold": get_bool("SUBTITLE_PRIMARY_BOLD", _SUBTITLE_STYLE_DEFAULTS["bold"]),
+            "italic": get_bool("SUBTITLE_PRIMARY_ITALIC", _SUBTITLE_STYLE_DEFAULTS["italic"]),
+        },
+        "secondary": {
+            "color": get_color("SUBTITLE_SECONDARY_COLOR", _SUBTITLE_STYLE_DEFAULTS["secondary_color"]),
+            "outline_color": get_color("SUBTITLE_SECONDARY_OUTLINE_COLOR", _SUBTITLE_STYLE_DEFAULTS["outline_color"]),
+            "back_color": get_color("SUBTITLE_SECONDARY_BACK_COLOR", _SUBTITLE_STYLE_DEFAULTS["back_color"]),
+            "outline_width": get_float("SUBTITLE_SECONDARY_OUTLINE_WIDTH", _SUBTITLE_STYLE_DEFAULTS["outline_width"]),
+            "shadow_depth": get_float("SUBTITLE_SECONDARY_SHADOW_DEPTH", _SUBTITLE_STYLE_DEFAULTS["shadow_depth"]),
+            "bold": get_bool("SUBTITLE_SECONDARY_BOLD", _SUBTITLE_STYLE_DEFAULTS["bold"]),
+            "italic": get_bool("SUBTITLE_SECONDARY_ITALIC", _SUBTITLE_STYLE_DEFAULTS["italic"]),
+        }
+    }
 
 # 默认模板
 DEFAULT_TEMPLATE = """请将以下文本改写成一篇完整、连贯、专业的文章。
@@ -921,6 +996,11 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
 
                 ass_path = os.path.join(file_dir, f"{filename_base}.ass")
                 with open(ass_path, 'w', encoding='utf-8') as ass_file:
+                    # 获取字幕样式设置
+                    style_settings = get_subtitle_style_settings()
+                    primary_style = style_settings["primary"]
+                    secondary_style = style_settings["secondary"]
+
                     # ASS 文件头和样式，尽量与 Whisper 转录生成的双语字幕保持一致
                     ass_file.write("[Script Info]\n")
                     ass_file.write("Title: 双语字幕\n")
@@ -932,8 +1012,8 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
                     ass_file.write("ScaledBorderAndShadow:Yes\n\n")
                     ass_file.write("[V4+ Styles]\n")
                     ass_file.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-                    ass_file.write(f"Style: Default, {source_font}, {source_size}, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
-                    ass_file.write(f"Style: Secondary, {target_font}, {target_size}, &H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
+                    ass_file.write(f"Style: Default, {source_font}, {source_size}, {primary_style['color']}, &H000000FF, {primary_style['outline_color']}, {primary_style['back_color']}, {primary_style['bold']}, {primary_style['italic']}, 0, 0, 100, 100, 0, 0, 1, {primary_style['outline_width']}, {primary_style['shadow_depth']}, 2, 10, 10, 5, 134\n")
+                    ass_file.write(f"Style: Secondary, {target_font}, {target_size}, {secondary_style['color']}, &H000000FF, {secondary_style['outline_color']}, {secondary_style['back_color']}, {secondary_style['bold']}, {secondary_style['italic']}, 0, 0, 100, 100, 0, 0, 1, {secondary_style['outline_width']}, {secondary_style['shadow_depth']}, 2, 10, 10, 5, 134\n\n")
                     ass_file.write("[Events]\n")
                     ass_file.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
 
@@ -1824,14 +1904,19 @@ def transcribe_audio_unified(
                 target_font = font_settings[target_key]["font"]
                 target_size = font_settings[target_key]["size"]
 
+                # 获取字幕样式设置
+                style_settings = get_subtitle_style_settings()
+                primary_style = style_settings["primary"]
+                secondary_style = style_settings["secondary"]
+
                 # ASS文件头
                 ass_file.write("[Script Info]\n")
                 ass_file.write("Title: Bilingual Subtitles\n")
                 ass_file.write("ScriptType: v4.00+\n\n")
                 ass_file.write("[V4+ Styles]\n")
                 ass_file.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-                ass_file.write(f"Style: Default, {source_font}, {source_size}, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n")
-                ass_file.write(f"Style: Secondary, {target_font}, {target_size}, &H0000D7FF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 0.5, 0, 2, 10, 10, 5, 134\n\n")
+                ass_file.write(f"Style: Default, {source_font}, {source_size}, {primary_style['color']}, &H000000FF, {primary_style['outline_color']}, {primary_style['back_color']}, {primary_style['bold']}, {primary_style['italic']}, 0, 0, 100, 100, 0, 0, 1, {primary_style['outline_width']}, {primary_style['shadow_depth']}, 2, 10, 10, 5, 134\n")
+                ass_file.write(f"Style: Secondary, {target_font}, {target_size}, {secondary_style['color']}, &H000000FF, {secondary_style['outline_color']}, {secondary_style['back_color']}, {secondary_style['bold']}, {secondary_style['italic']}, 0, 0, 100, 100, 0, 0, 1, {secondary_style['outline_width']}, {secondary_style['shadow_depth']}, 2, 10, 10, 5, 134\n\n")
                 ass_file.write("[Events]\n")
                 ass_file.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
                 
