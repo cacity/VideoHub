@@ -4,7 +4,7 @@
 
 ## ✨ 加入讨论群
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251230163800404.png)
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260109083154347.png)
 
 ## ✨ 核心功能
 

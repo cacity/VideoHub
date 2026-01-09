@@ -621,6 +621,125 @@ class URLTextEdit(QTextEdit):
         self.clear()
         self.setPlainText(text.strip())
 
+# 可折叠的分组框组件
+class CollapsibleGroupBox(QWidget):
+    """可折叠的分组框组件，用于节省界面空间"""
+
+    def __init__(self, title="", parent=None, collapsed=True):
+        """
+        初始化可折叠分组框
+        :param title: 标题文字
+        :param parent: 父组件
+        :param collapsed: 是否默认折叠
+        """
+        super().__init__(parent)
+        self.is_collapsed = collapsed
+
+        # 创建主布局
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 2)
+        self.main_layout.setSpacing(2)
+
+        # 创建标题栏容器
+        self.title_frame = QFrame()
+        self.title_frame.setFrameShape(QFrame.Shape.NoFrame)
+        self.title_frame.setFixedHeight(24)  # 固定标题栏高度为24像素
+        self.title_frame.setStyleSheet("""
+            QFrame {
+                background-color: #f5f5f5;
+                border-radius: 0px;
+                padding: 0px;
+            }
+            QFrame:hover {
+                background-color: #eeeeee;
+            }
+        """)
+
+        title_layout = QHBoxLayout(self.title_frame)
+        title_layout.setContentsMargins(4, 0, 4, 0)
+        title_layout.setSpacing(4)
+
+        # 创建蓝色竖线（高度为标题栏的2/3）
+        blue_line = QFrame()
+        blue_line.setFixedWidth(3)
+        blue_line.setFixedHeight(12)  # 调整为更短
+        blue_line.setStyleSheet("background-color: #2196F3; border: none;")
+        title_layout.addWidget(blue_line)
+
+        # 折叠/展开指示器
+        self.toggle_button = QPushButton()
+        self.toggle_button.setFixedSize(12, 12)
+        self.toggle_button.setFlat(True)
+        self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle_button.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                font-size: 10px;
+                color: #2196F3;
+            }
+        """)
+        self.toggle_button.clicked.connect(self.toggle_collapsed)
+        self.update_toggle_icon()
+
+        # 标题文字
+        self.title_label = QLabel(title)
+        self.title_label.setStyleSheet("font-weight: bold; font-size: 11px; color: #333;")
+
+        title_layout.addWidget(self.toggle_button)
+        title_layout.addWidget(self.title_label)
+        title_layout.addStretch()
+
+        # 让整个标题栏可点击
+        self.title_frame.mousePressEvent = lambda event: self.toggle_collapsed()
+
+        # 创建内容容器
+        self.content_widget = QWidget()
+        self.content_widget.setStyleSheet("""
+            QWidget {
+                background-color: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 3px;
+            }
+        """)
+        self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(15, 10, 15, 10)
+        self.content_layout.setSpacing(8)
+
+        # 添加到主布局
+        self.main_layout.addWidget(self.title_frame)
+        self.main_layout.addWidget(self.content_widget)
+
+        # 设置初始折叠状态
+        self.content_widget.setVisible(not collapsed)
+
+    def update_toggle_icon(self):
+        """更新折叠/展开图标"""
+        if self.is_collapsed:
+            self.toggle_button.setText("▶")  # 折叠状态，显示右箭头
+        else:
+            self.toggle_button.setText("▼")  # 展开状态，显示下箭头
+
+    def toggle_collapsed(self):
+        """切换折叠/展开状态"""
+        self.is_collapsed = not self.is_collapsed
+        self.content_widget.setVisible(not self.is_collapsed)
+        self.update_toggle_icon()
+
+    def set_collapsed(self, collapsed):
+        """设置折叠状态"""
+        self.is_collapsed = collapsed
+        self.content_widget.setVisible(not collapsed)
+        self.update_toggle_icon()
+
+    def add_layout(self, layout):
+        """添加布局到内容区域"""
+        self.content_layout.addLayout(layout)
+
+    def add_widget(self, widget):
+        """添加组件到内容区域"""
+        self.content_layout.addWidget(widget)
+
 # 工作线程类，用于执行耗时操作
 class WorkerThread(QThread):
     """工作线程，用于执行耗时操作，避免界面卡顿"""
@@ -3197,8 +3316,8 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         
         # API设置组
-        api_group = QGroupBox("API设置")
-        api_layout = QVBoxLayout(api_group)
+        api_group = CollapsibleGroupBox("API设置", collapsed=True)
+        api_layout = api_group.content_layout
         
         # OpenAI API设置
         openai_layout = QHBoxLayout()
@@ -3286,8 +3405,8 @@ class MainWindow(QMainWindow):
         api_layout.addLayout(translate_method_layout)
 
         # 字幕字体设置（双语字幕）
-        subtitle_font_group = QGroupBox("字幕字体设置（双语字幕）")
-        subtitle_font_layout = QVBoxLayout(subtitle_font_group)
+        subtitle_font_group = CollapsibleGroupBox("字幕字体设置（双语字幕）", collapsed=True)
+        subtitle_font_layout = subtitle_font_group.content_layout
 
         def safe_int(value: str, default: int) -> int:
             try:
@@ -3355,8 +3474,8 @@ class MainWindow(QMainWindow):
         subtitle_font_layout.addWidget(subtitle_font_info)
 
         # 字幕样式设置（双语字幕）
-        subtitle_style_group = QGroupBox("字幕样式设置（双语字幕）")
-        subtitle_style_layout = QVBoxLayout(subtitle_style_group)
+        subtitle_style_group = CollapsibleGroupBox("字幕样式设置（双语字幕）", collapsed=True)
+        subtitle_style_layout = subtitle_style_group.content_layout
 
         # 辅助函数：解析颜色字符串
         def parse_color(color_str: str, default: str = "#FFFFFF") -> str:
@@ -3508,8 +3627,8 @@ class MainWindow(QMainWindow):
         subtitle_style_layout.addWidget(subtitle_style_info)
 
         # 摘要生成设置组
-        summary_group = QGroupBox("摘要生成设置")
-        summary_layout = QVBoxLayout(summary_group)
+        summary_group = CollapsibleGroupBox("摘要生成设置", collapsed=True)
+        summary_layout = summary_group.content_layout
 
         # 摘要生成模式选择
         summary_mode_layout = QHBoxLayout()
@@ -3556,8 +3675,8 @@ class MainWindow(QMainWindow):
         summary_layout.addWidget(summary_info_label)
 
         # 模板设置
-        template_group = QGroupBox("模板设置")
-        template_layout = QVBoxLayout(template_group)
+        template_group = CollapsibleGroupBox("模板设置", collapsed=True)
+        template_layout = template_group.content_layout
         
         # 模板选择
         template_select_layout = QHBoxLayout()
@@ -3583,8 +3702,8 @@ class MainWindow(QMainWindow):
         template_layout.addLayout(template_buttons_layout)
         
         # 闲时设置组
-        idle_group = QGroupBox("闲时执行设置")
-        idle_layout = QVBoxLayout(idle_group)
+        idle_group = CollapsibleGroupBox("闲时执行设置", collapsed=True)
+        idle_layout = idle_group.content_layout
         
         # 闲时时间设置
         idle_time_layout = QHBoxLayout()
