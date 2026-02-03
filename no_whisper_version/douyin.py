@@ -51,10 +51,21 @@ def format_date(timestamp: int) -> str:
 
 
 def do_get(url: str) -> requests.Response:
+    import os
     headers = {
         "User-Agent": "Mozilla/5.0 (Linux; Android 11; SAMSUNG SM-G973U) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/14.2 Chrome/87.0.4280.141 Mobile Safari/537.36"
     }
-    resp = requests.get(url, headers=headers)
+
+    # 从环境变量读取代理配置
+    proxy = os.getenv("PROXY")
+    proxies = None
+    if proxy:
+        proxies = {
+            "http": proxy,
+            "https": proxy
+        }
+
+    resp = requests.get(url, headers=headers, proxies=proxies, timeout=30)
     return resp
 
 
