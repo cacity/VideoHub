@@ -530,7 +530,7 @@ class URLLineEdit(QLineEdit):
             
             # 检查是否是简单的直接URL（排除复杂分享文本）
             clipboard_lines = clipboard_text.strip().split('\n')
-            if len(clipboard_lines) == 1 and any(keyword in clipboard_text.lower() for keyword in ['youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili']):
+            if len(clipboard_lines) == 1 and any(keyword in clipboard_text.lower() for keyword in ['youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'tiktok.com']):
                 self.clear()
                 self.setText(clipboard_text.strip())
                 event.accept()
@@ -570,7 +570,7 @@ class URLTextEdit(QTextEdit):
         # 如果剪贴板中有内容，检查是否包含URL
         if clipboard_text:
             # 检查是否看起来像包含URL
-            if any(keyword in clipboard_text.lower() for keyword in ['http', 'youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'www.']):
+            if any(keyword in clipboard_text.lower() for keyword in ['http', 'youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'tiktok.com', 'www.']):
                 # 如果当前文本框为空，直接粘贴
                 if not self.toPlainText().strip():
                     self.clear()
