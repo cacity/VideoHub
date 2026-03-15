@@ -7,8 +7,8 @@ import os
 便于本地调试时集中管理，也便于通过 .gitignore 一次性忽略这些文件。
 """
 
-# 项目根目录（当前文件所在目录）
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 项目根目录（此文件在 src/ 下，向上一级即为项目根）
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 统一的工作目录
 WORKSPACE_DIR = os.path.join(BASE_DIR, "workspace")

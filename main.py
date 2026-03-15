@@ -8,6 +8,10 @@ YouTube 转录工具 PyQt6 版本
 
 import sys
 import os
+
+# 将 src/ 目录加入模块搜索路径
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+
 import threading
 import time
 import subprocess
@@ -1475,7 +1479,7 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """初始化用户界面"""
         # 设置窗口标题和大小
-        self.setWindowTitle("视频转录工具 (抖音/B站/YouTube/Twitter/X)")
+        self.setWindowTitle("视频转录工具 (抖音/B站/YouTube/Twitter/X/蔻享/Koushare)")
         self.resize(900, 700)
         
         # 创建中央部件和主布局
