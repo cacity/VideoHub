@@ -46,7 +46,10 @@ def generate_ks_sign(params: dict, method: str) -> tuple:
     parts = []
     for k in sorted_keys:
         v = filtered[k]
-        if isinstance(v, (list, dict)):
+        if isinstance(v, bool):
+            # JS: false/true（小写），Python 默认 False/True（大写），必须转换
+            parts.append(f"{k}={'true' if v else 'false'}")
+        elif isinstance(v, (list, dict)):
             import json
             parts.append(f"{k}={json.dumps(v, separators=(',', ':'))}")
         else:
@@ -68,6 +71,7 @@ def generate_ks_sign(params: dict, method: str) -> tuple:
 API_BASE = "https://api-core.koushare.com"
 
 _SESSION = None
+_ACCESS_TOKEN = ""
 
 
 def _get_session() -> requests.Session:
@@ -82,6 +86,54 @@ def _get_session() -> requests.Session:
             "Content-Type": "application/json",
         })
     return _SESSION
+
+
+def set_token(access_token: str):
+    """直接设置 access token（从外部传入已有 token）"""
+    global _ACCESS_TOKEN
+    _ACCESS_TOKEN = access_token
+    sess = _get_session()
+    if access_token:
+        sess.headers["Authorization"] = access_token
+    else:
+        sess.headers.pop("Authorization", None)
+
+
+def login(username: str, password: str, area_code: str = "86") -> dict:
+    """
+    账号密码登录蔻享学术
+    :param username: 手机号或邮箱
+    :param password: 密码
+    :param area_code: 手机区号，默认 86（中国大陆）
+    :return: {"success": bool, "access_token": str, "user": dict, "error": str}
+    """
+    global _ACCESS_TOKEN
+    url = f"{API_BASE}/iam/userLogin/accountLogin"
+    body = {
+        "flag": False,
+        "password": password,
+        "username": username,
+        "areaCode": area_code,
+    }
+    headers = _signed_headers(body, "post")
+    try:
+        resp = _get_session().post(url, json=body, headers=headers, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data.get("success"):
+            return {"success": False, "error": data.get("msg", "登录失败")}
+
+        token_data = data.get("data") or {}
+        access_token = token_data.get("access_token", "")
+        set_token(access_token)
+        return {
+            "success": True,
+            "access_token": access_token,
+            "refresh_token": token_data.get("refresh_token", ""),
+            "user": token_data.get("user") or {},
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def _signed_headers(params: dict, method: str) -> dict:
@@ -138,7 +190,11 @@ def get_playback_url(live_id: str, video_id: str) -> dict:
     sign_params = {"videoId": video_id}
     headers = _signed_headers(sign_params, "post")
 
-    resp = _get_session().post(url, params=query_params, json={}, headers=headers, timeout=15)
+    sess = _get_session()
+    has_auth = bool(sess.headers.get("Authorization"))
+    print(f"      [鉴权] Authorization header {'已设置' if has_auth else '未设置（未登录）'}")
+
+    resp = sess.post(url, params=query_params, json={}, headers=headers, timeout=15)
     resp.raise_for_status()
     data = resp.json()
     if not data.get("success") and str(data.get("code", ""))[:3] != "200":
@@ -184,7 +240,7 @@ def is_koushare_url(url: str) -> bool:
 def select_quality(playback_data: dict, quality: str = "FHD") -> str:
     """
     从播放数据中选择指定画质的 m3u8 地址。
-    字段优先级：preUrl > fileUrl > url > playUrl
+    字段优先级：fileUrl > preUrl（需含 .m3u8）> url > playUrl
     quality: FHD (1080p), HD (720p), SD (480p)
     """
     quality = quality.upper()
@@ -199,18 +255,43 @@ def select_quality(playback_data: dict, quality: str = "FHD") -> str:
 
     for url_group in (playback_data.get("playbackUrls") or []):
         item_list = url_group.get("list") or []
-        # 先找目标画质
+
+        # ── 诊断：打印所有可用画质及其 URL 状态 ──────────────────────
+        print(f"      [画质列表] 共 {len(item_list)} 个画质选项:")
+        for item in item_list:
+            label = item.get("labelEn", "?")
+            h = item.get("height", "?")
+            file_url = item.get("fileUrl") or ""
+            pre_url = item.get("preUrl") or ""
+            has_file = ".m3u8" in file_url
+            has_pre = ".m3u8" in pre_url
+            login_px = item.get("appLoginPx", 0)
+            print(f"        {label}({h}p): fileUrl={'有' if has_file else '空'}, "
+                  f"preUrl={'有m3u8' if has_pre else '无m3u8'}, "
+                  f"loginPx={login_px}")
+
+        # ── 优先选目标画质 ────────────────────────────────────────────
         for item in item_list:
             if (item.get("labelEn") or "").upper() == quality:
                 url = _pick_url(item)
                 if url:
+                    print(f"      [选择] {quality} 画质 URL 已找到")
                     return url
-        # 按画质顺序回退
+                else:
+                    login_px = item.get("appLoginPx", 0)
+                    has_auth = bool(_get_session().headers.get("Authorization"))
+                    if login_px and not has_auth:
+                        print(f"      [提示] {quality} 需要登录才能获取 URL（appLoginPx={login_px}），请先在设置中登录蔻享账号")
+                    else:
+                        print(f"      [警告] {quality} URL 为空（fileUrl/preUrl 均无 .m3u8），将尝试回退")
+                break
+
+        # ── 按画质顺序回退 ────────────────────────────────────────────
         for q in ("FHD", "HD", "SD"):
             for item in item_list:
                 url = _pick_url(item)
                 if url and (item.get("labelEn") or "").upper() == q:
-                    print(f"      [警告] {quality} 不可用，回退到 {q}")
+                    print(f"      [回退] {quality} 不可用，改用 {q}（{item.get('height', '?')}p）")
                     return url
 
     url = playback_data.get("url") or playback_data.get("playUrl")
@@ -405,6 +486,9 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
         # ── 步骤 3：下载 ───────────────────────────────────────────────
         # 始终通过 get_playback_url 拿有效的 HLS 地址（addr 直链需要额外鉴权，不可用）
         print(f"[3/3] 获取 {quality} 画质播放地址...")
+        has_auth = bool(_get_session().headers.get("Authorization"))
+        if quality == "FHD" and not has_auth:
+            print("      [提示] 请求 FHD 画质但尚未登录，FHD 可能需要登录才可用（请在设置中登录蔻享账号）")
         if progress_callback:
             progress_callback("正在获取播放地址...", 25)
         playback_data = get_playback_url(live_id, video_id)

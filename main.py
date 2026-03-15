@@ -375,6 +375,25 @@ load_dotenv(_env_path, override=True)  # override=True 确保总是从.env文件
 print(f"✅ 已加载环境变量: {_env_path}")
 
 
+def _save_env_key(env_path: str, key: str, value: str):
+    """向 .env 文件写入或更新单个 key=value，保留其他行不变。"""
+    lines = []
+    found = False
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.rstrip("\n")
+                if stripped.startswith(f"{key}=") or stripped == key:
+                    lines.append(f"{key}={value}\n")
+                    found = True
+                else:
+                    lines.append(line if line.endswith("\n") else line + "\n")
+    if not found:
+        lines.append(f"{key}={value}\n")
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
 # 创建模板目录
 TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
@@ -1465,6 +1484,16 @@ class MainWindow(QMainWindow):
         # 初始化API服务器
         self.api_server = None
         self.init_api_server()
+
+        # 初始化蔻享 access token（如果 .env 中保存了的话）
+        ks_token = os.getenv("KOUSHARE_ACCESS_TOKEN", "")
+        if ks_token:
+            try:
+                import koushare_downloader
+                koushare_downloader.set_token(ks_token)
+                print("✅ 蔻享 access token 已加载")
+            except Exception as _e:
+                print(f"⚠️ 蔻享 token 初始化失败: {_e}")
         
         # 加载保存的闲时队列
         self.load_idle_queue()
@@ -3836,6 +3865,59 @@ class MainWindow(QMainWindow):
         queue_layout.addWidget(self.clear_queue_button)
         idle_layout.addLayout(queue_layout)
         
+        # 蔻享学术账号设置
+        koushare_group = CollapsibleGroupBox("蔻享学术账号（下载受保护视频需要登录）", collapsed=True)
+        ks_layout = koushare_group.content_layout
+
+        ks_user_layout = QHBoxLayout()
+        ks_user_label = QLabel("手机号/邮箱:")
+        self.ks_username_input = QLineEdit()
+        self.ks_username_input.setPlaceholderText("输入蔻享账号（手机号或邮箱）")
+        self.ks_username_input.setText(os.getenv("KOUSHARE_USERNAME", ""))
+        ks_user_layout.addWidget(ks_user_label)
+        ks_user_layout.addWidget(self.ks_username_input)
+        ks_layout.addLayout(ks_user_layout)
+
+        ks_pwd_layout = QHBoxLayout()
+        ks_pwd_label = QLabel("密码:")
+        self.ks_password_input = QLineEdit()
+        self.ks_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ks_password_input.setPlaceholderText("输入蔻享密码")
+        ks_pwd_layout.addWidget(ks_pwd_label)
+        ks_pwd_layout.addWidget(self.ks_password_input)
+        ks_layout.addLayout(ks_pwd_layout)
+
+        ks_btn_layout = QHBoxLayout()
+        self.ks_login_button = QPushButton("登录蔻享")
+        self.ks_login_button.setMinimumHeight(32)
+        self.ks_status_label = QLabel("未登录")
+        self.ks_status_label.setStyleSheet("color: gray;")
+        ks_btn_layout.addWidget(self.ks_login_button)
+        ks_btn_layout.addWidget(self.ks_status_label)
+        ks_btn_layout.addStretch()
+        ks_layout.addLayout(ks_btn_layout)
+
+        # 手动粘贴 token（用于不支持密码登录的账号，如微信绑定账号）
+        ks_token_layout = QHBoxLayout()
+        ks_token_label = QLabel("Token:")
+        self.ks_token_input = QLineEdit()
+        self.ks_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ks_token_input.setPlaceholderText("可手动粘贴 Access Token（从浏览器登录后获取）")
+        existing_token = os.getenv("KOUSHARE_ACCESS_TOKEN", "")
+        if existing_token:
+            self.ks_token_input.setText(existing_token)
+            self.ks_status_label.setText("✅ Token 已加载")
+            self.ks_status_label.setStyleSheet("color: green;")
+        self.ks_set_token_button = QPushButton("应用 Token")
+        self.ks_set_token_button.setMinimumHeight(32)
+        ks_token_layout.addWidget(ks_token_label)
+        ks_token_layout.addWidget(self.ks_token_input)
+        ks_token_layout.addWidget(self.ks_set_token_button)
+        ks_layout.addLayout(ks_token_layout)
+
+        self.ks_login_button.clicked.connect(self.koushare_login)
+        self.ks_set_token_button.clicked.connect(self.koushare_set_token)
+
         # 添加到主布局
         layout.addWidget(api_group)
         layout.addWidget(subtitle_font_group)
@@ -3843,7 +3925,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(summary_group)
         layout.addWidget(template_group)
         layout.addWidget(idle_group)
-        
+        layout.addWidget(koushare_group)
+
         # 保存设置按钮
         self.save_settings_button = QPushButton("保存设置")
         self.save_settings_button.setMinimumHeight(40)
@@ -5012,7 +5095,10 @@ class MainWindow(QMainWindow):
                 "SUBTITLE_SECONDARY_OUTLINE_WIDTH": str(self.secondary_outline_width.value()),
                 "SUBTITLE_SECONDARY_SHADOW_DEPTH": str(self.secondary_shadow.value()),
                 "SUBTITLE_SECONDARY_BOLD": str(self.secondary_bold.isChecked()),
-                "SUBTITLE_SECONDARY_ITALIC": str(self.secondary_italic.isChecked())
+                "SUBTITLE_SECONDARY_ITALIC": str(self.secondary_italic.isChecked()),
+                # 蔻享账号 token — 从 UI 字段读取，避免 save_settings 覆盖掉已保存的 token
+                "KOUSHARE_ACCESS_TOKEN": self.ks_token_input.text().strip(),
+                "KOUSHARE_USERNAME": self.ks_username_input.text().strip(),
             }
 
             # 更新env_vars字典
@@ -5062,7 +5148,68 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
             QMessageBox.warning(self, "设置保存错误", f"保存设置时出错: {str(e)}\n\n请检查文件权限和磁盘空间")
-    
+
+    def koushare_login(self):
+        """登录蔻享学术，获取 access token 并保存到 .env"""
+        username = self.ks_username_input.text().strip()
+        password = self.ks_password_input.text()
+        if not username or not password:
+            QMessageBox.warning(self, "输入错误", "请输入蔻享账号和密码")
+            return
+
+        self.ks_login_button.setEnabled(False)
+        self.ks_status_label.setText("登录中...")
+        self.ks_status_label.setStyleSheet("color: gray;")
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
+
+        try:
+            import koushare_downloader
+            result = koushare_downloader.login(username, password)
+            if result.get("success"):
+                token = result.get("access_token", "")
+                user = result.get("user") or {}
+                nickname = user.get("nickname") or user.get("name") or username
+                self.ks_status_label.setText(f"✅ 已登录：{nickname}")
+                self.ks_status_label.setStyleSheet("color: green;")
+
+                # 持久化保存 token 和用户名到 .env
+                os.environ["KOUSHARE_ACCESS_TOKEN"] = token
+                os.environ["KOUSHARE_USERNAME"] = username
+                env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+                _save_env_key(env_path, "KOUSHARE_ACCESS_TOKEN", token)
+                _save_env_key(env_path, "KOUSHARE_USERNAME", username)
+                # 同步更新 token 输入框，确保 save_settings 不会覆盖掉刚保存的 token
+                if token:
+                    self.ks_token_input.setText(token)
+                QMessageBox.information(self, "登录成功", f"蔻享学术登录成功！\n账号：{nickname}\n\nToken 已保存，下次启动自动生效。")
+            else:
+                error = result.get("error", "未知错误")
+                self.ks_status_label.setText(f"❌ 登录失败")
+                self.ks_status_label.setStyleSheet("color: red;")
+                QMessageBox.warning(self, "登录失败", f"蔻享学术登录失败：\n{error}")
+        except Exception as e:
+            self.ks_status_label.setText("❌ 登录出错")
+            self.ks_status_label.setStyleSheet("color: red;")
+            QMessageBox.critical(self, "登录错误", f"登录时发生错误：\n{str(e)}")
+        finally:
+            self.ks_login_button.setEnabled(True)
+
+    def koushare_set_token(self):
+        """手动设置蔻享 access token（用于微信绑定账号等不支持密码登录的情况）"""
+        token = self.ks_token_input.text().strip()
+        if not token:
+            QMessageBox.warning(self, "输入错误", "请粘贴 Access Token")
+            return
+        import koushare_downloader
+        koushare_downloader.set_token(token)
+        os.environ["KOUSHARE_ACCESS_TOKEN"] = token
+        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        _save_env_key(env_path, "KOUSHARE_ACCESS_TOKEN", token)
+        self.ks_status_label.setText("✅ Token 已设置")
+        self.ks_status_label.setStyleSheet("color: green;")
+        QMessageBox.information(self, "Token 已设置", "蔻享 Access Token 已保存，本次及下次启动均生效。")
+
     def browse_cookies_file(self):
         """浏览cookies文件"""
         file_path, _ = QFileDialog.getOpenFileName(
