@@ -116,6 +116,36 @@ class DouyinUtils:
             return None
     
     @staticmethod
+    def is_user_profile_share_text(text: str) -> bool:
+        """
+        判断分享文本是否为用户主页分享（而非单个视频分享）
+        :param text: 分享文本
+        :return: 是否为用户主页分享
+        """
+        user_keywords = [
+            "查看TA的更多作品",
+            "查看他的更多作品",
+            "查看她的更多作品",
+            "的更多作品",
+        ]
+        return any(kw in text for kw in user_keywords)
+
+    @staticmethod
+    def is_user_profile_url(url: str) -> bool:
+        """
+        判断 URL 是否为抖音用户主页链接（自动展开短链接）
+        :param url: 原始链接（支持短链）
+        :return: 是否为用户主页
+        """
+        if '/user/' in url:
+            return True
+        if 'v.douyin.com' in url or 'iesdouyin.com' in url:
+            expanded = DouyinUtils.expand_short_url(url)
+            if expanded and '/user/' in expanded:
+                return True
+        return False
+
+    @staticmethod
     def clean_filename(filename: str, max_length: int = 100) -> str:
         """
         清理文件名，移除非法字符

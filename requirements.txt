@@ -61,3 +61,6 @@ distro>=1.9.0
 tqdm>=4.67.1
 httpx[http2]>=0.28.1
 PyExecJS>=1.5.1
+
+# Douyin user profile batch download
+f2>=0.0.1.7

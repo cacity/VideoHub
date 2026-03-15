@@ -201,15 +201,94 @@ class DouyinDownloader:
             print(f"❌ 获取视频信息异常: {e}")
             return None
     
-    def download_user_videos(self, user_url: str, limit: int = 20, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    def download_user_videos(self, user_url: str, limit: int = 0, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """
-        下载用户的视频（暂不支持）
-        :param user_url: 用户主页链接
-        :param limit: 下载数量限制
-        :param progress_callback: 进度回调
+        使用 f2 库批量下载用户主页所有视频
+        :param user_url: 用户主页链接（支持短链和长链）
+        :param limit: 最多下载数量，0 表示全部
+        :param progress_callback: 进度回调函数
         :return: 下载结果
         """
-        return {"success": False, "error": "批量下载用户视频功能暂不支持"}
+        try:
+            import asyncio
+            from f2.apps.douyin.handler import DouyinHandler
+            from f2.apps.douyin.utils import SecUserIdFetcher
+            from f2.utils.utils import extract_valid_urls
+        except ImportError as e:
+            return {"success": False, "error": f"需要安装 f2 库: pip install f2\n({e})"}
+
+        cookie = self.config.get("cookie") or ""
+        kwargs = {
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+                "Referer": "https://www.douyin.com/",
+            },
+            "proxies": {"http://": None, "https://": None},
+            "timeout": 10,
+            "cookie": cookie,
+        }
+
+        async def _fetch_aweme_ids():
+            urls = extract_valid_urls([user_url])
+            if not urls:
+                return []
+            sec_user_id = await SecUserIdFetcher.get_sec_user_id(urls[0])
+            if not sec_user_id:
+                return []
+            all_ids = []
+            async for page_data in DouyinHandler(kwargs).fetch_user_post_videos(
+                sec_user_id=sec_user_id,
+                page_counts=20,
+                max_counts=limit if limit > 0 else None,
+            ):
+                for item in page_data._to_list():
+                    aweme_id = item.get("aweme_id")
+                    if aweme_id:
+                        all_ids.append(str(aweme_id))
+            return all_ids
+
+        try:
+            if progress_callback:
+                progress_callback("正在解析用户主页，获取视频列表...", 5)
+
+            aweme_ids = asyncio.run(_fetch_aweme_ids())
+            if not aweme_ids:
+                return {"success": False, "error": "未找到视频，请确认链接为用户主页，或提供有效 Cookie"}
+
+            total = len(aweme_ids)
+            if progress_callback:
+                progress_callback(f"共找到 {total} 个视频，开始下载...", 10)
+
+            success_count = 0
+            fail_count = 0
+
+            for i, aweme_id in enumerate(aweme_ids):
+                pct = 10 + int((i / total) * 88)
+                if progress_callback:
+                    progress_callback(f"[{i+1}/{total}] 正在下载 {aweme_id}...", pct)
+
+                video_url = f"https://www.douyin.com/video/{aweme_id}"
+                result = self._download_with_douyinvd(video_url)
+                if result.get("success"):
+                    success_count += 1
+                else:
+                    fail_count += 1
+                    print(f"下载失败 {aweme_id}: {result.get('error')}")
+
+                time.sleep(self.config.get("retry_delay", 1))
+
+            if progress_callback:
+                progress_callback(f"批量下载完成：成功 {success_count} 个，失败 {fail_count} 个", 100)
+
+            return {
+                "success": True,
+                "total_count": total,
+                "successful_count": success_count,
+                "failed_count": fail_count,
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
 
     def cleanup_downloads(self, days_old: int = 7) -> Dict[str, Any]:

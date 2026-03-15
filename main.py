@@ -166,9 +166,18 @@ class DouyinLineEdit(QLineEdit):
                     
                     if extracted_url:
                         self.setText(extracted_url)
+                        # 记录是否为用户主页分享，供解析线程使用
+                        is_user_profile = utils.is_user_profile_share_text(clipboard_text)
+                        # 记录是否为用户主页分享，供解析线程使用
+                        if self.main_window is not None:
+                            self.main_window._pending_douyin_url_is_user = is_user_profile
                         if hasattr(self.main_window, 'douyin_status_label'):
-                            self.main_window.douyin_status_label.setText("✅ 已从剪贴板提取有效链接")
-                            self.main_window.douyin_status_label.setStyleSheet("color: #4CAF50;")
+                            if is_user_profile:
+                                self.main_window.douyin_status_label.setText("✅ 已提取用户主页链接")
+                                self.main_window.douyin_status_label.setStyleSheet("color: #2196F3;")
+                            else:
+                                self.main_window.douyin_status_label.setText("✅ 已从剪贴板提取有效链接")
+                                self.main_window.douyin_status_label.setStyleSheet("color: #4CAF50;")
                         print("[智能粘贴] 设置URL成功")
                     else:
                         print("[智能粘贴] 未找到有效链接，使用普通粘贴")
@@ -420,6 +429,7 @@ from paths_config import (
     BILIBILI_DOWNLOADS_DIR,
     DOUYIN_DOWNLOADS_DIR,
     LIVE_DOWNLOADS_DIR,
+    KOUSHARE_DOWNLOADS_DIR,
     DIRECTORY_MAP,
     DEFAULT_SUMMARY_DIR,
 )
@@ -513,6 +523,10 @@ class URLLineEdit(QLineEdit):
                         if extracted_url:
                             self.clear()
                             self.setText(extracted_url)
+                            # 记录是否为用户主页分享，供 WorkerThread 使用
+                            main_win = self.window()
+                            if main_win is not None:
+                                main_win._pending_douyin_url_is_user = utils.is_user_profile_share_text(clipboard_text)
                             event.accept()
                             return
                     except Exception as e:
@@ -530,7 +544,7 @@ class URLLineEdit(QLineEdit):
             
             # 检查是否是简单的直接URL（排除复杂分享文本）
             clipboard_lines = clipboard_text.strip().split('\n')
-            if len(clipboard_lines) == 1 and any(keyword in clipboard_text.lower() for keyword in ['youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'tiktok.com']):
+            if len(clipboard_lines) == 1 and any(keyword in clipboard_text.lower() for keyword in ['youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'tiktok.com', 'koushare.com']):
                 self.clear()
                 self.setText(clipboard_text.strip())
                 event.accept()
@@ -769,6 +783,8 @@ class WorkerThread(QThread):
                 self.process_twitter()
             elif not self.stopped and self.task_type == "bilibili":
                 self.process_bilibili()
+            elif not self.stopped and self.task_type == "koushare":
+                self.process_koushare()
             elif not self.stopped and self.task_type == "local_audio":
                 self.process_local_audio()
             elif not self.stopped and self.task_type == "local_video":
@@ -837,11 +853,30 @@ class WorkerThread(QThread):
                 try:
                     # 创建下载器
                     downloader = DouyinDownloader()
-                    
-                    # 获取视频信息
+
+                    # 检查是否为用户主页链接：优先读粘贴时记录的标记，否则展开短链判断
+                    self.update_signal.emit("正在判断链接类型...")
+                    is_user_profile = self.params.get("is_user_profile", False) or DouyinUtils.is_user_profile_url(youtube_url)
+
+                    if is_user_profile:
+                        self.update_signal.emit("检测到用户主页链接，开始批量下载...")
+                        def user_progress(message, progress):
+                            self.update_signal.emit(f"[{progress}%] {message}")
+                        result = downloader.download_user_videos(youtube_url, progress_callback=user_progress)
+                        if result.get("success"):
+                            s = result.get("successful_count", 0)
+                            f = result.get("failed_count", 0)
+                            self.update_signal.emit(f"✅ 批量下载完成：成功 {s} 个，失败 {f} 个")
+                            self.finished_signal.emit("", True)
+                        else:
+                            self.update_signal.emit(f"❌ 批量下载失败: {result.get('error', '未知错误')}")
+                            self.finished_signal.emit("", False)
+                        return
+
+                    # 单视频：获取视频信息
                     self.update_signal.emit("正在获取视频信息...")
                     video_info = downloader.get_video_info(youtube_url)
-                    
+
                     if not video_info:
                         self.update_signal.emit("❌ 无法获取抖音视频信息")
                         self.update_signal.emit("可能原因：")
@@ -851,18 +886,18 @@ class WorkerThread(QThread):
                         self.update_signal.emit("建议：尝试使用其他抖音链接或稍后重试")
                         self.finished_signal.emit("抖音视频信息获取失败", False)
                         return
-                    
+
                     # 显示视频信息
                     summary = DouyinUtils.get_video_info_summary(video_info)
                     self.update_signal.emit(f"视频信息:\n{summary}")
-                    
+
                     # 下载视频
                     self.update_signal.emit("开始下载抖音视频...")
                     def progress_callback(message, progress):
                         self.update_signal.emit(f"[{progress}%] {message}")
-                    
+
                     result = downloader.download_video(youtube_url, progress_callback=progress_callback)
-                    
+
                     if result.get("success"):
                         downloaded_files = result.get("downloaded_files", [])
                         if downloaded_files:
@@ -871,10 +906,10 @@ class WorkerThread(QThread):
                                 if file_info.get("type") == "video":
                                     video_file = file_info.get("path")
                                     break
-                            
+
                             if video_file:
                                 self.update_signal.emit(f"✅ 抖音视频下载完成: {video_file}")
-                                
+
                                 # 检查是否需要执行转录和摘要
                                 if enable_transcription or generate_article:
                                     self.process_douyin_transcription_and_summary(
@@ -895,9 +930,9 @@ class WorkerThread(QThread):
                         error_msg = result.get("error", "未知错误")
                         self.update_signal.emit(f"❌ 抖音视频下载失败: {error_msg}")
                         self.finished_signal.emit("", False)
-                    
+
                     return
-                    
+
                 except Exception as e:
                     self.update_signal.emit(f"❌ 抖音视频处理异常: {str(e)}")
                     self.finished_signal.emit("", False)
@@ -1077,6 +1112,50 @@ class WorkerThread(QThread):
             import traceback
             error_msg = f"Bilibili视频下载失败: {str(e)}\n{traceback.format_exc()}"
             self.update_signal.emit(error_msg)
+            self.finished_signal.emit("", False)
+
+    def process_koushare(self):
+        """处理寇享视频 - 使用自定义下载器"""
+        self.update_signal.emit("开始处理寇享视频...")
+
+        url = self.params.get("url", "")
+        if not url:
+            self.update_signal.emit("错误: 未提供寇享视频 URL")
+            self.finished_signal.emit("", False)
+            return
+
+        self.update_signal.emit(f"寇享 URL: {url}")
+
+        try:
+            import koushare_downloader
+
+            def progress_callback(message, percent):
+                if not self.stopped:
+                    self.update_signal.emit(f"[{percent}%] {message}")
+
+            result = koushare_downloader.download(
+                url,
+                output_dir=KOUSHARE_DOWNLOADS_DIR,
+                progress_callback=progress_callback,
+            )
+
+            if self.stopped:
+                return
+
+            if result.get("success"):
+                file_path = result.get("file_path", "")
+                title = result.get("title", "")
+                self.update_signal.emit(f"✅ 寇享视频下载完成: {title}")
+                self.update_signal.emit(f"保存位置: {file_path}")
+                self.finished_signal.emit(file_path, True)
+            else:
+                error = result.get("error", "未知错误")
+                self.update_signal.emit(f"❌ 寇享视频下载失败: {error}")
+                self.finished_signal.emit("", False)
+
+        except Exception as e:
+            import traceback
+            self.update_signal.emit(f"❌ 寇享视频下载异常: {str(e)}\n{traceback.format_exc()}")
             self.finished_signal.emit("", False)
 
     def process_local_audio(self):
@@ -2504,6 +2583,28 @@ class MainWindow(QMainWindow):
         advanced_options_layout.addWidget(self.douyin_download_dir_input)
         advanced_options_layout.addWidget(self.douyin_browse_dir_button)
         options_layout.addLayout(advanced_options_layout)
+
+        # Cookie 设置（批量下载用户主页时必须）
+        cookie_layout = QHBoxLayout()
+        cookie_label = QLabel("抖音 Cookie:")
+        cookie_label.setFixedWidth(80)
+        self.douyin_cookie_input = QLineEdit()
+        self.douyin_cookie_input.setPlaceholderText(
+            "批量下载用户主页视频时必填。从浏览器开发者工具 → Network → 任意抖音请求 → Request Headers → Cookie 复制"
+        )
+        self.douyin_cookie_input.setEchoMode(QLineEdit.EchoMode.Password)
+        show_cookie_btn = QPushButton("显示")
+        show_cookie_btn.setFixedWidth(50)
+        show_cookie_btn.setCheckable(True)
+        show_cookie_btn.toggled.connect(
+            lambda checked: self.douyin_cookie_input.setEchoMode(
+                QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+            )
+        )
+        cookie_layout.addWidget(cookie_label)
+        cookie_layout.addWidget(self.douyin_cookie_input)
+        cookie_layout.addWidget(show_cookie_btn)
+        options_layout.addLayout(cookie_layout)
         
         layout.addWidget(options_group)
         
@@ -3856,7 +3957,9 @@ class MainWindow(QMainWindow):
             "enable_transcription": self.enable_transcription_checkbox.isChecked(),
             "generate_article": self.generate_article_checkbox.isChecked(),
             "show_translation_logs": self.show_translation_logs_checkbox.isChecked(),
+            "is_user_profile": getattr(self, '_pending_douyin_url_is_user', False),
         }
+        self._pending_douyin_url_is_user = False  # 消费后重置
         
         # 验证至少选择一个处理选项
         if not params["enable_transcription"] and not params["generate_article"] and not params["download_video"]:
@@ -3872,7 +3975,11 @@ class MainWindow(QMainWindow):
         self.youtube_stop_button.setEnabled(True)
         
         # 创建并启动工作线程
-        self.worker_thread = WorkerThread("youtube", params)
+        # 寇享视频使用专用下载器
+        if 'koushare.com' in youtube_url:
+            self.worker_thread = WorkerThread("koushare", {"url": youtube_url})
+        else:
+            self.worker_thread = WorkerThread("youtube", params)
         self.worker_thread.update_signal.connect(self.update_youtube_output)
         self.worker_thread.finished_signal.connect(self.on_youtube_finished)
         self.worker_thread.start()
@@ -6004,7 +6111,9 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         self.douyin_info_display.clear()
         
         # 创建解析线程
-        self.douyin_parse_thread = DouyinParseThread(url)
+        is_user_profile = getattr(self, '_pending_douyin_url_is_user', False)
+        self._pending_douyin_url_is_user = False  # 消费后重置
+        self.douyin_parse_thread = DouyinParseThread(url, is_user_profile=is_user_profile)
         self.douyin_parse_thread.result_signal.connect(self.on_douyin_info_parsed)
         self.douyin_parse_thread.finished_signal.connect(self.on_douyin_parse_finished)
         self.douyin_parse_thread.update_signal.connect(self.update_douyin_output)
@@ -6107,25 +6216,39 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         print(f"[主线程] 收到 result_signal，视频信息: {type(video_info)}")
         self.douyin_parse_button.setEnabled(True)
         self.douyin_parse_button.setText("🎯 智能解析")
-        
-        if video_info:
-            # 显示视频信息
-            from douyin.utils import DouyinUtils
-            info_summary = DouyinUtils.get_video_info_summary(video_info)
-            self.douyin_info_display.setText(info_summary)
-            
-            # 保存视频信息供下载使用
-            self.current_douyin_info = video_info
-            
-            # 启用下载按钮
-            self.douyin_download_button.setEnabled(True)
-            self.douyin_status_label.setText("视频信息解析成功，可以开始下载")
-            self.douyin_status_label.setStyleSheet("color: #4CAF50;")
-        else:
+
+        if not video_info:
             self.douyin_info_display.setText("解析失败，无法获取视频信息")
             self.douyin_download_button.setEnabled(False)
             self.douyin_status_label.setText("视频信息解析失败")
             self.douyin_status_label.setStyleSheet("color: #f44336;")
+            return
+
+        # 用户主页模式
+        if video_info.get("_type") == "user_profile":
+            nickname = video_info.get("nickname", "抖音用户")
+            self.douyin_info_display.setText(
+                f"用户主页：{nickname}\n\n"
+                f"链接：{video_info.get('url', '')}\n\n"
+                f"点击「批量下载全部视频」开始下载该用户的所有视频。\n"
+                f"需要在设置中配置 Cookie 才能获取完整视频列表。"
+            )
+            self.current_douyin_info = video_info
+            self.douyin_download_button.setText("批量下载全部视频")
+            self.douyin_download_button.setEnabled(True)
+            self.douyin_status_label.setText("已识别用户主页，可批量下载全部视频")
+            self.douyin_status_label.setStyleSheet("color: #2196F3;")
+            return
+
+        # 普通视频模式
+        from douyin.utils import DouyinUtils
+        info_summary = DouyinUtils.get_video_info_summary(video_info)
+        self.douyin_info_display.setText(info_summary)
+        self.current_douyin_info = video_info
+        self.douyin_download_button.setText("🎬 开始下载")
+        self.douyin_download_button.setEnabled(True)
+        self.douyin_status_label.setText("视频信息解析成功，可以开始下载")
+        self.douyin_status_label.setStyleSheet("color: #4CAF50;")
     
     def on_douyin_parse_finished(self, success, message):
         """视频信息解析完成（成功或失败）"""
@@ -6158,12 +6281,17 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         if not hasattr(self, 'current_douyin_info') or not self.current_douyin_info:
             QMessageBox.warning(self, "下载错误", "请先解析视频信息")
             return
-        
+
+        # 用户主页模式 - 批量下载
+        if self.current_douyin_info.get("_type") == "user_profile":
+            self._start_user_profile_download()
+            return
+
         # 验证至少选择一个处理选项
         download_video = self.douyin_download_video_cb.isChecked()
         enable_transcription = self.douyin_enable_transcription_cb.isChecked()
         generate_article = self.douyin_generate_article_cb.isChecked()
-        
+
         if not download_video and not enable_transcription and not generate_article:
             QMessageBox.warning(self, "选择错误", "请至少选择一个处理选项：下载视频、执行转录或生成文章摘要")
             return
@@ -6326,6 +6454,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             "save_metadata": self.douyin_save_metadata_cb.isChecked(),
             "enable_transcription": self.douyin_enable_transcription_cb.isChecked(),
             "generate_article": self.douyin_generate_article_cb.isChecked(),
+            "cookie": self.douyin_cookie_input.text().strip() or None,
         })
         
         return config
@@ -6378,7 +6507,29 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             self.douyin_status_label.setText(f"下载失败: {message}")
             self.douyin_status_label.setStyleSheet("color: #F44336;")
             self.update_douyin_output(f"❌ 下载失败: {message}")
-    
+
+    def _start_user_profile_download(self):
+        """启动用户主页批量下载"""
+        user_info = self.current_douyin_info
+        user_url = user_info.get("url") or user_info.get("original_url")
+
+        config = self.get_douyin_download_config()
+
+        self.douyin_download_button.setEnabled(False)
+        self.douyin_download_button.setText("下载中...")
+        self.douyin_stop_button.setEnabled(True)
+        self.douyin_progress_bar.setVisible(True)
+        self.douyin_progress_bar.setValue(0)
+        self.douyin_status_label.setText("准备批量下载用户视频...")
+        self.douyin_output_text.clear()
+
+        self.douyin_user_download_thread = DouyinUserDownloadThread(user_url, config)
+        self.douyin_user_download_thread.update_signal.connect(self.update_douyin_output)
+        self.douyin_user_download_thread.progress_signal.connect(self.update_douyin_progress)
+        self.douyin_user_download_thread.result_signal.connect(self.on_douyin_batch_finished)
+        self.douyin_user_download_thread.finished_signal.connect(self.on_douyin_download_status)
+        self.douyin_user_download_thread.start()
+
     def on_douyin_batch_finished(self, result):
         """批量下载完成"""
         self.reset_douyin_ui()
@@ -7096,10 +7247,11 @@ class DouyinParseThread(QThread):
     update_signal = pyqtSignal(str)
     result_signal = pyqtSignal(object)
     finished_signal = pyqtSignal(bool, str)
-    
-    def __init__(self, url):
+
+    def __init__(self, url, is_user_profile=False):
         super().__init__()
         self.url = url
+        self.is_user_profile = is_user_profile
         self.stopped = False
     
     def stop(self):
@@ -7110,7 +7262,7 @@ class DouyinParseThread(QThread):
         """执行视频信息解析"""
         try:
             self.update_signal.emit("正在解析视频信息...")
-            
+
             # 安全获取 DouyinUtils 并验证URL
             try:
                 from douyin.utils import DouyinUtils
@@ -7120,7 +7272,40 @@ class DouyinParseThread(QThread):
             except ImportError:
                 self.finished_signal.emit(False, "抖音模块不可用")
                 return
-            
+
+            # 粘贴时已识别为用户主页分享，直接走用户主页分支
+            if self.is_user_profile:
+                self.update_signal.emit("检测到用户主页分享链接...")
+                user_profile = {
+                    "_type": "user_profile",
+                    "url": self.url,
+                    "original_url": self.url,
+                    "nickname": "抖音用户",
+                }
+                self.result_signal.emit(user_profile)
+                self.finished_signal.emit(True, "检测到用户主页")
+                return
+
+            # 展开短链接，判断是否为用户主页
+            resolved_url = self.url
+            if 'v.douyin.com' in self.url or 'iesdouyin.com' in self.url:
+                self.update_signal.emit("正在解析短链接跳转目标...")
+                expanded = DouyinUtils.expand_short_url(self.url)
+                if expanded:
+                    resolved_url = expanded
+
+            if '/user/' in resolved_url:
+                self.update_signal.emit("检测到用户主页链接...")
+                user_profile = {
+                    "_type": "user_profile",
+                    "url": resolved_url,
+                    "original_url": self.url,
+                    "nickname": "抖音用户",
+                }
+                self.result_signal.emit(user_profile)
+                self.finished_signal.emit(True, "检测到用户主页")
+                return
+
             # 创建下载器，使用默认端口8080
             downloader = DouyinDownloader(port="8080")
             
@@ -7342,6 +7527,57 @@ class DouyinBatchDownloadThread(QThread):
         except Exception as e:
             if not self.stopped:
                 self.update_signal.emit(f"批量下载失败: {str(e)}")
+                self.finished_signal.emit(False, f"批量下载失败: {str(e)}")
+
+
+class DouyinUserDownloadThread(QThread):
+    """抖音用户主页批量下载线程"""
+    update_signal = pyqtSignal(str)
+    progress_signal = pyqtSignal(int, str)
+    result_signal = pyqtSignal(object)
+    finished_signal = pyqtSignal(bool, str)
+
+    def __init__(self, url, config, limit=0):
+        super().__init__()
+        self.url = url
+        self.config = config
+        self.limit = limit
+        self.stopped = False
+
+    def stop(self):
+        self.stopped = True
+
+    def run(self):
+        try:
+            self.update_signal.emit("开始批量下载用户视频...")
+            self.progress_signal.emit(0, "初始化...")
+
+            if not DOUYIN_AVAILABLE:
+                raise ImportError("抖音模块不可用")
+
+            downloader = DouyinDownloader(self.config)
+
+            def progress_callback(message, progress):
+                if not self.stopped:
+                    self.update_signal.emit(message)
+                    self.progress_signal.emit(progress, message)
+
+            result = downloader.download_user_videos(self.url, self.limit, progress_callback)
+
+            if self.stopped:
+                return
+
+            if result and result.get("success"):
+                s = result.get("successful_count", 0)
+                f = result.get("failed_count", 0)
+                self.result_signal.emit(result)
+                self.finished_signal.emit(True, f"批量下载完成：成功 {s} 个，失败 {f} 个")
+            else:
+                error = result.get("error", "下载失败") if result else "下载失败"
+                self.finished_signal.emit(False, error)
+
+        except Exception as e:
+            if not self.stopped:
                 self.finished_signal.emit(False, f"批量下载失败: {str(e)}")
 
 

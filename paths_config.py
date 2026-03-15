@@ -39,6 +39,7 @@ TWITTER_DOWNLOADS_DIR = _ensure_subdir("twitter_downloads")
 BILIBILI_DOWNLOADS_DIR = _ensure_subdir("bilibili_downloads")
 DOUYIN_DOWNLOADS_DIR = _ensure_subdir("douyin_downloads")
 LIVE_DOWNLOADS_DIR = _ensure_subdir("live_downloads")
+KOUSHARE_DOWNLOADS_DIR = _ensure_subdir("koushare_downloads")
 
 
 # 逻辑名称到实际目录路径的映射，供清理/打开目录等功能使用
@@ -54,6 +55,7 @@ DIRECTORY_MAP = {
     "bilibili_downloads": BILIBILI_DOWNLOADS_DIR,
     "douyin_downloads": DOUYIN_DOWNLOADS_DIR,
     "live_downloads": LIVE_DOWNLOADS_DIR,
+    "koushare_downloads": KOUSHARE_DOWNLOADS_DIR,
 }
 
 
