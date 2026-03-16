@@ -26,6 +26,7 @@ if 1%min% LSS 110 (
     set min=0%min%
 )
 
+
 :: 生成Tag
 set tag_name=v%yyyy%-%mm%%dd%-%hh%%min%
 
