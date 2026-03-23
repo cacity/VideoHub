@@ -296,6 +296,10 @@ body {
     background: #fb7299;
 }
 
+.platform-badge.koushare {
+    background: #7c4dff;
+}
+
 .queue-item-title {
     font-size: 13px;
     font-weight: 500;

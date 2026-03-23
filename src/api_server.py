@@ -307,6 +307,14 @@ class APIServer:
                 },
                 "title": f"B站: {data['title'][:50]}..."
             }
+        elif platform == 'koushare':
+            task = {
+                "type": "koushare",
+                "params": {
+                    "url": data['url']
+                },
+                "title": f"寇享: {data['title'][:50]}..."
+            }
         else:
             raise ValueError(f"Unsupported platform: {platform}")
         

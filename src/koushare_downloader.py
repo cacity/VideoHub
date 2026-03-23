@@ -202,6 +202,56 @@ def get_playback_url(live_id: str, video_id: str) -> dict:
     return data.get("data", {})
 
 
+def get_video_play_address(video_id: str) -> dict:
+    """
+    获取 /video/details/{id} 类型视频的播放地址。
+    流程：先 checkVideoAuth 拿 secret，再 getVideoPlayAddress。
+    返回值格式与 get_playback_url 对齐：{"playbackUrls": [...]}。
+    """
+    sess = _get_session()
+    has_auth = bool(sess.headers.get("Authorization"))
+    print(f"      [鉴权] Authorization header {'已设置' if has_auth else '未设置（未登录）'}")
+
+    # 步骤 1：checkVideoAuth → secret
+    body = {"id": video_id}
+    headers = _signed_headers(body, "post")
+    resp = sess.post(f"{API_BASE}/video/v1/video/checkVideoAuth",
+                     json=body, headers=headers, timeout=15)
+    resp.raise_for_status()
+    auth_data = resp.json().get("data") or {}
+    secret = auth_data.get("secret", "")
+    if not secret:
+        raise RuntimeError(f"checkVideoAuth 未返回 secret，响应: {resp.json()}")
+
+    # 步骤 2：getVideoPlayAddress → HLS list
+    params = {"videoId": video_id, "secret": secret}
+    headers = _signed_headers(params, "get")
+    resp = sess.get(f"{API_BASE}/video/v1/video/getVideoPlayAddress",
+                    params=params, headers=headers, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get("success") and str(data.get("code", ""))[:3] != "200":
+        raise RuntimeError(f"getVideoPlayAddress 失败: {data}")
+    # 返回格式归一化：[{"type":"HLS","list":[...]}] → {"playbackUrls": [...]}
+    url_list = data.get("data") or []
+    return {"playbackUrls": url_list}
+
+
+def get_video_title(video_id: str, secret: str) -> str:
+    """从 /video/v1/video/info 获取视频标题"""
+    params = {"id": video_id, "secret": secret}
+    headers = _signed_headers(params, "get")
+    try:
+        resp = _get_session().get(f"{API_BASE}/video/v1/video/info",
+                                  params=params, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            info = resp.json().get("data") or {}
+            return info.get("title") or ""
+    except Exception as e:
+        print(f"      [警告] 获取视频标题失败: {e}")
+    return ""
+
+
 # ============================================================
 # URL 解析
 # ============================================================
@@ -209,23 +259,27 @@ def get_playback_url(live_id: str, video_id: str) -> dict:
 def parse_koushare_url(url: str) -> tuple:
     """
     从页面 URL 提取 liveId 和 videoId
-    例如: https://www.koushare.com/live/details/44288?vid=183306
+    支持:
+      https://www.koushare.com/live/details/44288?vid=183306  → (live_id, video_id)
+      https://www.koushare.com/video/details/203628           → (None, video_id)
     """
     parsed = urlparse(url)
+    # live 类型
     m = re.search(r"/live/details/(\d+)", parsed.path)
-    if not m:
-        m2 = re.search(r"/video/videodetail/(\d+)", parsed.path)
-        if m2:
-            return None, m2.group(1)
-        raise ValueError(f"无法从 URL 解析 liveId: {url}")
-    live_id = m.group(1)
+    if m:
+        live_id = m.group(1)
+        qs = parse_qs(parsed.query)
+        video_id = (qs.get("vid") or qs.get("videoId") or [None])[0]
+        if not video_id:
+            raise ValueError(f"无法从 URL 解析 videoId (vid=): {url}")
+        return live_id, video_id
 
-    qs = parse_qs(parsed.query)
-    video_id = (qs.get("vid") or qs.get("videoId") or [None])[0]
-    if not video_id:
-        raise ValueError(f"无法从 URL 解析 videoId (vid=): {url}")
+    # video 类型（/video/details/{id} 或旧格式 /video/videodetail/{id}）
+    m2 = re.search(r"/video/(?:details|videodetail)/(\d+)", parsed.path)
+    if m2:
+        return None, m2.group(1)
 
-    return live_id, video_id
+    raise ValueError(f"无法识别的蔻享 URL 格式: {url}")
 
 
 def is_koushare_url(url: str) -> bool:
@@ -455,14 +509,15 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
         live_id, video_id = parse_koushare_url(url)
         print(f"      liveId={live_id}, videoId={video_id}")
 
-        title = f"koushare_{live_id}_{video_id}"
+        title = f"koushare_{video_id}"
 
-        # ── 步骤 2：从播放列表接口获取标题 ────────────────────────────
+        # ── 步骤 2：获取标题 ───────────────────────────────────────────
         print("[2/3] 获取视频信息...")
         if progress_callback:
             progress_callback("正在获取视频信息...", 15)
 
         if live_id:
+            # live 类型：从回放列表获取分集标题
             video_item = get_video_info(live_id, video_id)
             if video_item:
                 raw_title = video_item.get("title") or video_item.get("name")
@@ -471,7 +526,7 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
                     print(f"      分集标题: {title}")
 
             # 兜底：用直播间/系列名称
-            if title == f"koushare_{live_id}_{video_id}":
+            if title == f"koushare_{video_id}":
                 try:
                     info = get_live_info(live_id)
                     raw_title = info.get("title") or info.get("name") or title
@@ -484,14 +539,45 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
         # ── 步骤 3：下载 ───────────────────────────────────────────────
-        # 始终通过 get_playback_url 拿有效的 HLS 地址（addr 直链需要额外鉴权，不可用）
         print(f"[3/3] 获取 {quality} 画质播放地址...")
         has_auth = bool(_get_session().headers.get("Authorization"))
         if quality == "FHD" and not has_auth:
             print("      [提示] 请求 FHD 画质但尚未登录，FHD 可能需要登录才可用（请在设置中登录蔻享账号）")
         if progress_callback:
             progress_callback("正在获取播放地址...", 25)
-        playback_data = get_playback_url(live_id, video_id)
+
+        if live_id:
+            # live 类型
+            playback_data = get_playback_url(live_id, video_id)
+        else:
+            # video 类型：checkVideoAuth → 同时拿 secret 用于获取标题和播放地址
+            body = {"id": video_id}
+            h = _signed_headers(body, "post")
+            r = _get_session().post(f"{API_BASE}/video/v1/video/checkVideoAuth",
+                                    json=body, headers=h, timeout=15)
+            r.raise_for_status()
+            secret = (r.json().get("data") or {}).get("secret", "")
+            if not secret:
+                raise RuntimeError(f"checkVideoAuth 未返回 secret: {r.json()}")
+
+            # 获取标题
+            raw_title = get_video_title(video_id, secret)
+            if raw_title:
+                title = sanitize_filename(raw_title)
+                output_path = os.path.join(output_dir, f"{title}.mp4")
+                print(f"      视频标题: {title}")
+
+            # 获取播放地址
+            params = {"videoId": video_id, "secret": secret}
+            h2 = _signed_headers(params, "get")
+            resp2 = _get_session().get(f"{API_BASE}/video/v1/video/getVideoPlayAddress",
+                                       params=params, headers=h2, timeout=15)
+            resp2.raise_for_status()
+            data2 = resp2.json()
+            if not data2.get("success") and str(data2.get("code", ""))[:3] != "200":
+                raise RuntimeError(f"getVideoPlayAddress 失败: {data2}")
+            playback_data = {"playbackUrls": data2.get("data") or []}
+
         m3u8_url = select_quality(playback_data, quality)
         print(f"      m3u8: {m3u8_url[:80]}...")
         if progress_callback:

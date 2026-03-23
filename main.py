@@ -5644,6 +5644,22 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             self.worker_thread.finished_signal.connect(self.on_idle_task_finished)
             self.worker_thread.start()
 
+        elif task_type == "koushare":
+            # 寇享视频下载
+            print(f"[闲时任务] 开始处理寇享视频: {task['title']}")
+            self.youtube_output_text.clear()
+            self.youtube_output_text.append(f"[闲时任务] 开始处理寇享视频: {task['title']}")
+
+            # 设置按钮状态
+            self.youtube_process_button.setEnabled(False)
+            self.youtube_process_button.setText("闲时处理中...")
+            self.youtube_stop_button.setEnabled(True)
+
+            self.worker_thread = WorkerThread("koushare", task["params"])
+            self.worker_thread.update_signal.connect(self.update_youtube_output)
+            self.worker_thread.finished_signal.connect(self.on_idle_task_finished)
+            self.worker_thread.start()
+
         else:
             # 未知类型，标记为失败并继续下一个
             print(f"[闲时任务] 警告: 未知任务类型 '{task_type}'，跳过此任务")
@@ -5727,15 +5743,19 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             
             for i, task in enumerate(self.idle_tasks):
                 item_text = f"{i+1}. {task['title']}"
-                if task['type'] == 'youtube':
-                    url = task['params']['youtube_url']
-                    platform = "YouTube"
-                    if 'twitter.com' in url.lower() or 'x.com' in url.lower():
-                        platform = "Twitter/X"
-                    elif 'bilibili.com' in url.lower():
-                        platform = "Bilibili"
+                task_type = task.get('type', 'youtube')
+                params = task.get('params', {})
+                url = params.get('youtube_url') or params.get('url')
+                platform_map = {
+                    'youtube': 'YouTube',
+                    'twitter': 'Twitter/X',
+                    'bilibili': 'Bilibili',
+                    'koushare': '寇享'
+                }
+                platform = platform_map.get(task_type, task.get('platform', task_type))
+                if url:
                     item_text += f" [{platform}: {url[:30]}...]"
-                
+
                 item = QListWidgetItem(item_text)
                 self.idle_queue_list.addItem(item)
             
