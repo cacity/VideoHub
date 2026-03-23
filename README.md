@@ -9,7 +9,7 @@
 ## ✨ 核心功能
 
 ### 🎬 多平台视频处理
-- **🎥 平台支持**: YouTube、Twitter/X、抖音、Bilibili 等主流视频平台
+- **🎥 平台支持**: YouTube、Twitter/X、抖音、Bilibili 、寇享/koushare等主流视频平台
 - **智能下载**: 支持视频/音频下载，可选择完整视频或仅音频模式
 - **精准转录**: 基于 OpenAI Whisper 的高质量语音转录技术
 - **多格式字幕**: 生成 .srt、.vtt、.ass 等多种格式的双语字幕文件
