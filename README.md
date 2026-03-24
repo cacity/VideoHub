@@ -2,15 +2,15 @@
 
 English | [简体中文](./README_cn.md)
 
-VideoHub is a desktop video workflow application built with **PyQt6**. It combines **multi-platform downloading**, **speech transcription**, **bilingual subtitle generation**, **LLM summaries**, **idle-time queue scheduling**, **browser extension integration**, and **live recording utilities** in a single tool.
+VideoHub is a desktop video workflow application built with **PyQt6**. It combines **multi-platform media processing**, **speech transcription**, **bilingual subtitle generation**, **LLM summaries**, **idle-time queue scheduling**, **browser extension integration**, and **live recording utilities** in a single tool.
 
-It is designed for users who want to turn online videos into reusable assets: local video/audio files, transcripts, subtitles, and structured markdown summaries.
+It is designed for users who want to turn online or local media into reusable assets: local video/audio files, transcripts, subtitles, and structured markdown summaries.
 
 ## Feature Overview
 
 | Feature | Description |
 | --- | --- |
-| Multi-platform download | Download content from YouTube, Twitter/X, Douyin, Bilibili, Koushare, and more. |
+| Multi-platform media processing | Import and process content from YouTube, Twitter/X, Douyin, Bilibili, Koushare, and more. |
 | Audio / video workflows | Save full video or audio-only output depending on the task. |
 | Whisper transcription | Transcribe local or online media using OpenAI Whisper. |
 | Bilingual subtitles | Generate `.srt`, `.vtt`, and `.ass` subtitles, with optional translation. |
@@ -21,6 +21,10 @@ It is designed for users who want to turn online videos into reusable assets: lo
 | Browser extension | Add supported video pages directly to the local queue from Chrome/Edge. |
 | Live recording | Includes a live recording integration layer for monitored stream capture. |
 | FFmpeg management | Built-in FFmpeg configuration and testing helpers. |
+
+## Disclaimer
+
+This project is intended for lawful and authorized use only. Please read [DISCLAIMER.md](./DISCLAIMER.md) before using features related to third-party platform content, cookies, tokens, downloading, or recording.
 
 ## Current Limitations
 
@@ -99,7 +103,7 @@ Main tabs in the GUI include:
 - **Batch Processing**
 - **Idle Queue**
 - **Live Recorder**
-- **Download History**
+- **Processing History**
 - **Settings**
 
 ### Media processing CLI
@@ -112,10 +116,10 @@ Main tabs in the GUI include:
 # Process a single YouTube video
 python src/youtube_transcriber.py --youtube "https://www.youtube.com/watch?v=VIDEO_ID"
 
-# Download video and generate subtitles
+# Process video and generate subtitles
 python src/youtube_transcriber.py --youtube "https://www.youtube.com/watch?v=VIDEO_ID" --download-video --generate-subtitles
 
-# Burn subtitles into the downloaded/local video
+# Burn subtitles into the processed/local video
 python src/youtube_transcriber.py --youtube "https://www.youtube.com/watch?v=VIDEO_ID" --download-video --generate-subtitles --embed-subtitles
 
 # Process a local audio file
@@ -144,7 +148,7 @@ python src/youtube_transcriber.py --cleanup-preview
 | `--text` | Generate a summary from a local text file |
 | `--batch` | Read URLs from a text file |
 | `--urls` | Process multiple URLs from the command line |
-| `--download-video` | Save full video instead of audio-only |
+| `--download-video` | Preserve the full video output instead of audio-only |
 | `--generate-subtitles` | Generate subtitle files |
 | `--no-translate` | Skip subtitle translation |
 | `--embed-subtitles` | Burn subtitles into the video |
@@ -153,9 +157,9 @@ python src/youtube_transcriber.py --cleanup-preview
 | `--history` | Show download/processing history |
 | `--cleanup` | Clean generated output directories |
 
-## Douyin Download
+## Douyin Workflow
 
-For Douyin single-video download, use the dedicated CLI:
+For Douyin single-link processing, use the dedicated CLI:
 
 ```bash
 python src/douyin_cli.py "https://v.douyin.com/xxxxx/"
@@ -164,7 +168,7 @@ python src/douyin_cli.py "https://www.douyin.com/video/xxxxx" -o "workspace/douy
 
 Notes:
 
-- It is designed for **single video download**.
+- It is designed for **single-video processing workflows**.
 - It expects the required Douyin backend/service to be available.
 - User-profile batch download is not implemented in the current backend.
 
@@ -238,7 +242,7 @@ python src/ffmpeg_config_cli.py path "C:/ffmpeg/bin/ffmpeg.exe"
 python src/ffmpeg_config_cli.py download
 ```
 
-Use it to inspect current FFmpeg status, switch execution modes, set a custom binary path, or download FFmpeg.
+Use it to inspect current FFmpeg status, switch execution modes, set a custom binary path, or install/configure FFmpeg.
 
 ## Output Structure
 
@@ -292,7 +296,7 @@ VideoHub/
 
 ## Typical Scenarios
 
-### Scenario 1: Download a YouTube course playlist and generate subtitles
+### Scenario 1: Process a YouTube course playlist and generate subtitles
 
 - Paste the playlist/video URL into the GUI
 - Enable subtitle generation
@@ -305,7 +309,7 @@ VideoHub/
 - Add items from the GUI or browser extension
 - Let the idle queue run during the configured time window
 
-### Scenario 3: Download a Douyin video without watermark
+### Scenario 3: Process a Douyin video link
 
 - Copy the Douyin link or share text
 - Extract the URL if needed
