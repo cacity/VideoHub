@@ -49,17 +49,17 @@ class DouyinDownloader:
         """
         try:
             # 使用新的 douyin.py 下载
-            print("🚀 使用新douyin.py下载...")
+            print("使用新douyin.py下载...")
             if progress_callback:
                 progress_callback("正在下载抖音视频...", 5)
             
             douyinvd_result = self._download_with_douyinvd(url, progress_callback)
             if douyinvd_result.get("success"):
-                print("✅ 下载成功")
+                print("下载成功")
                 return douyinvd_result
             else:
                 error = douyinvd_result.get('error', '未知错误')
-                print(f"❌ 下载失败: {error}")
+                print(f"下载失败: {error}")
                 return {"success": False, "error": error}
             
         except Exception as e:
@@ -187,20 +187,34 @@ class DouyinDownloader:
         :return: 视频信息
         """
         try:
-            print("🚀 获取视频信息...")
+            print("获取视频信息...")
             video_info = self.douyinvd_extractor.get_video_info(url)
             
             if video_info:
-                print("✅ 获取视频信息成功")
+                print("获取视频信息成功")
                 return video_info
             else:
-                print("❌ 获取视频信息失败")
+                print("获取视频信息失败")
                 return None
                 
         except Exception as e:
-            print(f"❌ 获取视频信息异常: {e}")
+            print(f"获取视频信息异常: {e}")
             return None
     
+    def validate_profile_download_inputs(self, user_url: str) -> Dict[str, Any]:
+        """校验主页批量下载所需的最小输入条件"""
+        normalized_url = (user_url or "").strip()
+        if not normalized_url:
+            return {"success": False, "error": "缺少抖音用户主页链接"}
+
+        if not DouyinUtils.is_user_profile_url(normalized_url):
+            return {"success": False, "error": "当前链接不是抖音用户主页链接，请粘贴用户主页分享文本或 /user/ 链接"}
+
+        if not self.config.has_cookie():
+            return {"success": False, "error": "抖音用户主页批量下载需要有效 Cookie，请先在设置中填写 Cookie"}
+
+        return {"success": True, "url": normalized_url, "cookie": self.config.get_cookie()}
+
     def download_user_videos(self, user_url: str, limit: int = 0, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """
         使用 f2 库批量下载用户主页所有视频
@@ -209,6 +223,10 @@ class DouyinDownloader:
         :param progress_callback: 进度回调函数
         :return: 下载结果
         """
+        validation = self.validate_profile_download_inputs(user_url)
+        if not validation.get("success"):
+            return {"success": False, "error": validation.get("error", "参数校验失败")}
+
         try:
             import asyncio
             from f2.apps.douyin.handler import DouyinHandler
@@ -217,7 +235,8 @@ class DouyinDownloader:
         except ImportError as e:
             return {"success": False, "error": f"需要安装 f2 库: pip install f2\n({e})"}
 
-        cookie = self.config.get("cookie") or ""
+        cookie = validation.get("cookie") or ""
+        normalized_url = validation.get("url") or user_url
         kwargs = {
             "headers": {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
@@ -229,32 +248,53 @@ class DouyinDownloader:
         }
 
         async def _fetch_aweme_ids():
-            urls = extract_valid_urls([user_url])
+            try:
+                urls = extract_valid_urls([normalized_url])
+            except Exception as e:
+                return {"success": False, "error": f"解析主页链接失败: {e}"}
+
             if not urls:
-                return []
-            sec_user_id = await SecUserIdFetcher.get_sec_user_id(urls[0])
+                return {"success": False, "error": "未能从输入内容中提取有效的抖音主页链接"}
+
+            resolved_url = urls[0]
+
+            try:
+                sec_user_id = await SecUserIdFetcher.get_sec_user_id(resolved_url)
+            except Exception as e:
+                return {"success": False, "error": f"解析 sec_user_id 失败: {e}"}
+
             if not sec_user_id:
-                return []
+                return {"success": False, "error": "无法从主页链接解析 sec_user_id，请确认这是公开可访问的用户主页链接"}
+
+            handler = DouyinHandler(kwargs)
             all_ids = []
-            async for page_data in DouyinHandler(kwargs).fetch_user_post_videos(
-                sec_user_id=sec_user_id,
-                page_counts=20,
-                max_counts=limit if limit > 0 else None,
-            ):
-                for item in page_data._to_list():
-                    aweme_id = item.get("aweme_id")
-                    if aweme_id:
-                        all_ids.append(str(aweme_id))
-            return all_ids
+            try:
+                async for page_data in handler.fetch_user_post_videos(
+                    sec_user_id=sec_user_id,
+                    page_counts=20,
+                    max_counts=limit if limit > 0 else None,
+                ):
+                    for item in page_data._to_list():
+                        aweme_id = item.get("aweme_id")
+                        if aweme_id:
+                            all_ids.append(str(aweme_id))
+            except Exception as e:
+                return {"success": False, "error": f"拉取主页作品列表失败: {e}"}
+
+            if not all_ids:
+                return {"success": False, "error": "未获取到任何作品，Cookie 可能缺失、失效，或该主页暂无可下载作品"}
+
+            return {"success": True, "aweme_ids": all_ids}
 
         try:
             if progress_callback:
                 progress_callback("正在解析用户主页，获取视频列表...", 5)
 
-            aweme_ids = asyncio.run(_fetch_aweme_ids())
-            if not aweme_ids:
-                return {"success": False, "error": "未找到视频，请确认链接为用户主页，或提供有效 Cookie"}
+            fetch_result = asyncio.run(_fetch_aweme_ids())
+            if not fetch_result.get("success"):
+                return {"success": False, "error": fetch_result.get("error", "获取主页作品列表失败")}
 
+            aweme_ids = fetch_result.get("aweme_ids", [])
             total = len(aweme_ids)
             if progress_callback:
                 progress_callback(f"共找到 {total} 个视频，开始下载...", 10)
@@ -336,7 +376,7 @@ class DouyinDownloader:
         :return: 下载结果
         """
         try:
-            print("🚀 使用 douyinVd 下载模式")
+            print("使用 douyinVd 下载模式")
             if progress_callback:
                 progress_callback("使用 douyinVd 下载...", 10)
             
@@ -345,16 +385,16 @@ class DouyinDownloader:
             result = self.douyinvd_extractor.download_video(url, download_dir)
             
             if result.get("success"):
-                print("✅ douyinVd 下载成功")
+                print("douyinVd 下载成功")
                 if progress_callback:
                     progress_callback("douyinVd 下载完成", 100)
                 return result
             else:
                 error_msg = result.get("error", "douyinVd 下载失败")
-                print(f"❌ douyinVd 下载失败: {error_msg}")
+                print(f"douyinVd 下载失败: {error_msg}")
                 return {"success": False, "error": error_msg}
                 
         except Exception as e:
             error_msg = f"douyinVd 下载异常: {str(e)}"
-            print(f"❌ {error_msg}")
+            print(f"{error_msg}")
             return {"success": False, "error": error_msg}

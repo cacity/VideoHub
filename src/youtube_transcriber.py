@@ -725,7 +725,7 @@ def check_youtube_subtitles(youtube_url, cookies_file=None):
     except Exception as e:
         return {'error': str(e)}
 
-def download_youtube_subtitles(youtube_url, output_dir=NATIVE_SUBTITLES_DIR, 
+def download_youtube_subtitles(youtube_url, output_dir=NATIVE_SUBTITLES_DIR,
                              languages=['zh', 'en'], download_auto=True, cookies_file=None):
     """
     下载YouTube视频的原生字幕
@@ -737,48 +737,60 @@ def download_youtube_subtitles(youtube_url, output_dir=NATIVE_SUBTITLES_DIR,
     :return: 下载的字幕文件列表
     """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    
-    ydl_opts = {
+
+    base_ydl_opts = {
         'writesubtitles': True,
         'writeautomaticsub': download_auto,
-        'subtitleslangs': languages,
         'skip_download': True,
         'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
         'subtitlesformat': 'srt',
         'quiet': False,
     }
-    
+
     # 设置cookies
     if cookies_file:
         if cookies_file.startswith("browser:"):
             browser_name = cookies_file.replace("browser:", "")
-            ydl_opts['cookiesfrombrowser'] = (browser_name, None, None, None)
+            base_ydl_opts['cookiesfrombrowser'] = (browser_name, None, None, None)
         elif os.path.exists(cookies_file):
-            ydl_opts['cookiefile'] = cookies_file
-    
+            base_ydl_opts['cookiefile'] = cookies_file
+
     proxy = os.getenv("PROXY") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
     if proxy:
-        ydl_opts['proxy'] = proxy
-    
+        base_ydl_opts['proxy'] = proxy
+
+    subtitle_extensions = ['srt', 'vtt', 'ttml', 'srv3', 'srv2', 'srv1', 'json3']
     downloaded_files = []
-    
+
+    def find_downloaded_files(title, target_languages, existing_files=None):
+        found_files = []
+        existing_files = existing_files or set()
+        for lang in target_languages:
+            for ext in subtitle_extensions:
+                manual_file = os.path.join(output_dir, f"{title}.{lang}.{ext}")
+                auto_file = os.path.join(output_dir, f"{title}.{lang}.auto.{ext}")
+                for candidate in [manual_file, auto_file]:
+                    if os.path.exists(candidate) and candidate not in existing_files and candidate not in found_files:
+                        found_files.append(candidate)
+        return found_files
+
     try:
         # 尝试多种配置
         proxy_configs = []
-        
+
         # 配置1：使用系统代理
         proxy = os.getenv("PROXY") or os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
         if proxy:
-            proxy_config = ydl_opts.copy()
+            proxy_config = base_ydl_opts.copy()
             proxy_config['proxy'] = proxy
             proxy_configs.append(proxy_config)
-        
+
         # 配置2：不使用代理
-        no_proxy_config = ydl_opts.copy()
+        no_proxy_config = base_ydl_opts.copy()
         if 'proxy' in no_proxy_config:
             del no_proxy_config['proxy']
         proxy_configs.append(no_proxy_config)
-        
+
         info = None
         successful_config = None
         for config in proxy_configs:
@@ -792,83 +804,67 @@ def download_youtube_subtitles(youtube_url, output_dir=NATIVE_SUBTITLES_DIR,
                     print(f"使用代理失败，尝试直连: {str(e)}")
                 else:
                     raise e  # 如果直连也失败，抛出异常
-        
+
         # 检查是否成功获取视频信息
         if not info:
             print("无法获取视频信息，可能需要Cookies文件或网络问题")
             return []
-        
+
         title = sanitize_filename(info.get('title', 'Unknown'))
-        
+
         print(f"视频标题: {title}")
-        
+
         # 检查可用字幕
         subtitles = info.get('subtitles', {})
         auto_subtitles = info.get('automatic_captions', {})
-        
+
         print(f"手动字幕语言: {list(subtitles.keys())}")
         print(f"自动字幕语言: {list(auto_subtitles.keys())}")
-        
+
         # 下载字幕
         if subtitles or auto_subtitles:
             print("开始下载字幕...")
-            # 使用成功的配置进行下载
-            with yt_dlp.YoutubeDL(successful_config) as ydl:
-                ydl.download([youtube_url])
-                
-                # 查找下载的字幕文件
-                print(f"查找字幕文件，标题: '{title}', 语言: {languages}")
-                
-                for lang in languages:
-                    # 检查手动字幕
-                    srt_file = os.path.join(output_dir, f"{title}.{lang}.srt")
-                    print(f"检查手动字幕文件: {srt_file}")
-                    if os.path.exists(srt_file):
-                        downloaded_files.append(srt_file)
-                        print(f"已下载手动字幕: {srt_file}")
-                    
-                    # 检查自动字幕
-                    auto_srt_file = os.path.join(output_dir, f"{title}.{lang}.auto.srt")
-                    print(f"检查自动字幕文件: {auto_srt_file}")
-                    if os.path.exists(auto_srt_file):
-                        downloaded_files.append(auto_srt_file)
-                        print(f"已下载自动字幕: {auto_srt_file}")
-                        
-                # 如果没有找到指定语言的字幕，查找任何已下载的字幕文件
-                if not downloaded_files:
-                    print(f"未找到指定语言字幕，搜索所有相关文件...")
-                    
-                    # 尝试多种模式查找
-                    patterns = [
-                        f"{title}*.srt",  # 原始模式
-                        f"*{title}*.srt",  # 包含标题的文件
-                        "*.srt"  # 所有srt文件
-                    ]
-                    
-                    for pattern in patterns:
-                        subtitle_files = list(Path(output_dir).glob(pattern))
-                        if subtitle_files:
-                            # 过滤出包含指定语言的文件
-                            for lang in languages:
-                                matching_files = [f for f in subtitle_files if f".{lang}." in str(f) or f".{lang}.srt" in str(f)]
-                                if matching_files:
-                                    downloaded_files.extend([str(f) for f in matching_files])
-                                    break
-                            
-                            # 如果仍然没有找到，返回所有找到的字幕文件
-                            if not downloaded_files and subtitle_files:
-                                downloaded_files = [str(f) for f in subtitle_files]
-                            break
-                    
-                    if downloaded_files:
-                        print(f"找到字幕文件: {downloaded_files}")
-                    else:
-                        print(f"在目录 {output_dir} 中未找到任何字幕文件")
+            print(f"查找字幕文件，标题: '{title}', 语言: {languages}")
+
+            download_errors = []
+            existing_files = {
+                str(path)
+                for path in Path(output_dir).glob('*')
+                if path.is_file()
+            }
+            for lang in languages:
+                lang_config = successful_config.copy()
+                lang_config['subtitleslangs'] = [lang]
+                print(f"尝试下载字幕语言: {lang}")
+                try:
+                    with yt_dlp.YoutubeDL(lang_config) as ydl:
+                        ydl.download([youtube_url])
+                except Exception as e:
+                    error_message = str(e)
+                    download_errors.append((lang, error_message))
+                    print(f"下载字幕语言 {lang} 失败: {error_message}")
+                    continue
+
+                lang_files = find_downloaded_files(title, [lang], existing_files)
+                if lang_files:
+                    downloaded_files.extend([f for f in lang_files if f not in downloaded_files])
+                    print(f"已下载字幕语言 {lang}: {lang_files}")
+                    break
+
+                print(f"字幕语言 {lang} 下载完成，但未找到对应文件")
+
+            if not downloaded_files:
+                if download_errors:
+                    print("所有候选字幕语言下载均失败:")
+                    for lang, error_message in download_errors:
+                        print(f"- {lang}: {error_message}")
+                else:
+                    print(f"在目录 {output_dir} 中未找到任何新下载的字幕文件")
         else:
             print("该视频没有可用的字幕")
-                
+
         return downloaded_files
-        
+
     except Exception as e:
         print(f"下载字幕时出错: {str(e)}")
         return []
@@ -3760,10 +3756,19 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                         print(f"可用的自动字幕语言: {subtitle_info['auto_languages']}")
 
                         best_auto_lang = subtitle_info.get('best_auto_language')
+                        auto_languages = subtitle_info.get('auto_languages', [])
+                        auto_langs = []
+
                         if best_auto_lang:
-                            auto_langs = [best_auto_lang]
-                        else:
-                            auto_langs = subtitle_info.get('preferred_languages', ['zh', 'en'])[:2]
+                            auto_langs.append(best_auto_lang)
+
+                        fallback_auto_priority = ['en', 'en-orig', 'en-US', 'en-GB', 'zh-Hans', 'zh-CN', 'zh', 'zh-Hant', 'zh-TW']
+                        for lang in fallback_auto_priority:
+                            if lang in auto_languages and lang not in auto_langs:
+                                auto_langs.append(lang)
+
+                        max_auto_subtitle_attempts = 4
+                        auto_langs = auto_langs[:max_auto_subtitle_attempts]
 
                         print(f"尝试下载自动字幕语言: {auto_langs}")
 

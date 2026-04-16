@@ -53,14 +53,14 @@ class DouyinVdExtractor:
         try:
             video_info = douyin_get_video_info(douyin_url)
             if video_info and video_info.video_url:
-                print(f"✅ 获取到视频下载链接: {video_info.video_url[:50]}...")
+                print(f"获取到视频下载链接: {video_info.video_url[:50]}...")
                 return video_info.video_url
             else:
-                print("❌ 获取视频链接失败")
+                print("获取视频链接失败")
                 return None
                 
         except Exception as e:
-            print(f"❌ 获取视频链接异常: {e}")
+            print(f"获取视频链接异常: {e}")
             return None
     
     def get_video_info(self, douyin_url: str) -> Optional[Dict[str, Any]]:
@@ -72,14 +72,14 @@ class DouyinVdExtractor:
         try:
             video_info = douyin_get_video_info(douyin_url)
             if video_info:
-                print(f"✅ 获取到视频详细信息")
+                print("获取到视频详细信息")
                 return self._normalize_video_info(video_info)
             else:
-                print("❌ 获取视频信息失败")
+                print("获取视频信息失败")
                 return None
                 
         except Exception as e:
-            print(f"❌ 获取视频信息异常: {e}")
+            print(f"获取视频信息异常: {e}")
             return None
     
     def _normalize_video_info(self, video_info: DouyinVideoInfo) -> Dict[str, Any]:
@@ -135,7 +135,7 @@ class DouyinVdExtractor:
             return normalized_info
             
         except Exception as e:
-            print(f"❌ 标准化视频信息失败: {e}")
+            print(f"标准化视频信息失败: {e}")
             return video_info.to_dict() if hasattr(video_info, 'to_dict') else {}
     
     def download_video(self, douyin_url: str, download_dir: str = "douyin_downloads") -> Dict[str, Any]:
@@ -174,7 +174,7 @@ class DouyinVdExtractor:
             
             # 下载视频文件
             import requests
-            print(f"🎬 开始下载视频: {filename}")
+            print(f"开始下载视频: {filename}")
             
             headers = {
                 "User-Agent": "Mozilla/5.0 (Linux; Android 11; SAMSUNG SM-G973U) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/14.2 Chrome/87.0.4280.141 Mobile Safari/537.36",
@@ -195,14 +195,14 @@ class DouyinVdExtractor:
                             progress = (downloaded_size / total_size) * 100
                             print(f"\r下载进度: {progress:.1f}%", end="", flush=True)
             
-            print(f"\n✅ 视频下载完成: {filepath}")
+            print(f"\n视频下载完成: {filepath}")
             
             # 保存元数据
             metadata_path = os.path.join(download_dir, f"{base_filename}_metadata.json")
             with open(metadata_path, 'w', encoding='utf-8') as f:
                 json.dump(video_info, f, ensure_ascii=False, indent=2)
             
-            print(f"✅ 元数据保存完成: {metadata_path}")
+            print(f"元数据保存完成: {metadata_path}")
             
             return {
                 "success": True,
@@ -224,7 +224,7 @@ class DouyinVdExtractor:
             }
             
         except Exception as e:
-            print(f"❌ 下载视频失败: {e}")
+            print(f"下载视频失败: {e}")
             return {"success": False, "error": str(e)}
     
     def __del__(self):

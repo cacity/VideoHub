@@ -6686,6 +6686,32 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
 
         config = self.get_douyin_download_config()
 
+        cookie = config.get_cookie() if hasattr(config, 'get_cookie') else (config.get("cookie") or "").strip()
+        if not cookie:
+            QMessageBox.warning(self, "缺少 Cookie", "抖音用户主页批量下载需要有效 Cookie，请先在下方 Cookie 输入框中填写后再试")
+            self.douyin_status_label.setText("批量下载未启动：缺少 Cookie")
+            self.douyin_status_label.setStyleSheet("color: #f44336;")
+            self.update_douyin_output("❌ 批量下载未启动：缺少 Cookie，请先填写有效 Cookie")
+            return
+
+        try:
+            from douyin.downloader import DouyinDownloader
+            validation = DouyinDownloader(config).validate_profile_download_inputs(user_url)
+        except Exception as e:
+            QMessageBox.warning(self, "预检失败", f"主页批量下载预检失败：{e}")
+            self.douyin_status_label.setText("批量下载未启动：预检失败")
+            self.douyin_status_label.setStyleSheet("color: #f44336;")
+            self.update_douyin_output(f"❌ 主页批量下载预检失败: {e}")
+            return
+
+        if not validation.get("success"):
+            error_msg = validation.get("error", "主页批量下载参数无效，Cookie 可能失效")
+            QMessageBox.warning(self, "无法开始批量下载", error_msg)
+            self.douyin_status_label.setText("批量下载未启动")
+            self.douyin_status_label.setStyleSheet("color: #f44336;")
+            self.update_douyin_output(f"❌ 批量下载未启动: {error_msg}")
+            return
+
         self.douyin_download_button.setEnabled(False)
         self.douyin_download_button.setText("下载中...")
         self.douyin_stop_button.setEnabled(True)

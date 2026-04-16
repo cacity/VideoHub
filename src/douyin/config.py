@@ -93,6 +93,19 @@ class DouyinConfig:
         """批量更新配置"""
         self.config.update(config_dict)
     
+    def has_cookie(self) -> bool:
+        """是否提供了非空 Cookie"""
+        cookie = self.get("cookie")
+        return bool(cookie and str(cookie).strip())
+
+    def get_cookie(self) -> Optional[str]:
+        """获取清理后的 Cookie"""
+        cookie = self.get("cookie")
+        if cookie is None:
+            return None
+        cookie = str(cookie).strip()
+        return cookie or None
+
     def get_headers(self) -> Dict[str, str]:
         """获取请求头 - 参考开源项目优化"""
         headers = {
@@ -116,15 +129,15 @@ class DouyinConfig:
             "Referer": "https://www.douyin.com/",
             "Origin": "https://www.douyin.com",
         }
-        
+
         # 添加Cookie
-        cookie = self.get("cookie")
+        cookie = self.get_cookie()
         if cookie:
             headers["Cookie"] = cookie
         else:
             # 添加基础cookie以提高成功率
             headers["Cookie"] = self._generate_basic_cookies()
-            
+
         return headers
     
     def _generate_basic_cookies(self) -> str:
