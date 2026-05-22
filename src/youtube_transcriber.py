@@ -15,6 +15,13 @@ import json
 import time
 from urllib.parse import urlparse, parse_qs
 
+# 导入 yt-dlp 管理器
+try:
+    from ytdlp_manager import get_ytdlp_manager, get_ytdlp_options
+    YT_DLP_MANAGER_AVAILABLE = True
+except ImportError:
+    YT_DLP_MANAGER_AVAILABLE = False
+
 # 统一的工作目录和各类子目录（videos/downloads/subtitles/...）
 from paths_config import (
     WORKSPACE_DIR,
@@ -54,6 +61,128 @@ def set_translation_verbose(verbose: bool):
     """
     global TRANSLATION_VERBOSE
     TRANSLATION_VERBOSE = bool(verbose)
+
+
+def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cookies_file=None, proxy=None):
+    """
+    使用本地 yt-dlp.exe 下载视频
+
+    Args:
+        youtube_url: YouTube视频链接
+        exe_path: yt-dlp.exe 路径
+        output_dir: 输出目录
+        audio_only: 是否仅下载音频
+        cookies_file: cookies文件路径
+        proxy: 代理服务器
+
+    Returns:
+        视频信息字典
+    """
+    import tempfile
+    import re
+
+    # 构建命令
+    cmd = [exe_path]
+
+    # 格式选项 - 使用更广泛的格式匹配
+    if audio_only:
+        cmd.extend(['-f', 'bestaudio/best'])
+    else:
+        # 视频下载：尝试多种格式组合
+        cmd.extend(['-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'])
+
+    # 使用安全的文件名模板
+    safe_template = os.path.join(output_dir, 'video_%(id)s.%(ext)s')
+    cmd.extend(['-o', safe_template])
+
+    # 保留原始文件（不删除分片）
+    cmd.append('-k')
+
+    # 详细输出模式
+    cmd.append('-v')
+
+    # Cookies
+    if cookies_file and os.path.exists(cookies_file):
+        cmd.extend(['--cookies', cookies_file])
+        print(f"使用 cookies 文件: {cookies_file}")
+    else:
+        print("警告: 未提供 cookies 文件")
+
+    # 代理
+    if proxy:
+        cmd.extend(['--proxy', proxy])
+        print(f"使用代理: {proxy}")
+
+    # 添加 --no-check-certificate 避免证书问题
+    cmd.append('--no-check-certificate')
+
+    # 添加视频URL
+    cmd.append(youtube_url)
+
+    print(f"执行命令: {' '.join(cmd)}")
+
+    # 执行下载
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=600  # 10分钟超时
+    )
+
+    print(f"命令返回码: {result.returncode}")
+
+    if result.returncode != 0:
+        error_msg = result.stderr.strip()
+        if not error_msg:
+            error_msg = result.stdout.strip()
+
+        print(f"yt-dlp.exe 错误: {error_msg}")
+
+        # 检查是否是 cookies 相关的错误
+        if 'Sign in to confirm' in error_msg or 'Sign in' in error_msg:
+            raise Exception(
+                f"yt-dlp.exe 仍然提示需要登录验证\n"
+                f"错误信息: {error_msg}\n"
+                f"\n💡 建议: 请确保 cookies 文件有效，或重新导出 cookies"
+            )
+
+        raise Exception(f"yt-dlp.exe 下载失败: {error_msg}")
+
+    # 扫描输出目录找下载的文件
+    downloaded_file = None
+
+    # 扫描输出目录
+    if os.path.exists(output_dir):
+        files = [f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))]
+        for f in files:
+            # 跳过临时文件
+            if f.endswith('.part') or f.endswith('.temp') or f.startswith('.'):
+                continue
+            # 跳过分片文件
+            if '.f' in f and ('.mp4' in f or '.m4a' in f or '.webm' in f):
+                continue
+            # 跳过 .ytdl 文件
+            if f.endswith('.ytdl'):
+                continue
+            # 找到 mp4 或其他视频文件
+            ext = os.path.splitext(f)[1].lower()
+            if ext in ['.mp4', '.mkv', '.webm', '.avi', '.mov', '.flv']:
+                downloaded_file = os.path.join(output_dir, f)
+                break
+
+    if not downloaded_file or not os.path.exists(downloaded_file):
+        raise Exception(f"下载完成但无法找到输出文件\n输出目录: {output_dir}\n命令输出:\n{result.stdout}")
+
+    print(f"下载成功: {downloaded_file}")
+
+    # 构建视频信息
+    info = {
+        'title': Path(downloaded_file).stem,
+        'ext': Path(downloaded_file).suffix.lstrip('.'),
+        'filepath': downloaded_file,
+    }
+
+    return info
 
 def _safe_int(value: str, default: int) -> int:
     try:
@@ -1461,36 +1590,83 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
     if proxy:
         print(f"使用代理: {proxy}")
         ydl_opts['proxy'] = proxy
-    
+
+    # 检查是否使用本地 exe 模式
+    ytdlp_mode = os.getenv("YT_DLP_MODE", "python")
+    ytdlp_exe_path = os.getenv("YT_DLP_EXE_PATH", "")
+
+    # 检查可用的 cookies
+    available_cookies = None
+    if cookies_file and os.path.exists(cookies_file):
+        available_cookies = cookies_file
+
     try:
         print(f"开始{'音频' if audio_only else '视频'}下载: {youtube_url}")
         print(f"下载选项: {'仅音频' if audio_only else '完整视频'}")
+        print(f"yt-dlp 模式: {'本地可执行文件' if ytdlp_mode == 'exe' and ytdlp_exe_path else 'Python 库'}")
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # 获取视频信息
-            print(f"正在获取视频信息...")
-            info = ydl.extract_info(youtube_url, download=True)
+        # 检查是否使用本地可执行文件模式
+        if ytdlp_mode == "exe" and ytdlp_exe_path and os.path.exists(ytdlp_exe_path):
+            # 使用本地 yt-dlp.exe
+            print(f"使用本地 yt-dlp.exe: {ytdlp_exe_path}")
+            info = download_with_exe(
+                youtube_url,
+                ytdlp_exe_path,
+                output_dir,
+                audio_only,
+                available_cookies,
+                proxy
+            )
 
-            # 尝试从info中获取实际导出的文件扩展名，避免与预期扩展名不一致导致找不到文件
+            # exe模式返回的info包含filepath
+            downloaded_path = info.get('filepath')
+            if not downloaded_path or not os.path.exists(downloaded_path):
+                raise Exception(f"下载完成但文件不存在: {downloaded_path}")
+
+            # 重命名文件（如果需要）
+            final_path = downloaded_path
             try:
-                info_ext = info.get("ext")
-                if isinstance(info_ext, str) and info_ext:
-                    expected_ext = info_ext.lower()
-                    print(f"检测到实际文件扩展名: .{expected_ext}")
-            except Exception:
-                pass
-            
-            # 检查是否成功获取视频信息
-            if not info:
-                error_msg = "无法获取视频信息，可能的原因：\n"
-                error_msg += "1. 视频需要登录才能访问 - 请设置Cookies文件\n"
-                error_msg += "2. 视频被地区限制 - 可能需要VPN\n"
-                error_msg += "3. 视频已被删除或设为私有\n"
-                error_msg += "4. 网络连接问题\n"
-                if not cookies_file:
-                    error_msg += "\n💡 建议：尝试设置Cookies文件以解决访问限制问题"
-                print(error_msg)
-                raise Exception(error_msg)
+                stem = Path(final_path).stem
+                ext = Path(final_path).suffix
+                sanitized_stem = sanitize_filename(stem)
+                sanitized_path = os.path.join(output_dir, f"{sanitized_stem}{ext}")
+                if sanitized_path != final_path:
+                    os.rename(final_path, sanitized_path)
+                    print(f"已重命名下载文件: {final_path} -> {sanitized_path}")
+                    final_path = sanitized_path
+            except Exception as e:
+                print(f"重命名下载文件失败: {str(e)}")
+
+            print(f"文件下载成功: {final_path}")
+            log_downloaded_video(youtube_url, final_path, info)
+            return final_path
+        else:
+            # 使用 Python yt-dlp 库
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # 获取视频信息
+                print(f"正在获取视频信息...")
+                info = ydl.extract_info(youtube_url, download=True)
+
+                # 尝试从info中获取实际导出的文件扩展名，避免与预期扩展名不一致导致找不到文件
+                try:
+                    info_ext = info.get("ext")
+                    if isinstance(info_ext, str) and info_ext:
+                        expected_ext = info_ext.lower()
+                        print(f"检测到实际文件扩展名: .{expected_ext}")
+                except Exception:
+                    pass
+
+                # 检查是否成功获取视频信息
+                if not info:
+                    error_msg = "无法获取视频信息，可能的原因：\n"
+                    error_msg += "1. 视频需要登录才能访问 - 请设置Cookies文件\n"
+                    error_msg += "2. 视频被地区限制 - 可能需要VPN\n"
+                    error_msg += "3. 视频已被删除或设为私有\n"
+                    error_msg += "4. 网络连接问题\n"
+                    if not cookies_file:
+                        error_msg += "\n💡 建议：尝试设置Cookies文件以解决访问限制问题"
+                    print(error_msg)
+                    raise Exception(error_msg)
             
             # 记录下载的视频信息
             try:

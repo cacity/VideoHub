@@ -41,6 +41,9 @@ DOUYIN_DOWNLOADS_DIR = _ensure_subdir("douyin_downloads")
 LIVE_DOWNLOADS_DIR = _ensure_subdir("live_downloads")
 KOUSHARE_DOWNLOADS_DIR = _ensure_subdir("koushare_downloads")
 
+# AI 配音相关目录
+DUBBING_TEMP_DIR = _ensure_subdir("dubbing_temp")
+
 
 # 逻辑名称到实际目录路径的映射，供清理/打开目录等功能使用
 DIRECTORY_MAP = {
@@ -56,6 +59,7 @@ DIRECTORY_MAP = {
     "douyin_downloads": DOUYIN_DOWNLOADS_DIR,
     "live_downloads": LIVE_DOWNLOADS_DIR,
     "koushare_downloads": KOUSHARE_DOWNLOADS_DIR,
+    "dubbing_temp": DUBBING_TEMP_DIR,
 }
 
 

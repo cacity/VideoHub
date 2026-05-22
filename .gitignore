@@ -1,4 +1,8 @@
-# 环境配置文件
+# 本地计划和方案文档（不上传GitHub）
+plans/
+local_docs/
+*.plan.md
+*.design.md
 .env
 .env.local
 .env.development
@@ -25,9 +29,19 @@ coverage.xml
 .pytest_cache
 .hypothesis
 
+# Python 打包相关
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+MANIFEST
+
 # 工作目录和数据文件 - 所有用户生成的内容
 # 统一挂在 workspace/ 目录下，避免误提交到Git仓库
 workspace/
+.gstack/
+.claude/
 downloads/
 .claude/
 CLAUDE.md

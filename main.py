@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox,
     QCheckBox, QTabWidget, QFileDialog, QMessageBox, QProgressBar,
-    QGroupBox, QRadioButton, QScrollArea, QSplitter, QListWidget,
+    QGroupBox, QRadioButton, QScrollArea, QSplitter, QSlider, QListWidget,
     QListWidgetItem, QButtonGroup, QSpinBox, QStatusBar, QDialog,
     QDialogButtonBox, QInputDialog, QMenu, QFontComboBox, QDoubleSpinBox,
     QFrame, QColorDialog
@@ -818,6 +818,8 @@ class WorkerThread(QThread):
                 self.process_local_text()
             elif not self.stopped and self.task_type == "batch":
                 self.process_batch()
+            elif not self.stopped and self.task_type == "dubbing":
+                self.process_dubbing()
         except Exception as e:
             if not self.stopped:  # 只有在非停止状态下才报告错误
                 import traceback
@@ -1452,7 +1454,84 @@ class WorkerThread(QThread):
             self.finished_signal.emit("", False)
         finally:
             builtins.print = original_print
-    
+
+    def process_dubbing(self):
+        """处理中文配音任务"""
+        from src.dubbing_engine import VideoDubbingEngine, DubbingTask
+        from src.chinese_tts import check_kokoro_available
+
+        self.update_signal.emit("🎙️ 开始中文配音流程...")
+
+        # 检查 Kokoro 是否可用
+        if not check_kokoro_available():
+            self.update_signal.emit("[ERROR] Kokoro TTS 未安装，请先运行: pip install kokoro>=0.9.4 soundfile")
+            self.finished_signal.emit("", False)
+            return
+
+        # 获取参数
+        video_path = self.params.get("video_path", "")
+        youtube_url = self.params.get("youtube_url", "")
+        subtitle_path = self.params.get("subtitle_path", "")
+        output_path = self.params.get("output_path", "")
+        voice = self.params.get("voice", "xiaobei")
+        speed = self.params.get("speed", 1.0)
+        enable_transcription = self.params.get("enable_transcription", True)
+        enable_translation = self.params.get("enable_translation", True)
+
+        # 创建配音任务
+        task = DubbingTask(
+            video_path=video_path if video_path else None,
+            youtube_url=youtube_url if youtube_url else None,
+            subtitle_path=subtitle_path if subtitle_path else None,
+            output_path=output_path if output_path else None,
+            voice=voice,
+            speed=speed,
+            enable_transcription=enable_transcription,
+            enable_translation=enable_translation
+        )
+
+        # 创建引擎并设置回调
+        def progress_callback(percent, message):
+            self.update_signal.emit(f"[{percent}%] {message}")
+            self.progress_signal.emit(percent)
+
+        def step_callback(step_name, step_index):
+            step_names = {
+                'download': '📥 下载视频',
+                'transcribe': '📝 生成英文字幕',
+                'translate': '🌐 翻译中文字幕',
+                'tts': '🔊 合成中文音频',
+                'combine': '🎬 合成最终视频'
+            }
+            display_name = step_names.get(step_name, step_name)
+            self.update_signal.emit(f"步骤 {step_index + 1}/5: {display_name}")
+
+        def log_callback(message):
+            self.update_signal.emit(message)
+
+        engine = VideoDubbingEngine(
+            progress_callback=progress_callback,
+            step_callback=step_callback,
+            log_callback=log_callback
+        )
+
+        try:
+            # 执行配音
+            result_path = engine.dub_video(task)
+
+            self.update_signal.emit("=" * 50)
+            self.update_signal.emit(f"✅ 配音完成！")
+            self.update_signal.emit(f"📁 输出文件: {result_path}")
+            self.update_signal.emit("=" * 50)
+
+            self.finished_signal.emit(result_path, True)
+
+        except Exception as e:
+            import traceback
+            self.update_signal.emit(f"[ERROR] 配音失败: {str(e)}")
+            self.update_signal.emit(traceback.format_exc())
+            self.finished_signal.emit("", False)
+
     def stop(self):
         """停止线程"""
         self.stopped = True
@@ -1540,7 +1619,21 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(history_tab, "下载历史")
         subtitle_translate_tab = self.create_subtitle_translate_tab()
         tab_widget.addTab(subtitle_translate_tab, "字幕翻译")
-        
+
+        # 创建AI中文配音标签页
+        try:
+            print("🎙️ 正在创建AI中文配音标签页...")
+            dubbing_tab = self.create_dubbing_tab()
+            if dubbing_tab:
+                tab_widget.addTab(dubbing_tab, "AI配音")
+                print("✅ AI中文配音标签页创建成功")
+            else:
+                print("❌ AI中文配音标签页创建失败：返回None")
+        except Exception as e:
+            print(f"❌ AI中文配音标签页创建异常: {e}")
+            import traceback
+            traceback.print_exc()
+
         # 创建直播录制标签页（替换原来的抖音下载标签页）
         try:
             print("📺 正在创建直播录制标签页...")
@@ -2486,7 +2579,223 @@ class MainWindow(QMainWindow):
         
         layout.addStretch()
         return tab
-    
+
+    def create_dubbing_tab(self):
+        """创建AI中文配音选项卡 - 将英文视频自动配音为中文"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # 标题和说明
+        title_label = QLabel("🎙️ AI中文配音")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c5aa0; margin-bottom: 10px;")
+        layout.addWidget(title_label)
+
+        desc_label = QLabel("将YouTube英文视频自动翻译并配音为中文，生成完整的中文讲解视频。")
+        desc_label.setStyleSheet("color: #666; margin-bottom: 20px;")
+        desc_label.setWordWrap(True)
+        layout.addWidget(desc_label)
+
+        # === 输入方式选择 ===
+        input_group = QGroupBox("输入方式")
+        input_layout = QVBoxLayout(input_group)
+
+        input_radio_layout = QHBoxLayout()
+        self.dubbing_url_radio = QRadioButton("YouTube链接")
+        self.dubbing_local_radio = QRadioButton("本地文件")
+        self.dubbing_url_radio.setChecked(True)
+
+        input_radio_layout.addWidget(self.dubbing_url_radio)
+        input_radio_layout.addWidget(self.dubbing_local_radio)
+        input_radio_layout.addStretch()
+        input_layout.addLayout(input_radio_layout)
+
+        # YouTube URL输入
+        self.dubbing_url_container = QWidget()
+        url_layout = QHBoxLayout(self.dubbing_url_container)
+        url_layout.setContentsMargins(0, 0, 0, 0)
+
+        url_label = QLabel("视频链接:")
+        self.dubbing_url_input = URLLineEdit()
+        self.dubbing_url_input.setPlaceholderText("粘贴YouTube视频链接...")
+
+        url_layout.addWidget(url_label)
+        url_layout.addWidget(self.dubbing_url_input)
+        input_layout.addWidget(self.dubbing_url_container)
+
+        # 本地文件选择
+        self.dubbing_local_container = QWidget()
+        local_layout = QVBoxLayout(self.dubbing_local_container)
+        local_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 视频文件选择
+        video_layout = QHBoxLayout()
+        video_label = QLabel("视频文件:")
+        self.dubbing_video_input = QLineEdit()
+        self.dubbing_video_input.setPlaceholderText("选择本地视频文件...")
+        self.dubbing_video_browse = QPushButton("浏览...")
+
+        video_layout.addWidget(video_label)
+        video_layout.addWidget(self.dubbing_video_input)
+        video_layout.addWidget(self.dubbing_video_browse)
+        local_layout.addLayout(video_layout)
+
+        # 字幕文件选择（可选，已有字幕则跳过生成）
+        subtitle_layout = QHBoxLayout()
+        subtitle_label = QLabel("字幕文件:")
+        self.dubbing_subtitle_input = QLineEdit()
+        self.dubbing_subtitle_input.setPlaceholderText("选择中文字幕文件 (.srt)，可选...")
+        self.dubbing_subtitle_browse = QPushButton("浏览...")
+
+        subtitle_layout.addWidget(subtitle_label)
+        subtitle_layout.addWidget(self.dubbing_subtitle_input)
+        subtitle_layout.addWidget(self.dubbing_subtitle_browse)
+        local_layout.addLayout(subtitle_layout)
+
+        self.dubbing_local_container.setVisible(False)
+        input_layout.addWidget(self.dubbing_local_container)
+
+        layout.addWidget(input_group)
+
+        # === 配音选项 ===
+        options_group = QGroupBox("配音选项")
+        options_layout = QHBoxLayout(options_group)
+
+        # 左侧：音色选择
+        voice_layout = QVBoxLayout()
+        voice_label = QLabel("配音音色:")
+        self.dubbing_voice_combo = QComboBox()
+        self.dubbing_voice_combo.addItems([
+            "晓贝 (女声)",
+            "晓晓 (女声)",
+            "晓艺 (女声)",
+            "云健 (男声)",
+            "云扬 (男声)"
+        ])
+        voice_layout.addWidget(voice_label)
+        voice_layout.addWidget(self.dubbing_voice_combo)
+
+        # 语速调整
+        speed_layout = QVBoxLayout()
+        speed_label = QLabel("语速调节:")
+        speed_slider_layout = QHBoxLayout()
+        self.dubbing_speed_slider = QSlider(Qt.Orientation.Horizontal)
+        self.dubbing_speed_slider.setRange(8, 12)  # 0.8 - 1.2
+        self.dubbing_speed_slider.setValue(10)     # 1.0
+        self.dubbing_speed_value = QLabel("1.0x")
+
+        speed_slider_layout.addWidget(self.dubbing_speed_slider)
+        speed_slider_layout.addWidget(self.dubbing_speed_value)
+        speed_layout.addWidget(speed_label)
+        speed_layout.addLayout(speed_slider_layout)
+
+        options_layout.addLayout(voice_layout)
+        options_layout.addLayout(speed_layout)
+        options_layout.addStretch()
+
+        layout.addWidget(options_group)
+
+        # === 处理步骤 ===
+        steps_group = QGroupBox("处理步骤")
+        steps_layout = QVBoxLayout(steps_group)
+
+        self.dubbing_step_download = QCheckBox("1. 下载视频")
+        self.dubbing_step_download.setChecked(True)
+        self.dubbing_step_download.setEnabled(False)  # 必需步骤
+
+        self.dubbing_step_transcribe = QCheckBox("2. 生成英文字幕")
+        self.dubbing_step_transcribe.setChecked(True)
+
+        self.dubbing_step_translate = QCheckBox("3. 翻译中文字幕")
+        self.dubbing_step_translate.setChecked(True)
+
+        self.dubbing_step_tts = QCheckBox("4. 合成中文配音")
+        self.dubbing_step_tts.setChecked(True)
+        self.dubbing_step_tts.setEnabled(False)  # 必需步骤
+
+        self.dubbing_step_combine = QCheckBox("5. 合成最终视频")
+        self.dubbing_step_combine.setChecked(True)
+        self.dubbing_step_combine.setEnabled(False)  # 必需步骤
+
+        steps_layout.addWidget(self.dubbing_step_download)
+        steps_layout.addWidget(self.dubbing_step_transcribe)
+        steps_layout.addWidget(self.dubbing_step_translate)
+        steps_layout.addWidget(self.dubbing_step_tts)
+        steps_layout.addWidget(self.dubbing_step_combine)
+
+        layout.addWidget(steps_group)
+
+        # === 进度显示 ===
+        progress_group = QGroupBox("处理进度")
+        progress_layout = QVBoxLayout(progress_group)
+
+        # 总进度条
+        self.dubbing_progress_bar = QProgressBar()
+        self.dubbing_progress_bar.setRange(0, 100)
+        self.dubbing_progress_bar.setValue(0)
+        progress_layout.addWidget(self.dubbing_progress_bar)
+
+        # 当前步骤
+        self.dubbing_step_label = QLabel("当前步骤: 等待开始")
+        self.dubbing_step_label.setStyleSheet("color: #2c5aa0; font-weight: bold;")
+        progress_layout.addWidget(self.dubbing_step_label)
+
+        # 进度详情
+        self.dubbing_detail_label = QLabel("")
+        self.dubbing_detail_label.setStyleSheet("color: #666;")
+        progress_layout.addWidget(self.dubbing_detail_label)
+
+        layout.addWidget(progress_group)
+
+        # === 操作按钮 ===
+        button_layout = QHBoxLayout()
+
+        self.dubbing_start_button = QPushButton("🎙️ 开始配音")
+        self.dubbing_start_button.setStyleSheet(
+            "background-color: #FF6B35; color: white; padding: 10px 20px; font-weight: bold; font-size: 14px;"
+        )
+        self.dubbing_start_button.setMinimumHeight(45)
+
+        self.dubbing_stop_button = QPushButton("⏹ 停止")
+        self.dubbing_stop_button.setStyleSheet(
+            "background-color: #666; color: white; padding: 8px 16px;"
+        )
+        self.dubbing_stop_button.setEnabled(False)
+
+        self.dubbing_open_output_button = QPushButton("📁 打开输出目录")
+        self.dubbing_open_output_button.setEnabled(False)
+
+        button_layout.addWidget(self.dubbing_start_button)
+        button_layout.addWidget(self.dubbing_stop_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.dubbing_open_output_button)
+
+        layout.addLayout(button_layout)
+
+        # === 日志输出 ===
+        log_group = QGroupBox("处理日志")
+        log_layout = QVBoxLayout(log_group)
+
+        self.dubbing_log_text = QTextEdit()
+        self.dubbing_log_text.setReadOnly(True)
+        self.dubbing_log_text.setMaximumHeight(200)
+        self.dubbing_log_text.setPlaceholderText("处理过程和日志将在这里显示...")
+        log_layout.addWidget(self.dubbing_log_text)
+
+        layout.addWidget(log_group)
+
+        # === 连接信号和槽 ===
+        self.dubbing_url_radio.toggled.connect(self.toggle_dubbing_input_method)
+        self.dubbing_local_radio.toggled.connect(self.toggle_dubbing_input_method)
+        self.dubbing_speed_slider.valueChanged.connect(self.update_dubbing_speed_display)
+        self.dubbing_video_browse.clicked.connect(self.browse_dubbing_video)
+        self.dubbing_subtitle_browse.clicked.connect(self.browse_dubbing_subtitle)
+        self.dubbing_start_button.clicked.connect(self.start_dubbing)
+        self.dubbing_stop_button.clicked.connect(self.stop_dubbing)
+        self.dubbing_open_output_button.clicked.connect(self.open_dubbing_output_dir)
+
+        layout.addStretch()
+        return tab
+
     def create_douyin_tab(self):
         """创建抖音下载选项卡"""
         tab = QWidget()
@@ -3918,6 +4227,53 @@ class MainWindow(QMainWindow):
         self.ks_login_button.clicked.connect(self.koushare_login)
         self.ks_set_token_button.clicked.connect(self.koushare_set_token)
 
+        # yt-dlp 设置组
+        ytdlp_group = CollapsibleGroupBox("yt-dlp 设置", collapsed=True)
+        ytdlp_layout = ytdlp_group.content_layout
+
+        # yt-dlp 运行方式选择
+        ytdlp_mode_layout = QHBoxLayout()
+        ytdlp_mode_label = QLabel("yt-dlp 运行方式:")
+        self.ytdlp_mode_combo = QComboBox()
+        self.ytdlp_mode_combo.addItems(["Python 库模式 (默认)", "本地可执行文件模式"])
+        current_ytdlp_mode = os.getenv("YT_DLP_MODE", "python")
+        if current_ytdlp_mode == "exe":
+            self.ytdlp_mode_combo.setCurrentText("本地可执行文件模式")
+        ytdlp_mode_layout.addWidget(ytdlp_mode_label)
+        ytdlp_mode_layout.addWidget(self.ytdlp_mode_combo)
+        ytdlp_layout.addLayout(ytdlp_mode_layout)
+
+        # yt-dlp.exe 路径设置
+        ytdlp_path_layout = QHBoxLayout()
+        ytdlp_path_label = QLabel("yt-dlp.exe 路径:")
+        self.ytdlp_exe_input = QLineEdit()
+        self.ytdlp_exe_input.setPlaceholderText("选择或输入 yt-dlp.exe 路径...")
+        self.ytdlp_exe_input.setText(os.getenv("YT_DLP_EXE_PATH", ""))
+        ytdlp_browse_btn = QPushButton("浏览...")
+        ytdlp_path_layout.addWidget(ytdlp_path_label)
+        ytdlp_path_layout.addWidget(self.ytdlp_exe_input)
+        ytdlp_path_layout.addWidget(ytdlp_browse_btn)
+        ytdlp_layout.addLayout(ytdlp_path_layout)
+
+        # 下载/更新 yt-dlp.exe
+        ytdlp_update_layout = QHBoxLayout()
+        self.ytdlp_check_version_btn = QPushButton("检查版本")
+        self.ytdlp_update_btn = QPushButton("下载/更新 yt-dlp.exe")
+        self.ytdlp_version_label = QLabel("")
+        self.ytdlp_version_label.setStyleSheet("color: #666;")
+        ytdlp_update_layout.addWidget(self.ytdlp_check_version_btn)
+        ytdlp_update_layout.addWidget(self.ytdlp_update_btn)
+        ytdlp_update_layout.addWidget(self.ytdlp_version_label)
+        ytdlp_update_layout.addStretch()
+        ytdlp_layout.addLayout(ytdlp_update_layout)
+
+        ytdlp_info = QLabel("💡 本地可执行文件模式可绕过 Python 库的 cookies 限制问题")
+        ytdlp_info.setStyleSheet("color: #666; font-size: 11px;")
+        ytdlp_layout.addWidget(ytdlp_info)
+
+        # 绑定浏览按钮信号
+        ytdlp_browse_btn.clicked.connect(self.browse_ytdlp_exe)
+
         # 添加到主布局
         layout.addWidget(api_group)
         layout.addWidget(subtitle_font_group)
@@ -3926,6 +4282,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(template_group)
         layout.addWidget(idle_group)
         layout.addWidget(koushare_group)
+        layout.addWidget(ytdlp_group)
 
         # 保存设置按钮
         self.save_settings_button = QPushButton("保存设置")
@@ -3940,7 +4297,9 @@ class MainWindow(QMainWindow):
         self.template_combo.currentIndexChanged.connect(self.template_selected)
         self.view_queue_button.clicked.connect(self.view_idle_queue)
         self.clear_queue_button.clicked.connect(self.clear_idle_queue)
-        
+        self.ytdlp_check_version_btn.clicked.connect(self.check_ytdlp_version)
+        self.ytdlp_update_btn.clicked.connect(self.download_ytdlp_exe)
+
         return tab
 
     def get_model_and_base_url(self):
@@ -5099,6 +5458,9 @@ class MainWindow(QMainWindow):
                 # 蔻享账号 token — 从 UI 字段读取，避免 save_settings 覆盖掉已保存的 token
                 "KOUSHARE_ACCESS_TOKEN": self.ks_token_input.text().strip(),
                 "KOUSHARE_USERNAME": self.ks_username_input.text().strip(),
+                # yt-dlp 设置
+                "YT_DLP_MODE": "exe" if self.ytdlp_mode_combo.currentText() == "本地可执行文件模式" else "python",
+                "YT_DLP_EXE_PATH": self.ytdlp_exe_input.text().strip(),
             }
 
             # 更新env_vars字典
@@ -5209,6 +5571,118 @@ class MainWindow(QMainWindow):
         self.ks_status_label.setText("✅ Token 已设置")
         self.ks_status_label.setStyleSheet("color: green;")
         QMessageBox.information(self, "Token 已设置", "蔻享 Access Token 已保存，本次及下次启动均生效。")
+
+    def browse_ytdlp_exe(self):
+        """浏览选择 yt-dlp.exe 文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择 yt-dlp.exe", "",
+            "可执行文件 (yt-dlp.exe);;所有文件 (*.*)"
+        )
+        if file_path:
+            self.ytdlp_exe_input.setText(file_path)
+            self._update_ytdlp_version_label(file_path)
+
+    def _update_ytdlp_version_label(self, exe_path):
+        """更新 yt-dlp 版本显示"""
+        if not exe_path or not os.path.exists(exe_path):
+            self.ytdlp_version_label.setText("")
+            return
+        try:
+            result = subprocess.run(
+                [exe_path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                self.ytdlp_version_label.setText(f"当前版本: {version}")
+            else:
+                self.ytdlp_version_label.setText("无法获取版本")
+        except Exception:
+            self.ytdlp_version_label.setText("无法获取版本")
+
+    def check_ytdlp_version(self):
+        """检查 yt-dlp 版本"""
+        exe_path = self.ytdlp_exe_input.text().strip()
+        if not exe_path:
+            # 如果没有设置，使用系统 PATH 中的
+            exe_path = "yt-dlp"
+
+        self.ytdlp_version_label.setText("正在检查...")
+        try:
+            result = subprocess.run(
+                [exe_path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                self.ytdlp_version_label.setText(f"当前版本: {version}")
+                QMessageBox.information(self, "版本信息", f"yt-dlp 版本: {version}")
+            else:
+                self.ytdlp_version_label.setText("检查失败")
+                QMessageBox.warning(self, "检查失败", "无法获取 yt-dlp 版本")
+        except FileNotFoundError:
+            self.ytdlp_version_label.setText("未找到 yt-dlp")
+            QMessageBox.warning(self, "未找到", "未找到 yt-dlp，请先下载或设置路径")
+        except Exception as e:
+            self.ytdlp_version_label.setText("检查失败")
+            QMessageBox.warning(self, "错误", f"检查失败: {str(e)}")
+
+    def download_ytdlp_exe(self):
+        """下载 yt-dlp.exe"""
+        # 确定下载目录
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        ytdlp_dir = os.path.join(base_dir, "bin")
+        os.makedirs(ytdlp_dir, exist_ok=True)
+        exe_path = os.path.join(ytdlp_dir, "yt-dlp.exe")
+
+        self.ytdlp_version_label.setText("正在下载...")
+        QMessageBox.information(
+            self, "下载说明",
+            "yt-dlp.exe 体积较大（约30MB），下载可能需要几分钟。\n"
+            "下载完成后会自动更新版本信息。\n\n"
+            "点击确定开始下载。"
+        )
+
+        try:
+            # 使用 Python 下载 yt-dlp.exe
+            import urllib.request
+
+            # GitHub 最新 releases URL
+            url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+
+            self.ytdlp_version_label.setText("正在从 GitHub 下载...")
+            QMessageBox.information(self, "下载中", f"正在从 GitHub 下载...\nURL: {url}")
+
+            def report_progress(block_num, block_size, total_size):
+                if total_size > 0:
+                    percent = min(100, block_num * block_size * 100 // total_size)
+                    if block_num % 100 == 0:
+                        self.ytdlp_version_label.setText(f"下载中: {percent}%")
+
+            urllib.request.urlretrieve(url, exe_path, reporthook=report_progress)
+
+            # 验证下载
+            if os.path.exists(exe_path):
+                size = os.path.getsize(exe_path)
+                if size > 1000000:  # 大于 1MB
+                    self.ytdlp_exe_input.setText(exe_path)
+                    self._update_ytdlp_version_label(exe_path)
+                    self.ytdlp_version_label.setText(f"下载完成！文件大小: {size//1024//1024}MB")
+                    QMessageBox.information(self, "下载完成", f"yt-dlp.exe 已下载到:\n{exe_path}")
+                else:
+                    self.ytdlp_version_label.setText("下载文件过小，可能失败")
+                    QMessageBox.warning(self, "下载失败", "下载的文件过小，可能不完整")
+            else:
+                self.ytdlp_version_label.setText("下载失败")
+                QMessageBox.critical(self, "下载失败", "未能下载 yt-dlp.exe")
+
+        except Exception as e:
+            self.ytdlp_version_label.setText("下载失败")
+            QMessageBox.critical(self, "下载失败", f"下载过程中出错:\n{str(e)}")
 
     def browse_cookies_file(self):
         """浏览cookies文件"""
@@ -6788,7 +7262,162 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             self.subtitle_output_text.append(f"已选择 {len(file_paths)} 个文件进行批量翻译:")
             for file_path in file_paths:
                 self.subtitle_output_text.append(f"  - {file_path}")
-    
+
+    # ========== AI中文配音相关方法 ==========
+
+    def toggle_dubbing_input_method(self):
+        """切换配音输入方式（YouTube链接/本地文件）"""
+        is_url = self.dubbing_url_radio.isChecked()
+        self.dubbing_url_container.setVisible(is_url)
+        self.dubbing_local_container.setVisible(not is_url)
+
+    def update_dubbing_speed_display(self):
+        """更新语速显示"""
+        speed = self.dubbing_speed_slider.value() / 10.0
+        self.dubbing_speed_value.setText(f"{speed:.1f}x")
+
+    def browse_dubbing_video(self):
+        """浏览选择配音视频文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择视频文件",
+            "",
+            "视频文件 (*.mp4 *.avi *.mkv *.mov *.webm);;所有文件 (*)"
+        )
+        if file_path:
+            self.dubbing_video_input.setText(file_path)
+            self.dubbing_log_text.append(f"已选择视频: {file_path}")
+
+    def browse_dubbing_subtitle(self):
+        """浏览选择字幕文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择字幕文件",
+            "",
+            "字幕文件 (*.srt *.vtt *.ass);;所有文件 (*)"
+        )
+        if file_path:
+            self.dubbing_subtitle_input.setText(file_path)
+            self.dubbing_log_text.append(f"已选择字幕: {file_path}")
+
+    def start_dubbing(self):
+        """开始配音流程"""
+        print("[DEBUG] start_dubbing 被调用")
+        try:
+            # 获取输入参数
+            is_url = self.dubbing_url_radio.isChecked()
+
+            params = {}
+
+            if is_url:
+                url = self.dubbing_url_input.text().strip()
+                if not url:
+                    QMessageBox.warning(self, "输入错误", "请输入YouTube视频链接")
+                    return
+                params['youtube_url'] = url
+            else:
+                video_path = self.dubbing_video_input.text().strip()
+                if not video_path:
+                    QMessageBox.warning(self, "输入错误", "请选择视频文件")
+                    return
+                if not os.path.exists(video_path):
+                    QMessageBox.warning(self, "文件错误", "视频文件不存在")
+                    return
+                params['video_path'] = video_path
+
+            # 检查字幕文件
+            subtitle_path = self.dubbing_subtitle_input.text().strip()
+            if subtitle_path and os.path.exists(subtitle_path):
+                params['subtitle_path'] = subtitle_path
+                self.dubbing_log_text.append(f"使用已有字幕: {subtitle_path}")
+
+            # 获取配音选项
+            voice_display = self.dubbing_voice_combo.currentText()
+            voice_map = {
+                "晓贝 (女声)": "xiaobei",
+                "晓晓 (女声)": "xiaoxiao",
+                "晓艺 (女声)": "xiaoyi",
+                "云健 (男声)": "yunjian",
+                "云扬 (男声)": "yunyang"
+            }
+            params['voice'] = voice_map.get(voice_display, "xiaobei")
+            params['speed'] = self.dubbing_speed_slider.value() / 10.0
+
+            # 获取步骤选项
+            params['enable_transcription'] = self.dubbing_step_transcribe.isChecked()
+            params['enable_translation'] = self.dubbing_step_translate.isChecked()
+
+            self.dubbing_log_text.append(f"配音音色: {voice_display}")
+            self.dubbing_log_text.append(f"语速: {params['speed']:.1f}x")
+
+            # 更新UI状态
+            self.dubbing_start_button.setEnabled(False)
+            self.dubbing_start_button.setText("处理中...")
+            self.dubbing_stop_button.setEnabled(True)
+            self.dubbing_progress_bar.setValue(0)
+            self.dubbing_step_label.setText("当前步骤: 准备开始")
+
+            print("[DEBUG] 线程参数:", params)
+
+            # 创建并启动工作线程
+            print("[DEBUG] 创建 WorkerThread...")
+            self.current_worker = WorkerThread("dubbing", params)
+            print("[DEBUG] 连接信号...")
+            self.current_worker.update_signal.connect(self.update_dubbing_log)
+            self.current_worker.progress_signal.connect(self.dubbing_progress_bar.setValue)
+            self.current_worker.finished_signal.connect(self.on_dubbing_finished)
+            print("[DEBUG] 启动线程...")
+            self.current_worker.start()
+            print("[DEBUG] 线程已启动")
+        except Exception as e:
+            print(f"[DEBUG ERROR] start_dubbing 异常: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "错误", f"启动配音失败: {str(e)}")
+            # 恢复UI状态
+            self.dubbing_start_button.setEnabled(True)
+            self.dubbing_start_button.setText("🎙️ 开始配音")
+            self.dubbing_stop_button.setEnabled(False)
+            QMessageBox.critical(self, "错误", f"启动配音失败: {str(e)}")
+            # 恢复UI状态
+            self.dubbing_start_button.setEnabled(True)
+            self.dubbing_start_button.setText("🎙️ 开始配音")
+            self.dubbing_stop_button.setEnabled(False)
+
+    def update_dubbing_log(self, message):
+        """更新配音日志"""
+        self.dubbing_log_text.append(message)
+
+    def on_dubbing_finished(self, result_path, success):
+        """配音完成回调"""
+        self.dubbing_start_button.setEnabled(True)
+        self.dubbing_start_button.setText("🎙️ 开始配音")
+        self.dubbing_stop_button.setEnabled(False)
+        self.dubbing_open_output_button.setEnabled(success)
+
+        if success and result_path:
+            self.dubbing_step_label.setText(f"✅ 完成: {result_path}")
+            QMessageBox.information(self, "配音完成", f"视频配音已完成！\n\n输出文件:\n{result_path}")
+        else:
+            self.dubbing_step_label.setText("❌ 配音失败")
+            QMessageBox.critical(self, "配音失败", "视频配音过程中出现错误，请查看日志。")
+
+    def stop_dubbing(self):
+        """停止配音"""
+        if hasattr(self, 'current_worker') and self.current_worker:
+            self.current_worker.stop()
+        self.dubbing_log_text.append("正在停止...")
+        self.dubbing_start_button.setEnabled(True)
+        self.dubbing_start_button.setText("🎙️ 开始配音")
+        self.dubbing_stop_button.setEnabled(False)
+
+    def open_dubbing_output_dir(self):
+        """打开配音输出目录"""
+        # TODO: 使用实际输出路径
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workspace", "dubbing_output")
+        os.makedirs(output_dir, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(output_dir))
+
     def translate_subtitle(self):
         """执行字幕翻译"""
         file_paths_text = self.subtitle_file_input.text().strip()

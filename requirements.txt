@@ -64,3 +64,11 @@ PyExecJS>=1.5.1
 
 # Douyin user profile batch download
 f2>=0.0.1.7
+
+# Chinese TTS Dubbing (Kokoro TTS)
+kokoro>=0.9.4
+soundfile>=0.12.0
+espeak-ng-loader;platform_system!="Windows"  # Linux/Mac need espeak-ng
+
+# Audio Processing
+numpy>=1.24.0

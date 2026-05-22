@@ -1,8 +1,10 @@
 # VideoHub
 
+**Current Version: v0.1.1**
+
 English | [简体中文](./README_cn.md)
 
-VideoHub is a desktop video workflow application built with **PyQt6**. It combines **multi-platform media processing**, **speech transcription**, **bilingual subtitle generation**, **LLM summaries**, **idle-time queue scheduling**, **browser extension integration**, and **live recording utilities** in a single tool.
+VideoHub is a desktop video workflow application built with **PyQt6**. It combines **multi-platform media processing**, **speech transcription**, **bilingual subtitle generation**, **AI dubbing**, **LLM summaries**, **idle-time queue scheduling**, **browser extension integration**, and **live recording utilities** in a single tool.
 
 It is designed for users who want to turn online or local media into reusable assets: local video/audio files, transcripts, subtitles, and structured markdown summaries.
 
@@ -15,12 +17,14 @@ It is designed for users who want to turn online or local media into reusable as
 | Whisper transcription | Transcribe local or online media using OpenAI Whisper. |
 | Bilingual subtitles | Generate `.srt`, `.vtt`, and `.ass` subtitles, with optional translation. |
 | Subtitle burn-in | Embed subtitles into video files when the workflow requires it. |
+| AI dubbing | Generate Chinese voice-over for videos using speech synthesis technology. |
 | LLM summaries | Generate markdown summaries/articles from transcripts with customizable templates. |
 | Batch processing | Process multiple URLs or local files in one run. |
 | Idle queue scheduling | Queue tasks during the day and let VideoHub execute them in a configured idle window. |
 | Browser extension | Add supported video pages directly to the local queue from Chrome/Edge. |
 | Live recording | Includes a live recording integration layer for monitored stream capture. |
 | FFmpeg management | Built-in FFmpeg configuration and testing helpers. |
+| Claude Code skills | AI-assisted development workflows integrated through Claude Code CLI. |
 
 ## Disclaimer
 
@@ -189,6 +193,51 @@ Recommended usage:
 - Log in with your Koushare account or paste an existing token
 - Then process the target Koushare URL through the standard workflow
 
+## AI Dubbing
+
+VideoHub supports AI-powered Chinese voice dubbing for videos. This feature transforms your original video content into Chinese-narrated versions automatically.
+
+### How it works
+
+1. **Transcribe**: Extract speech from the video using Whisper
+2. **Synthesize**: Generate Chinese audio using speech synthesis technology
+3. **Sync**: Align the generated audio with the original video timeline
+4. **Merge**: Combine the dubbed audio with the video file
+
+### Output
+
+- Dubbed video saved alongside the original
+- Temporary audio files stored in `workspace/dubbing_temp/` (auto-cleaned after merge)
+- Output naming convention: `{original_filename}_中文配音.mp4`
+
+### Technical details
+
+- Uses pip installable TTS engine for Chinese speech synthesis
+- Supports subtitle-driven synthesis mode for precise timing
+- Audio normalization and silence padding for smooth transitions
+- GPU acceleration supported when available
+
+## Claude Code Skills
+
+This project includes Claude Code skill integrations for enhanced development workflows.
+
+### Available skills
+
+| Skill | Description |
+| --- | --- |
+| `videohub` | General VideoHub development assistance |
+| `videohub-youtube` | YouTube processing workflows |
+| `videohub-douyin` | Douyin processing workflows |
+| `videohub-koushare` | Koushare platform integration |
+| `videohub-queue` | Idle queue management |
+| `videohub-live` | Live recording configuration |
+| `videohub-ffmpeg` | FFmpeg operations |
+| `videohub-subtitles` | Subtitle generation and editing |
+
+### Using skills
+
+Skills are automatically available when using Claude Code CLI in this project. Simply invoke the relevant skill for context-aware assistance on specific features.
+
 ## Browser Extension
 
 The `chrome_extension/` folder contains the local browser extension.
@@ -261,6 +310,7 @@ workspace/
   twitter_downloads/
   bilibili_downloads/
   live_downloads/
+  dubbing_temp/          # AI dubbing temporary audio files
 ```
 
 ## Project Structure

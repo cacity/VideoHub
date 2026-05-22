@@ -1,6 +1,8 @@
 # 视频转录工具 (Video Hub)
 
-这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音/TikTok、Bilibili**、寇享/koushare 等多平台视频内容的智能处理。提供媒体导入与处理、语音转录、双语字幕生成、内容摘要等完整工作流，并配备闲时调度、批量处理等高级功能。
+**当前版本: v0.1.1**
+
+这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音/TikTok、Bilibili**、寇享/koushare 等多平台视频内容的智能处理。提供媒体导入与处理、语音转录、双语字幕生成、**AI 配音**、内容摘要等完整工作流，并配备闲时调度、批量处理、Claude Code Skills 等高级功能。
 
 ## ✨ 加入讨论群
 
@@ -14,6 +16,7 @@
 - **精准转录**: 基于 OpenAI Whisper 的高质量语音转录技术
 - **多格式字幕**: 生成 .srt、.vtt、.ass 等多种格式的双语字幕文件
 - **字幕嵌入**: 支持将字幕直接嵌入到视频文件中
+- **AI 配音**: 基于 Kokoro TTS 技术，自动生成中文配音版本视频
 - **内容摘要**: 利用 LLM（支持 OpenAI、DeepSeek 等）智能生成文章摘要
 
 ### 🌐 Chrome浏览器扩展
@@ -93,6 +96,28 @@ https://x.com/tanchibu37099/status/2000362448982102119
 - **任务队列**: 白天将任务添加到队列，闲时自动依次执行
 - **灵活控制**: 支持暂停/恢复、立即执行、任务重排等操作
 - **可视化管理**: 专门的"闲时队列"标签页，实时查看和管理任务状态
+
+### 🎙️ AI 配音
+- **语音合成**: 基于 Kokoro TTS 技术，支持多种中文音色（晓贝、晓晓、晓艺、云健、云扬）
+- **智能转录**: 自动将视频语音转录为字幕
+- **流畅合成**: 保持原始视频节奏，自动填充静音
+- **灵活输出**: 可选择保留原声背景音，调节背景音音量
+
+**输出目录**: 配音文件保存在 `workspace/dubbing_temp/` 目录，完成后生成 `{原文件名}_中文配音.mp4`
+
+### 🤖 Claude Code Skills
+集成 Claude Code CLI 智能开发技能，提供针对性的开发辅助：
+
+| 技能 | 功能 |
+|------|------|
+| `videohub` | 通用开发辅助 |
+| `videohub-youtube` | YouTube 处理流程 |
+| `videohub-douyin` | 抖音处理流程 |
+| `videohub-koushare` | 寇享平台集成 |
+| `videohub-queue` | 闲时队列管理 |
+| `videohub-live` | 直播录制配置 |
+| `videohub-ffmpeg` | FFmpeg 操作 |
+| `videohub-subtitles` | 字幕生成与编辑 |
 
 
 
@@ -251,7 +276,8 @@ VideoHub/
 │   ├── live_downloads/                # 直播录制文件 (.ts/.flv/.mp4)
 │   ├── transcripts/                   # 转录文本 (.txt)
 │   ├── subtitles/                     # 字幕文件 (.srt/.vtt/.ass)
-│   └── summaries/                     # 文章摘要 (.md)
+│   ├── summaries/                     # 文章摘要 (.md)
+│   └── dubbing_temp/                  # AI 配音临时文件
 ├── 📁 配置目录
 │   ├── templates/                     # 自定义文章模板
 │   ├── icons/                         # 应用图标资源
