@@ -1,400 +1,356 @@
-# VideoHub
+# 视频转录工具 (Video Hub)
 
-**Current Version: v0.1.1**
+**当前版本: v0.1.1**
 
-English | [简体中文](./README_cn.md)
+简体中文  | [English](./README_en.md)
 
-VideoHub is a desktop video workflow application built with **PyQt6**. It combines **multi-platform media processing**, **speech transcription**, **bilingual subtitle generation**, **AI dubbing**, **LLM summaries**, **idle-time queue scheduling**, **browser extension integration**, and **live recording utilities** in a single tool.
+这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音/TikTok、Bilibili**、寇享/koushare 等多平台视频内容的智能处理。提供媒体导入与处理、语音转录、双语字幕生成、**AI 配音**、内容摘要等完整工作流，并配备闲时调度、批量处理、Claude Code Skills 等高级功能。
 
-It is designed for users who want to turn online or local media into reusable assets: local video/audio files, transcripts, subtitles, and structured markdown summaries.
+## ✨ 加入讨论群
 
-## Feature Overview
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260323152256492.png)
 
-| Feature | Description |
-| --- | --- |
-| Multi-platform media processing | Import and process content from YouTube, Twitter/X, Douyin, Bilibili, Koushare, and more. |
-| Audio / video workflows | Save full video or audio-only output depending on the task. |
-| Whisper transcription | Transcribe local or online media using OpenAI Whisper. |
-| Bilingual subtitles | Generate `.srt`, `.vtt`, and `.ass` subtitles, with optional translation. |
-| Subtitle burn-in | Embed subtitles into video files when the workflow requires it. |
-| AI dubbing | Generate Chinese voice-over for videos using speech synthesis technology. |
-| LLM summaries | Generate markdown summaries/articles from transcripts with customizable templates. |
-| Batch processing | Process multiple URLs or local files in one run. |
-| Idle queue scheduling | Queue tasks during the day and let VideoHub execute them in a configured idle window. |
-| Browser extension | Add supported video pages directly to the local queue from Chrome/Edge. |
-| Live recording | Includes a live recording integration layer for monitored stream capture. |
-| FFmpeg management | Built-in FFmpeg configuration and testing helpers. |
-| Claude Code skills | AI-assisted development workflows integrated through Claude Code CLI. |
+## ✨ 核心功能
 
-## Disclaimer
+### 🎬 多平台视频处理
 
-This project is intended for lawful and authorized use only. Please read [DISCLAIMER.md](./DISCLAIMER.md) before using features related to third-party platform content, cookies, tokens, downloading, or recording.
+- **🎥 平台支持**: YouTube、Twitter/X、抖音、Bilibili 、寇享/koushare等主流视频平台
+- **智能处理**: 支持视频/音频导入与本地处理，可选择完整视频或仅音频模式
+- **精准转录**: 基于 OpenAI Whisper 的高质量语音转录技术
+- **多格式字幕**: 生成 .srt、.vtt、.ass 等多种格式的双语字幕文件
+- **字幕嵌入**: 支持将字幕直接嵌入到视频文件中
+- **AI 配音**: 基于 Kokoro TTS 技术，自动生成中文配音版本视频
+- **内容摘要**: 利用 LLM（支持 OpenAI、DeepSeek 等）智能生成文章摘要
 
-## Current Limitations
+### 🌐 Chrome浏览器扩展
 
-- The live recording feature is currently **not fully functional** if the project root does not contain `live_recorder/`.
-- `src/douyin/downloader.py` still reports that **Douyin user-profile batch download is not implemented**.
-- Some live platform detection branches in `src/live_recorder_adapter.py` are incomplete.
-- Parts of the application are still centered around a large single-file GUI controller in `main.py`.
+- **页面集成**: 在 YouTube、Twitter/X、Bilibili 视频页面自动添加处理按钮
+- **一键加入队列**: 点击按钮即可将任务添加到闲时处理队列
+- **队列管理**: 通过扩展弹窗查看、导出、清空处理队列
+- **实时同步**: 通过 HTTP API 与桌面应用实时通信
+- **智能识别**: 自动提取视频标题、作者、链接等信息
+- **视觉反馈**: 添加成功后按钮状态变化，避免重复添加
 
-## Quick Start
+正确安装插件后，在X/YouTube等视频网站，视频下方会出现处理按钮，后台运行主程序后，点击按钮即可把当前任务加入处理队列。
 
-### 1. Requirements
+## 免责声明
+
+本项目仅供合法、合规且经授权的用途使用。使用涉及第三方平台内容、Cookie、Token、录制、导入或处理功能前，请先阅读 [DISCLAIMER.md](./DISCLAIMER.md)。
+
+## 使用方法
+
+### 1.处理 YouTube 视频列表
+
+比如斯坦福CS231N这个视频列表：
+
+```
+https://www.youtube.com/playlist?list=PLoROMvodv4rOmsNzYBMe0gJY2XS8AQg16
+```
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215161701139.png)
+
+复制好视频列表连接，在软件`视频URL`中右键，会直接粘贴视频的连接。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215161801204.png)
+
+勾选下面的选项，可以保存视频、获取原生英文字幕；如果没有原生字幕，也可以用 whisper 做语音转字幕，勾选生成字幕并翻译，这样就有了视频和双语字幕，方便学习研究。翻译字幕使用的是谷歌翻译，翻译时间会比较久；如果列表中文件较多，可以先完成媒体处理，再选中视频目录单独进行字幕提取和翻译。下图就是显示出来的双语字幕。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215162320373.png)
+
+### 2.批量翻译字幕
+
+在软件中选中本地视频，勾选批量处理，选中要处理的目录，把要处理的项勾选上，让它自己处理就可以了，这个列表共有18个视频，翻译花了好长时间。仅供参考。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215162505994.png)
+
+### 3.抖音内容处理
+
+在抖音PC版上点分享，复制连接，直接在`视频URL`中右键直接粘贴连接，勾选你要处理的项，可以进行媒体处理和摘要提取等。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215162943458.png)
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215171532304.png)
+
+### 4.处理 X 视频链接
+
+类似这种连接，页面有一个视频。
+
+```
+https://x.com/tanchibu37099/status/2000362448982102119
+```
+
+复制好连接，在`视频URL`中右键直接粘贴连接，即可加入处理流程。
+
+### 5.插件使用
+
+把项目中的`chrome_extension`整个文件夹拖到Edge或者Chrome浏览器中的扩展中，就完成了插件安装。安装成功后，扩展栏会有一个图标。在支持的视频正下方会有处理按钮，点击后会把当前任务加入到处理队列中。
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215172127386.png)
+
+
+
+### 🔄 批量处理
+
+- **多平台批处理**: 支持混合处理不同平台的视频链接
+- **文件导入**: 可从文本文件批量导入 URL 列表
+- **进度跟踪**: 实时显示批量任务的处理进度和结果
+
+### ⏰ 闲时调度系统
+
+- **智能调度**: 设置闲时时间段（如晚上23:00-早晨07:00），自动执行处理任务
+- **任务队列**: 白天将任务添加到队列，闲时自动依次执行
+- **灵活控制**: 支持暂停/恢复、立即执行、任务重排等操作
+- **可视化管理**: 专门的"闲时队列"标签页，实时查看和管理任务状态
+
+### 🎙️ AI 配音
+
+- **语音合成**: 基于 Kokoro TTS 技术，支持多种中文音色（晓贝、晓晓、晓艺、云健、云扬）
+- **智能转录**: 自动将视频语音转录为字幕
+- **流畅合成**: 保持原始视频节奏，自动填充静音
+- **灵活输出**: 可选择保留原声背景音，调节背景音音量
+
+**输出目录**: 配音文件保存在 `workspace/dubbing_temp/` 目录，完成后生成 `{原文件名}_中文配音.mp4`
+
+### 🤖 Claude Code Skills
+
+集成 Claude Code CLI 智能开发技能，提供针对性的开发辅助：
+
+| 技能                 | 功能             |
+| -------------------- | ---------------- |
+| `videohub`           | 通用开发辅助     |
+| `videohub-youtube`   | YouTube 处理流程 |
+| `videohub-douyin`    | 抖音处理流程     |
+| `videohub-koushare`  | 寇享平台集成     |
+| `videohub-queue`     | 闲时队列管理     |
+| `videohub-live`      | 直播录制配置     |
+| `videohub-ffmpeg`    | FFmpeg 操作      |
+| `videohub-subtitles` | 字幕生成与编辑   |
+
+
+
+## 🖼️ 应用界面
+
+### 主界面标签页
+
+- **在线视频**: 单个视频处理，支持 YouTube、Twitter、X、抖音等多平台
+- **本地音频/视频**: 处理本地媒体文件
+- **批量处理**: 批量处理多个不同平台的视频链接
+- **闲时队列**: 可视化任务队列管理和闲时调度控制
+- **直播录制**: 多平台直播监控与录制相关功能
+- **处理历史**: 查看所有处理过的任务记录
+- **设置**: API 配置、模板管理、闲时设置
+
+![image-20250922152348383](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20250923101839756.png)
+
+
+
+## 🛠️ 安装配置
+
+### 系统要求
 
 - Python 3.8+
-- Windows is the primary tested platform
-- FFmpeg for subtitle/video processing and live recording
-- Optional: Chrome/Edge for the browser extension
-- Optional: CUDA-capable GPU for faster Whisper transcription
+- Windows/macOS/Linux
+- 8GB+ RAM（推荐用于 Whisper 模型）
+- FFmpeg（直播录制必需）
+- Chrome浏览器（使用浏览器扩展时）
 
-### 2. Clone and install
+### 1. 环境准备
 
 ```bash
+# 克隆仓库
 git clone git@github.com:cacity/VideoHub.git
 cd VideoHub
 
-# Optional but recommended
+# 创建虚拟环境（推荐）
 conda create -n VideoHub python=3.12
 conda activate VideoHub
 
+# 安装依赖
 pip install -r requirements.txt
 ```
 
-### 3. Start the desktop app
+### 核心依赖
 
-```bash
-python main.py
+```txt
+PyQt6                    # 现代化GUI框架
+yt-dlp                   # 多平台媒体获取与处理支持
+openai-whisper           # 语音转录
+openai                   # OpenAI API
+requests                 # HTTP请求
+python-dotenv            # 环境变量管理
+flask                    # API服务器
+flask-cors               # 跨域支持
+asyncio                  # 异步IO（直播录制）
 ```
 
-This launches the PyQt desktop GUI and also starts the local Flask API server on port `8765` for queue integration.
+### 2. 配置设置
 
-### 4. Optional command-line entry points
+#### API 密钥配置
 
-```bash
-python src/youtube_transcriber.py --help
-python src/douyin_cli.py "https://v.douyin.com/xxxxx/"
-python src/ffmpeg_config_cli.py help
-```
-
-## Minimal Working Configuration
-
-Create a `.env` file in the project root if you want summary generation or custom API endpoints.
+在应用的"设置"标签页中配置以下 API 密钥：
 
 ```env
-OPENAI_API_KEY=your_openai_key
-OPENAI_BASE_URL=
-OPENAI_MODEL=
-DEEPSEEK_API_KEY=
-KOUSHARE_ACCESS_TOKEN=
+# OpenAI API (用于GPT模型)
+OPENAI_API_KEY=sk-your-openai-api-key
+
+# DeepSeek API (国内替代方案)
+DEEPSEEK_API_KEY=your-deepseek-api-key
+
+# 代理设置（如需要）
+PROXY=http://proxy.example.com:8080
 ```
 
-You can also configure many options from the GUI settings page instead of editing `.env` manually.
+#### 闲时设置
 
-## Usage
+- 默认闲时：23:00 - 07:00
+- 可在"设置"或"闲时队列"页面自定义时间段
 
-### Desktop GUI
+### 3. 安装 FFmpeg（直播录制必需）
 
-Run the main application:
+FFmpeg 是直播录制功能的必需组件。应用会自动检测并尝试安装：
 
 ```bash
+# 运行自动安装脚本
+python ffmpeg_install.py
+```
+
+手动安装方式：
+
+- **Windows**: 下载 FFmpeg 并添加到系统 PATH
+- **macOS**: `brew install ffmpeg`
+- **Linux**: `sudo apt-get install ffmpeg` 或 `sudo yum install ffmpeg`
+
+### 4. 安装 Chrome 浏览器扩展（可选）
+
+如果需要使用浏览器扩展功能：
+
+1. 打开 Chrome 浏览器，访问 `chrome://extensions/`
+2. 开启右上角的"开发者模式"
+3. 点击"加载已解压的扩展程序"
+4. 选择项目中的 `chrome_extension` 文件夹
+5. 扩展将出现在扩展程序列表中
+
+### 5. 运行应用
+
+```bash
+# 启动桌面应用（包含 HTTP API 服务器）
 python main.py
+
+# 或使用抖音处理命令行工具
+python douyin_cli.py <抖音视频URL>
 ```
 
-Main tabs in the GUI include:
+## 📂 项目结构
 
-- **Online Video**
-- **Local Audio / Video**
-- **Batch Processing**
-- **Idle Queue**
-- **Live Recorder**
-- **Processing History**
-- **Settings**
-
-### Media processing CLI
-
-`src/youtube_transcriber.py` is the main reusable CLI for transcription, subtitles, summaries, template management, batch jobs, and cleanup.
-
-#### Common examples
-
-```bash
-# Process a single YouTube video
-python src/youtube_transcriber.py --youtube "https://www.youtube.com/watch?v=VIDEO_ID"
-
-# Process video and generate subtitles
-python src/youtube_transcriber.py --youtube "https://www.youtube.com/watch?v=VIDEO_ID" --download-video --generate-subtitles
-
-# Burn subtitles into the processed/local video
-python src/youtube_transcriber.py --youtube "https://www.youtube.com/watch?v=VIDEO_ID" --download-video --generate-subtitles --embed-subtitles
-
-# Process a local audio file
-python src/youtube_transcriber.py --audio "path/to/file.mp3"
-
-# Process a local video file
-python src/youtube_transcriber.py --video "path/to/file.mp4" --generate-subtitles
-
-# Generate a summary directly from text
-python src/youtube_transcriber.py --text "path/to/file.txt"
-
-# Process multiple URLs
-python src/youtube_transcriber.py --urls "<url1>" "<url2>"
-
-# Preview cleanup
-python src/youtube_transcriber.py --cleanup-preview
 ```
-
-#### Key arguments
-
-| Argument | Description |
-| --- | --- |
-| `--youtube` | Process a single YouTube URL |
-| `--audio` | Process a local audio file |
-| `--video` | Process a local video file |
-| `--text` | Generate a summary from a local text file |
-| `--batch` | Read URLs from a text file |
-| `--urls` | Process multiple URLs from the command line |
-| `--download-video` | Preserve the full video output instead of audio-only |
-| `--generate-subtitles` | Generate subtitle files |
-| `--no-translate` | Skip subtitle translation |
-| `--embed-subtitles` | Burn subtitles into the video |
-| `--transcribe-only` | Skip summary generation |
-| `--template` | Use a named or explicit template file |
-| `--history` | Show download/processing history |
-| `--cleanup` | Clean generated output directories |
-
-## Douyin Workflow
-
-For Douyin single-link processing, use the dedicated CLI:
-
-```bash
-python src/douyin_cli.py "https://v.douyin.com/xxxxx/"
-python src/douyin_cli.py "https://www.douyin.com/video/xxxxx" -o "workspace/douyin_downloads"
-```
-
-Notes:
-
-- It is designed for **single-video processing workflows**.
-- It expects the required Douyin backend/service to be available.
-- User-profile batch download is not implemented in the current backend.
-
-## Koushare Support
-
-VideoHub includes dedicated Koushare support.
-
-Current behavior:
-
-- Login/token logic lives in the GUI and in `src/koushare_downloader.py`
-- `Authorization` uses the raw token value, **not** `Bearer <token>`
-- Higher-quality playback (such as FHD) may require a valid login token
-
-Recommended usage:
-
-- Open the desktop app
-- Go to the settings tab
-- Log in with your Koushare account or paste an existing token
-- Then process the target Koushare URL through the standard workflow
-
-## AI Dubbing
-
-VideoHub supports AI-powered Chinese voice dubbing for videos. This feature transforms your original video content into Chinese-narrated versions automatically.
-
-### How it works
-
-1. **Transcribe**: Extract speech from the video using Whisper
-2. **Synthesize**: Generate Chinese audio using speech synthesis technology
-3. **Sync**: Align the generated audio with the original video timeline
-4. **Merge**: Combine the dubbed audio with the video file
-
-### Output
-
-- Dubbed video saved alongside the original
-- Temporary audio files stored in `workspace/dubbing_temp/` (auto-cleaned after merge)
-- Output naming convention: `{original_filename}_中文配音.mp4`
-
-### Technical details
-
-- Uses pip installable TTS engine for Chinese speech synthesis
-- Supports subtitle-driven synthesis mode for precise timing
-- Audio normalization and silence padding for smooth transitions
-- GPU acceleration supported when available
-
-## Claude Code Skills
-
-This project includes Claude Code skill integrations for enhanced development workflows.
-
-### Available skills
-
-| Skill | Description |
-| --- | --- |
-| `videohub` | General VideoHub development assistance |
-| `videohub-youtube` | YouTube processing workflows |
-| `videohub-douyin` | Douyin processing workflows |
-| `videohub-koushare` | Koushare platform integration |
-| `videohub-queue` | Idle queue management |
-| `videohub-live` | Live recording configuration |
-| `videohub-ffmpeg` | FFmpeg operations |
-| `videohub-subtitles` | Subtitle generation and editing |
-
-### Using skills
-
-Skills are automatically available when using Claude Code CLI in this project. Simply invoke the relevant skill for context-aware assistance on specific features.
-
-## Browser Extension
-
-The `chrome_extension/` folder contains the local browser extension.
-
-Typical flow:
-
-1. Load the unpacked extension in Chrome/Edge
-2. Start `python main.py`
-3. Open a supported video page
-4. Click the injected button to add the task into the local idle queue
-
-The extension communicates with the desktop app through the local API server.
-
-## Idle Queue API
-
-Once the GUI is running, the local API is available on `http://127.0.0.1:8765`.
-
-### Available endpoints
-
-- `GET /api/health`
-- `GET /api/queue`
-- `POST /api/queue/add`
-- `DELETE /api/queue/clear`
-- `DELETE /api/queue/remove/<task_id>`
-- `GET /api/settings`
-- `PUT /api/settings`
-
-### Example calls
-
-```bash
-curl http://127.0.0.1:8765/api/health
-curl http://127.0.0.1:8765/api/queue
-curl -X POST http://127.0.0.1:8765/api/queue/add -H "Content-Type: application/json" -d '{"platform":"youtube","url":"https://example.com","title":"sample"}'
-```
-
-Required fields for queue insertion:
-
-- `platform`
-- `url`
-- `title`
-
-## FFmpeg Management
-
-VideoHub ships with an FFmpeg management CLI:
-
-```bash
-python src/ffmpeg_config_cli.py status
-python src/ffmpeg_config_cli.py test
-python src/ffmpeg_config_cli.py mode auto
-python src/ffmpeg_config_cli.py path "C:/ffmpeg/bin/ffmpeg.exe"
-python src/ffmpeg_config_cli.py download
-```
-
-Use it to inspect current FFmpeg status, switch execution modes, set a custom binary path, or install/configure FFmpeg.
-
-## Output Structure
-
-Runtime-generated files are placed under `workspace/`.
-
-```text
-workspace/
-  videos/
-  downloads/
-  subtitles/
-  transcripts/
-  summaries/
-  videos_with_subtitles/
-  native_subtitles/
-  douyin_downloads/
-  twitter_downloads/
-  bilibili_downloads/
-  live_downloads/
-  dubbing_temp/          # AI dubbing temporary audio files
-```
-
-## Project Structure
-
-```text
 VideoHub/
-├── main.py
-├── src/
-│   ├── youtube_transcriber.py
-│   ├── douyin_cli.py
-│   ├── ffmpeg_config_cli.py
-│   ├── api_server.py
-│   ├── koushare_downloader.py
-│   ├── live_recorder_adapter.py
-│   └── subtitle_merger.py
-├── chrome_extension/
-├── workspace/
-├── templates/
-├── logs/
-├── idle_queue.json
-└── README.md
+├── 📁 核心文件
+│   ├── main.py                        # PyQt6 GUI 主程序（整合所有功能）
+│   ├── api_server.py                  # HTTP API 服务器（供Chrome扩展调用）
+│   ├── douyin_cli.py                  # 抖音命令行处理工具
+│   ├── live_recorder_adapter.py       # 直播录制适配器
+│   ├── ffmpeg_install.py              # FFmpeg 自动安装脚本
+│   ├── msg_push.py                    # 消息推送模块
+│   └── requirements.txt               # Python 依赖
+├── 📁 Chrome扩展
+│   ├── chrome_extension/
+│   │   ├── manifest.json              # 扩展配置文件
+│   │   ├── background.js              # 后台服务脚本
+│   │   ├── content-scripts/           # 页面内容脚本
+│   │   │   ├── youtube.js
+│   │   │   ├── twitter.js
+│   │   │   ├── bilibili.js
+│   │   │   └── styles.css
+│   │   ├── popup/                     # 扩展弹窗界面
+│   │   │   ├── popup.html
+│   │   │   ├── popup.js
+│   │   │   └── popup.css
+│   │   └── icons/                     # 扩展图标
+├── 📁 抖音下载模块
+│   ├── douyin/                        # 抖音视频解析和下载
+│   │   ├── parser.py                  # URL解析
+│   │   ├── downloader.py              # 视频下载
+│   │   ├── video_extractor.py         # 视频提取器
+│   │   └── ...
+│   └── douyinVd/                      # Deno实现的备用下载方案
+├── 📁 直播录制模块
+│   ├── live_recorder/
+│   │   ├── spider.py                  # 直播平台爬虫
+│   │   ├── stream.py                  # 直播流处理
+│   │   ├── room.py                    # 直播间管理
+│   │   └── ...
+│   └── live_config/
+│       ├── config.ini                 # 直播录制配置
+│       └── URL_config.ini             # 直播间URL列表
+├── 📁 输出目录
+│   ├── downloads/                     # 多平台音频文件 (.mp3)
+│   ├── videos/                        # 多平台视频文件 (.mp4/.webm/.mov等)
+│   ├── douyin_downloads/              # 抖音视频输出目录
+│   ├── live_downloads/                # 直播录制文件 (.ts/.flv/.mp4)
+│   ├── transcripts/                   # 转录文本 (.txt)
+│   ├── subtitles/                     # 字幕文件 (.srt/.vtt/.ass)
+│   ├── summaries/                     # 文章摘要 (.md)
+│   └── dubbing_temp/                  # AI 配音临时文件
+├── 📁 配置目录
+│   ├── templates/                     # 自定义文章模板
+│   ├── icons/                         # 应用图标资源
+│   └── logs/                          # 下载历史记录
+└── 📁 配置文件
+    ├── .env                           # 环境变量（API密钥等）
+    └── idle_queue.json                # 闲时队列数据
 ```
 
-## Supported Platforms
+## 🌐 支持的平台
 
-| Platform | Download | Transcription | Subtitles | Notes |
-| --- | --- | --- | --- | --- |
-| YouTube | Yes | Yes | Yes | Native subtitle extraction available in some cases |
-| Twitter / X | Yes | Yes | Yes | Login/cookies may help on restricted content |
-| Douyin | Yes | Yes | Yes | Single-video workflow is the main supported path |
-| Bilibili | Yes | Yes | Yes | Uses the shared media-processing pipeline |
-| Koushare | Yes | Yes | Yes | Login token may be required for higher quality |
+### 主要支持平台
 
-## Typical Scenarios
+- **🎬 YouTube**: 完整支持，包括私有视频（需Cookie）
+- **🐦 Twitter/X**: 支持视频推文，可能需要登录状态
+- **📱 抖音**: 支持抖音链接识别与媒体处理
+- **📺 Bilibili**: 支持 B 站视频处理
+- **🌍 其他平台**: 基于 yt-dlp 支持的 1000+ 网站
 
-### Scenario 1: Process a YouTube course playlist and generate subtitles
+### 平台特性对比
 
-- Paste the playlist/video URL into the GUI
-- Enable subtitle generation
-- Optionally translate subtitles
-- Save outputs under `workspace/`
+| 平台      | 媒体处理   | 音频提取 | 字幕支持   | Cookie需求   | 特色功能     |
+| --------- | ---------- | -------- | ---------- | ------------ | ------------ |
+| YouTube   | ✅ 完整支持 | ✅ 高质量 | ✅ 多语言   | 部分视频需要 | 原生字幕提取 |
+| Twitter/X | ✅ 支持     | ✅ 支持   | ✅ 转录生成 | 推荐使用     | 短视频优化   |
+| 抖音      | ✅ 支持     | ✅ 高质量 | ✅ 转录生成 | 视场景而定   | 智能分享识别 |
+| Bilibili  | ✅ 支持     | ✅ 支持   | ✅ 转录生成 | 部分内容需要 | 弹幕处理     |
 
-### Scenario 2: Queue tasks during the day and process them at night
 
-- Start `python main.py`
-- Add items from the GUI or browser extension
-- Let the idle queue run during the configured time window
 
-### Scenario 3: Process a Douyin video link
+## 🤝 贡献
 
-- Copy the Douyin link or share text
-- Extract the URL if needed
-- Run `python src/douyin_cli.py "<douyin-url>"`
+欢迎对本项目进行贡献！
 
-### Scenario 4: Turn a local lecture recording into a markdown summary
+### 贡献方式
 
-- Run `python src/youtube_transcriber.py --video "path/to/file.mp4"`
-- Configure API keys if you want LLM summary generation
-- Review transcript, subtitles, and summary in `workspace/`
+- 🐛 报告 Bug: [创建 Issue](https://github.com/cacity/VideoHub/issues)
+- 💡 功能建议: 提交 Feature Request
+- 🔀 代码贡献: 提交 Pull Request
+- 📖 文档改进: 完善使用说明
 
-## Testing
 
-There is no unified automated test suite documented in the repository yet. For smoke testing, use the existing entry points:
 
-```bash
-python src/youtube_transcriber.py --help
-python src/douyin_cli.py --help
-python src/ffmpeg_config_cli.py help
-python main.py
-```
+## 📄 许可证
 
-## License
+本项目采用 [MIT 许可证](LICENSE)，允许自由使用、修改和分发。使用涉及第三方平台内容、Cookie、Token、录制或批量处理等功能前，请先阅读 [DISCLAIMER.md](./DISCLAIMER.md)。
 
-This project is licensed under the [MIT License](./LICENSE).
+---
 
-## Acknowledgements
+## 🌟 致谢
 
-- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/)
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- [OpenAI Whisper](https://github.com/openai/whisper)
-- [Flask](https://flask.palletsprojects.com/)
+感谢以下开源项目的支持：
+
+- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) - 现代化GUI框架
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - 多平台视频下载工具（支持1000+网站）
+- [OpenAI Whisper](https://github.com/openai/whisper) - 语音识别模型
+- [OpenAI API](https://openai.com/) - 大语言模型服务
 
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=cacity/VideoHub&type=Date)](https://www.star-history.com/#cacity/VideoHub&Date)
 
-If this project helps you, a star is welcome.
+**⭐ 如果这个项目对您有帮助，请给个 Star 支持一下！**

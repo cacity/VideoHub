@@ -337,9 +337,20 @@ class VideoDubbingEngine:
                 progress = int((idx / max(total_segments, 1)) * 100)
                 self._report_progress(progress, f"合成第 {idx + 1}/{total_segments} 句...")
 
-            # 添加静音填充
+            # 添加静音填充（模拟自然停顿）
             if current_time < seg['start']:
-                silence_duration = seg['start'] - current_time
+                base_silence = seg['start'] - current_time
+                # 根据句子类型调整停顿时长
+                sent_type = tts_instance._analyze_sentence_type(seg['text'])
+                if sent_type == 'question':
+                    pause_multiplier = 1.5  # 问句后停顿稍长
+                elif sent_type == 'ellipsis':
+                    pause_multiplier = 2.0  # 省略号后停顿更长
+                elif sent_type == 'exclamation':
+                    pause_multiplier = 1.3  # 感叹句后中等停顿
+                else:
+                    pause_multiplier = 1.0
+                silence_duration = base_silence * pause_multiplier
                 silence_samples = int(silence_duration * sample_rate)
                 if silence_samples > 0:
                     all_audio.append(np.zeros(silence_samples))
@@ -352,7 +363,22 @@ class VideoDubbingEngine:
 
             # 合成这段文本
             try:
-                generator = tts_instance.pipeline(seg['text'], voice=tts_instance.voice_name, speed=speed)
+                # 语气优化：问句稍慢，感叹句正常，陈述句正常
+                sent_type = tts_instance._analyze_sentence_type(seg['text'])
+                enhanced_text = tts_instance._enhance_text_for_tts(seg['text'], sent_type)
+
+                if sent_type == 'question':
+                    seg_speed = max(speed * 0.95, 0.8)  # 问句稍慢
+                elif sent_type == 'statement':
+                    seg_speed = speed
+                elif sent_type == 'exclamation':
+                    seg_speed = max(speed * 0.92, 0.8)  # 感叹句稍慢，突出情感
+                elif sent_type == 'imperative':
+                    seg_speed = max(speed * 0.95, 0.8)
+                else:
+                    seg_speed = speed
+
+                generator = tts_instance.pipeline(enhanced_text, voice=tts_instance.voice_name, speed=seg_speed)
                 seg_audios = []
                 for _, _, audio in generator:
                     seg_audios.append(audio)

@@ -1655,18 +1655,7 @@ class MainWindow(QMainWindow):
         history_tab = self.create_history_tab()
         settings_tab = self.create_settings_tab()
         
-        # 添加选项卡
-        tab_widget.addTab(youtube_tab, "在线视频")
-        tab_widget.addTab(local_audio_tab, "本地音频")
-        tab_widget.addTab(local_video_tab, "本地视频")
-        tab_widget.addTab(local_text_tab, "本地文本")
-        tab_widget.addTab(batch_tab, "批量处理")
-        tab_widget.addTab(idle_queue_tab, "闲时队列")
-        tab_widget.addTab(history_tab, "下载历史")
-        subtitle_translate_tab = self.create_subtitle_translate_tab()
-        tab_widget.addTab(subtitle_translate_tab, "字幕翻译")
-
-        # 创建AI中文配音标签页
+        # 创建并添加标签页（AI配音优先）
         try:
             print("🎙️ 正在创建AI中文配音标签页...")
             dubbing_tab = self.create_dubbing_tab()
@@ -1677,8 +1666,16 @@ class MainWindow(QMainWindow):
                 print("❌ AI中文配音标签页创建失败：返回None")
         except Exception as e:
             print(f"❌ AI中文配音标签页创建异常: {e}")
-            import traceback
-            traceback.print_exc()
+
+        tab_widget.addTab(youtube_tab, "在线视频")
+        tab_widget.addTab(local_audio_tab, "本地音频")
+        tab_widget.addTab(local_video_tab, "本地视频")
+        tab_widget.addTab(local_text_tab, "本地文本")
+        tab_widget.addTab(batch_tab, "批量处理")
+        tab_widget.addTab(idle_queue_tab, "闲时队列")
+        tab_widget.addTab(history_tab, "下载历史")
+        subtitle_translate_tab = self.create_subtitle_translate_tab()
+        tab_widget.addTab(subtitle_translate_tab, "字幕翻译")
 
         # 创建直播录制标签页（替换原来的抖音下载标签页）
         try:

@@ -153,7 +153,9 @@ class ChineseTTS:
 
             # 生成这段文本的音频
             text = seg['text']
-            generator = self.pipeline(text, voice=self.voice_name, speed=self.speed)
+            sent_type = self._analyze_sentence_type(text)
+            enhanced_text = self._enhance_text_for_tts(text, sent_type)
+            generator = self.pipeline(enhanced_text, voice=self.voice_name, speed=self.speed)
 
             seg_audios = []
             for _, _, audio in generator:
@@ -197,9 +199,121 @@ class ChineseTTS:
         text = re.sub(r'<[^>]+>', '', text)
         # 移除多余空格
         text = ' '.join(text.split())
-        # 保留中英文、数字和常用标点
-        text = re.sub(r'[^一-龥a-zA-Z0-9，。！？、：""''（）().!?,:\s]', '', text)
+        # 保留中英文、数字和常用标点（包括！？？等影响语气的）
+        text = re.sub(r'[^一-龥a-zA-Z0-9，。！？、：；""''（）【】\[()].!?,:\s]', '', text)
         return text.strip()
+
+    def _analyze_sentence_type(self, text: str) -> str:
+        """
+        分析句子类型，用于语气优化
+
+        Returns:
+            'question' - 疑问句
+            'exclamation' - 感叹句
+            'ellipsis' - 省略号/留白
+            'statement' - 普通陈述句
+            'imperative' - 祈使句
+        """
+        text = text.strip()
+        if not text:
+            return 'statement'
+
+        # 句末标点判断
+        if text.endswith('?') or text.endswith('？'):
+            return 'question'
+        elif text.endswith('!') or text.endswith('！'):
+            return 'exclamation'
+        elif '…' in text or '......' in text or '——' in text:
+            return 'ellipsis'
+        elif text.endswith('.') or text.endswith('。') or text.endswith('；') or text.endswith('；'):
+            return 'statement'
+        elif any(kw in text for kw in ['请', '让', '不要', '必须', '应该', '可以']):
+            return 'imperative'
+        return 'statement'
+
+    def _split_into_sentences(self, text: str) -> List[Dict]:
+        """
+        将一段字幕文本按句子拆分，保留语气信息
+
+        Returns:
+            List of dicts with 'text', 'type', 'pause_before', 'pause_after'
+        """
+        results = []
+        text = text.strip()
+        if not text:
+            return results
+
+        # 句子分隔符
+        sentence_enders = r'([。！？；])'
+
+        parts = re.split(sentence_enders, text)
+        # parts 类似: ['今天天气很好', '，', '我们一起出去', '！', '吧', '。']
+
+        i = 0
+        while i < len(parts):
+            chunk = parts[i]
+            if not chunk.strip():
+                i += 1
+                continue
+
+            # 合并标点到上一个句子
+            sentence_text = chunk
+            if i + 1 < len(parts) and re.match(r'^[,，、；：]$', parts[i + 1]):
+                i += 1  # 跳过这些中间标点
+
+            # 收集后面的完整句子标点
+            while i + 1 < len(parts):
+                next_chunk = parts[i + 1]
+                if re.match(r'^[。！？；]$', next_chunk):
+                    sentence_text += next_chunk
+                    i += 1
+                    break
+                elif re.match(r'^[,，、：]$', next_chunk):
+                    # 内部标点，合并但不作为结束
+                    sentence_text += next_chunk
+                    i += 1
+                    i += 1  # 跳过对应的空部分
+                    break
+                else:
+                    break
+
+            if sentence_text.strip():
+                sent_type = self._analyze_sentence_type(sentence_text)
+                results.append({
+                    'text': sentence_text.strip(),
+                    'type': sent_type
+                })
+            i += 1
+
+        return results
+
+    def _enhance_text_for_tts(self, text: str, sentence_type: str = 'statement') -> str:
+        """
+        为 TTS 优化文本，添加语气提示
+
+        虽然 Kokoro 不直接支持情感标签，但文本预处理可以让合成更自然：
+        1. 问句句尾语调上扬暗示
+        2. 感叹句适当强调
+        3. 省略号用空格模拟停顿
+        """
+        text = text.strip()
+        if not text:
+            return text
+
+        if sentence_type == 'question':
+            # 问句：句末添加轻微延长，让语调自然过渡
+            text = re.sub(r'[？\?]+$', '', text).strip()
+            text += '……'  # 用省略号暗示语调变化
+        elif sentence_type == 'ellipsis':
+            # 省略号：用空格模拟自然停顿感
+            text = re.sub(r'…+', '……', text)
+            text = re.sub(r'\.{3,}', '……', text)
+        elif sentence_type == 'exclamation':
+            # 感叹句：适当重复强调词
+            text = re.sub(r'！+$', '', text).strip()
+            # 不做额外处理，保持原有强度
+
+        return text
 
     def _parse_srt(self, subtitle_path: str) -> List[Dict]:
         """解析 SRT 字幕文件"""
