@@ -260,7 +260,7 @@ class VideoDubbingEngine:
         # 转录 - 函数返回 (text_path, subtitle_path) 元组
         text_path, subtitle_path = transcribe_audio_unified(
             audio_path=audio_path,
-            model_size="medium",  # 使用中等模型平衡速度和质量
+            model_size="small",  # 使用小模型提升速度
             generate_subtitles=True,
             translate_to_chinese=False,  # 仅生成英文字幕
             source_language="en"

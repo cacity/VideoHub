@@ -1459,14 +1459,9 @@ class WorkerThread(QThread):
         """处理中文配音任务"""
         from src.dubbing_engine import VideoDubbingEngine, DubbingTask
         from src.chinese_tts import check_kokoro_available
+        from src.audio_utils import combine_video_audio
 
         self.update_signal.emit("🎙️ 开始中文配音流程...")
-
-        # 检查 Kokoro 是否可用
-        if not check_kokoro_available():
-            self.update_signal.emit("[ERROR] Kokoro TTS 未安装，请先运行: pip install kokoro>=0.9.4 soundfile")
-            self.finished_signal.emit("", False)
-            return
 
         # 获取参数
         video_path = self.params.get("video_path", "")
@@ -1477,6 +1472,57 @@ class WorkerThread(QThread):
         speed = self.params.get("speed", 1.0)
         enable_transcription = self.params.get("enable_transcription", True)
         enable_translation = self.params.get("enable_translation", True)
+        audio_only_mode = self.params.get("audio_only_mode", False)
+        dubbing_audio_path = self.params.get("dubbing_audio_path", "")
+
+        # 音频+字幕模式：仅合成，不转录翻译
+        if audio_only_mode and dubbing_audio_path and video_path:
+            self.update_signal.emit("📦 音频+字幕模式：直接合成音频到视频")
+            self.update_signal.emit(f"  配音音频: {dubbing_audio_path}")
+            self.update_signal.emit(f"  目标视频: {video_path}")
+
+            try:
+                from src.paths_config import WORKSPACE_DIR
+                import os
+                output_dir = os.path.join(WORKSPACE_DIR, "dubbing_output")
+                os.makedirs(output_dir, exist_ok=True)
+
+                # 生成输出文件名
+                import time
+                timestamp = int(time.time() * 1000)
+                base_name = os.path.splitext(os.path.basename(video_path))[0]
+                output_path = os.path.join(output_dir, f"{base_name}_配音_{timestamp}.mp4")
+
+                # 直接合成音频到视频
+                self.update_signal.emit("🎬 开始合成...")
+                combine_video_audio(
+                    video_path=video_path,
+                    audio_path=dubbing_audio_path,
+                    output_path=output_path,
+                    keep_original_audio=False,
+                    original_audio_volume=0.1
+                )
+
+                self.update_signal.emit("=" * 50)
+                self.update_signal.emit("✅ 合成完成！")
+                self.update_signal.emit(f"📁 输出文件: {output_path}")
+                self.update_signal.emit("=" * 50)
+
+                self.finished_signal.emit(output_path, True)
+                return
+
+            except Exception as e:
+                import traceback
+                self.update_signal.emit(f"[ERROR] 合成失败: {str(e)}")
+                self.update_signal.emit(traceback.format_exc())
+                self.finished_signal.emit("", False)
+                return
+
+        # 检查 Kokoro 是否可用（非音频模式）
+        if not check_kokoro_available():
+            self.update_signal.emit("[ERROR] Kokoro TTS 未安装，请先运行: pip install kokoro>=0.9.4 soundfile")
+            self.finished_signal.emit("", False)
+            return
 
         # 创建配音任务
         task = DubbingTask(
@@ -2602,10 +2648,12 @@ class MainWindow(QMainWindow):
         input_radio_layout = QHBoxLayout()
         self.dubbing_url_radio = QRadioButton("YouTube链接")
         self.dubbing_local_radio = QRadioButton("本地文件")
+        self.dubbing_audio_radio = QRadioButton("音频+字幕")
         self.dubbing_url_radio.setChecked(True)
 
         input_radio_layout.addWidget(self.dubbing_url_radio)
         input_radio_layout.addWidget(self.dubbing_local_radio)
+        input_radio_layout.addWidget(self.dubbing_audio_radio)
         input_radio_layout.addStretch()
         input_layout.addLayout(input_radio_layout)
 
@@ -2622,7 +2670,7 @@ class MainWindow(QMainWindow):
         url_layout.addWidget(self.dubbing_url_input)
         input_layout.addWidget(self.dubbing_url_container)
 
-        # 本地文件选择
+        # 本地文件选择（视频 + 字幕）
         self.dubbing_local_container = QWidget()
         local_layout = QVBoxLayout(self.dubbing_local_container)
         local_layout.setContentsMargins(0, 0, 0, 0)
@@ -2653,6 +2701,42 @@ class MainWindow(QMainWindow):
 
         self.dubbing_local_container.setVisible(False)
         input_layout.addWidget(self.dubbing_local_container)
+
+        # 音频+字幕模式（仅合成，不转录翻译）
+        self.dubbing_audio_container = QWidget()
+        audio_layout = QVBoxLayout(self.dubbing_audio_container)
+        audio_layout.setContentsMargins(0, 0, 0, 0)
+
+        audio_desc_label = QLabel("已有中文字幕？仅需合成配音音频到视频中")
+        audio_desc_label.setStyleSheet("color: #888; font-size: 12px; margin-bottom: 5px;")
+        audio_layout.addWidget(audio_desc_label)
+
+        # 音频文件选择
+        audio_file_layout = QHBoxLayout()
+        audio_file_label = QLabel("音频文件:")
+        self.dubbing_audio_input = QLineEdit()
+        self.dubbing_audio_input.setPlaceholderText("选择配音音频文件 (.wav/.mp3)...")
+        self.dubbing_audio_browse = QPushButton("浏览...")
+
+        audio_file_layout.addWidget(audio_file_label)
+        audio_file_layout.addWidget(self.dubbing_audio_input)
+        audio_file_layout.addWidget(self.dubbing_audio_browse)
+        audio_layout.addLayout(audio_file_layout)
+
+        # 目标视频选择
+        target_video_layout = QHBoxLayout()
+        target_video_label = QLabel("目标视频:")
+        self.dubbing_target_video_input = QLineEdit()
+        self.dubbing_target_video_input.setPlaceholderText("选择要合成音频的目标视频文件...")
+        self.dubbing_target_video_browse = QPushButton("浏览...")
+
+        target_video_layout.addWidget(target_video_label)
+        target_video_layout.addWidget(self.dubbing_target_video_input)
+        target_video_layout.addWidget(self.dubbing_target_video_browse)
+        audio_layout.addLayout(target_video_layout)
+
+        self.dubbing_audio_container.setVisible(False)
+        input_layout.addWidget(self.dubbing_audio_container)
 
         layout.addWidget(input_group)
 
@@ -2786,9 +2870,12 @@ class MainWindow(QMainWindow):
         # === 连接信号和槽 ===
         self.dubbing_url_radio.toggled.connect(self.toggle_dubbing_input_method)
         self.dubbing_local_radio.toggled.connect(self.toggle_dubbing_input_method)
+        self.dubbing_audio_radio.toggled.connect(self.toggle_dubbing_input_method)
         self.dubbing_speed_slider.valueChanged.connect(self.update_dubbing_speed_display)
         self.dubbing_video_browse.clicked.connect(self.browse_dubbing_video)
         self.dubbing_subtitle_browse.clicked.connect(self.browse_dubbing_subtitle)
+        self.dubbing_audio_browse.clicked.connect(self.browse_dubbing_audio)
+        self.dubbing_target_video_browse.clicked.connect(self.browse_dubbing_target_video)
         self.dubbing_start_button.clicked.connect(self.start_dubbing)
         self.dubbing_stop_button.clicked.connect(self.stop_dubbing)
         self.dubbing_open_output_button.clicked.connect(self.open_dubbing_output_dir)
@@ -7266,10 +7353,13 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
     # ========== AI中文配音相关方法 ==========
 
     def toggle_dubbing_input_method(self):
-        """切换配音输入方式（YouTube链接/本地文件）"""
+        """切换配音输入方式（YouTube链接/本地文件/音频+字幕）"""
         is_url = self.dubbing_url_radio.isChecked()
+        is_local = self.dubbing_local_radio.isChecked()
+        is_audio = self.dubbing_audio_radio.isChecked()
         self.dubbing_url_container.setVisible(is_url)
-        self.dubbing_local_container.setVisible(not is_url)
+        self.dubbing_local_container.setVisible(is_local)
+        self.dubbing_audio_container.setVisible(is_audio)
 
     def update_dubbing_speed_display(self):
         """更新语速显示"""
@@ -7300,16 +7390,64 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             self.dubbing_subtitle_input.setText(file_path)
             self.dubbing_log_text.append(f"已选择字幕: {file_path}")
 
+    def browse_dubbing_audio(self):
+        """浏览选择配音音频文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择配音音频文件",
+            "",
+            "音频文件 (*.wav *.mp3 *.ogg *.flac);;所有文件 (*)"
+        )
+        if file_path:
+            self.dubbing_audio_input.setText(file_path)
+            self.dubbing_log_text.append(f"已选择音频: {file_path}")
+
+    def browse_dubbing_target_video(self):
+        """浏览选择目标视频文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择目标视频文件",
+            "",
+            "视频文件 (*.mp4 *.avi *.mkv *.mov *.webm);;所有文件 (*)"
+        )
+        if file_path:
+            self.dubbing_target_video_input.setText(file_path)
+            self.dubbing_log_text.append(f"已选择目标视频: {file_path}")
+
     def start_dubbing(self):
         """开始配音流程"""
         print("[DEBUG] start_dubbing 被调用")
         try:
             # 获取输入参数
             is_url = self.dubbing_url_radio.isChecked()
+            is_local = self.dubbing_local_radio.isChecked()
+            is_audio_only = self.dubbing_audio_radio.isChecked()
 
             params = {}
 
-            if is_url:
+            if is_audio_only:
+                # 音频+字幕模式：仅合成，不转录翻译
+                audio_path = self.dubbing_audio_input.text().strip()
+                target_video = self.dubbing_target_video_input.text().strip()
+                if not audio_path:
+                    QMessageBox.warning(self, "输入错误", "请选择配音音频文件")
+                    return
+                if not os.path.exists(audio_path):
+                    QMessageBox.warning(self, "文件错误", "音频文件不存在")
+                    return
+                if not target_video:
+                    QMessageBox.warning(self, "输入错误", "请选择目标视频文件")
+                    return
+                if not os.path.exists(target_video):
+                    QMessageBox.warning(self, "文件错误", "目标视频文件不存在")
+                    return
+                params['audio_only_mode'] = True
+                params['dubbing_audio_path'] = audio_path
+                params['video_path'] = target_video
+                self.dubbing_log_text.append(f"音频+字幕模式: 仅合成音频到视频")
+                self.dubbing_log_text.append(f"配音音频: {audio_path}")
+                self.dubbing_log_text.append(f"目标视频: {target_video}")
+            elif is_url:
                 url = self.dubbing_url_input.text().strip()
                 if not url:
                     QMessageBox.warning(self, "输入错误", "请输入YouTube视频链接")
