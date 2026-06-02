@@ -40,6 +40,13 @@ MANIFEST
 # 工作目录和数据文件 - 所有用户生成的内容
 # 统一挂在 workspace/ 目录下，避免误提交到Git仓库
 workspace/
+youtube/
+youtube_audio/
+twitter/
+bilibili/
+douyin/
+live/
+koushare/
 .gstack/
 .claude/
 downloads/

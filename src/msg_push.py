@@ -13,9 +13,12 @@ import base64
 import urllib.request
 import urllib.error
 import smtplib
+import logging
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+logger = logging.getLogger(__name__)
 
 no_proxy_handler = urllib.request.ProxyHandler({})
 opener = urllib.request.build_opener(no_proxy_handler)
@@ -49,10 +52,10 @@ def dingtalk(url: str, content: str, number: str = None, is_atall: bool = False)
                 success.append(api)
             else:
                 error.append(api)
-                print(f'钉钉推送失败, 推送地址：{api}, {json_data["errmsg"]}')
+                logger.info(f'钉钉推送失败, 推送地址：{api}, {json_data["errmsg"]}')
         except Exception as e:
             error.append(api)
-            print(f'钉钉推送失败, 推送地址：{api}, 错误信息:{e}')
+            logger.info(f'钉钉推送失败, 推送地址：{api}, 错误信息:{e}')
     return {"success": success, "error": error}
 
 
@@ -75,10 +78,10 @@ def xizhi(url: str, title: str, content: str) -> Dict[str, Any]:
                 success.append(api)
             else:
                 error.append(api)
-                print(f'微信推送失败, 推送地址：{api}, 失败信息：{json_data["msg"]}')
+                logger.info(f'微信推送失败, 推送地址：{api}, 失败信息：{json_data["msg"]}')
         except Exception as e:
             error.append(api)
-            print(f'微信推送失败, 推送地址：{api}, 错误信息:{e}')
+            logger.info(f'微信推送失败, 推送地址：{api}, 错误信息:{e}')
     return {"success": success, "error": error}
 
 
@@ -107,7 +110,7 @@ def send_email(email_host: str, login_email: str, email_pass: str, sender_email:
         smtp_obj.sendmail(sender_email, receivers, message.as_string())
         return {"success": receivers, "error": []}
     except smtplib.SMTPException as e:
-        print(f'邮件推送失败, 推送邮箱：{to_email}, 错误信息:{e}')
+        logger.info(f'邮件推送失败, 推送邮箱：{to_email}, 错误信息:{e}')
         return {"success": [], "error": receivers}
 
 
@@ -125,7 +128,7 @@ def tg_bot(chat_id: int, token: str, content: str) -> Dict[str, Any]:
         _json_data = json.loads(json_str)
         return {"success": [1], "error": []}
     except Exception as e:
-        print(f'tg推送失败, 聊天ID：{chat_id}, 错误信息:{e}')
+        logger.info(f'tg推送失败, 聊天ID：{chat_id}, 错误信息:{e}')
         return {"success": [], "error": [1]}
 
 
@@ -158,10 +161,10 @@ def bark(api: str, title: str = "message", content: str = 'test', level: str = "
                 success.append(_api)
             else:
                 error.append(_api)
-                print(f'Bark推送失败, 推送地址：{_api}, 失败信息：{json_data["message"]}')
+                logger.info(f'Bark推送失败, 推送地址：{_api}, 失败信息：{json_data["message"]}')
         except Exception as e:
             error.append(api)
-            print(f'Bark推送失败, 推送地址：{_api}, 错误信息:{e}')
+            logger.info(f'Bark推送失败, 推送地址：{_api}, 错误信息:{e}')
     return {"success": success, "error": error}
 
 
@@ -202,14 +205,14 @@ def ntfy(api: str, title: str = "message", content: str = 'test', tags: str = 't
                 success.append(_api)
             else:
                 error.append(_api)
-                print(f'ntfy推送失败, 推送地址：{_api}, 失败信息：{json_data["error"]}')
+                logger.info(f'ntfy推送失败, 推送地址：{_api}, 失败信息：{json_data["error"]}')
         except urllib.error.HTTPError as e:
             error.append(_api)
             error_msg = e.read().decode("utf-8")
-            print(f'ntfy推送失败, 推送地址：{_api}, 错误信息:{json.loads(error_msg)["error"]}')
+            logger.info(f'ntfy推送失败, 推送地址：{_api}, 错误信息:{json.loads(error_msg)["error"]}')
         except Exception as e:
             error.append(api)
-            print(f'ntfy推送失败, 推送地址：{_api}, 错误信息:{e}')
+            logger.info(f'ntfy推送失败, 推送地址：{_api}, 错误信息:{e}')
     return {"success": success, "error": error}
 
 
@@ -241,10 +244,10 @@ def pushplus(token: str, title: str, content: str) -> Dict[str, Any]:
                 success.append(_token)
             else:
                 error.append(_token)
-                print(f'PushPlus推送失败, Token：{_token}, 失败信息：{json_data.get("msg", "未知错误")}')
+                logger.info(f'PushPlus推送失败, Token：{_token}, 失败信息：{json_data.get("msg", "未知错误")}')
         except Exception as e:
             error.append(_token)
-            print(f'PushPlus推送失败, Token：{_token}, 错误信息:{e}')
+            logger.info(f'PushPlus推送失败, Token：{_token}, 错误信息:{e}')
     
     return {"success": success, "error": error}
 

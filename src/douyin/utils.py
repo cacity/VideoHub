@@ -12,9 +12,12 @@ import json
 import hashlib
 import random
 import string
+import logging
 from typing import Dict, Any, Optional, List
 from urllib.parse import urlparse, parse_qs, unquote
 import requests
+
+logger = logging.getLogger(__name__)
 
 class DouyinUtils:
     """抖音工具类"""
@@ -48,7 +51,7 @@ class DouyinUtils:
             
             return None
         except Exception as e:
-            print(f"提取视频ID失败: {e}")
+            logger.info(f"提取视频ID失败: {e}")
             return None
     
     @staticmethod
@@ -59,7 +62,7 @@ class DouyinUtils:
         :return: 展开后的链接
         """
         try:
-            print(f"正在展开短链接: {short_url}")
+            logger.info(f"正在展开短链接: {short_url}")
             
             # 创建session with SSL configuration
             session = requests.Session()
@@ -87,32 +90,32 @@ class DouyinUtils:
             
             for i, method in enumerate(methods):
                 try:
-                    print(f"尝试方法 {i+1}...")
+                    logger.info(f"尝试方法 {i+1}...")
                     response = method()
                     expanded_url = response.url
-                    print(f"短链接展开结果: {expanded_url}")
+                    logger.info(f"短链接展开结果: {expanded_url}")
                     
                     # 验证URL是否有效
                     if expanded_url and expanded_url != short_url and 'douyin.com' in expanded_url:
                         return expanded_url
                         
                 except Exception as method_error:
-                    print(f"方法 {i+1} 失败: {method_error}")
+                    logger.info(f"方法 {i+1} 失败: {method_error}")
                     continue
             
             # 如果所有方法都失败，尝试从短链接直接提取ID
-            print("尝试从短链接直接提取视频ID...")
+            logger.info("尝试从短链接直接提取视频ID...")
             video_id_match = re.search(r'/([A-Za-z0-9]+)/?$', short_url)
             if video_id_match:
                 video_id = video_id_match.group(1)
                 constructed_url = f"https://www.douyin.com/video/{video_id}"
-                print(f"构造的URL: {constructed_url}")
+                logger.info(f"构造的URL: {constructed_url}")
                 return constructed_url
             
             return None
             
         except Exception as e:
-            print(f"展开短链接失败: {e}")
+            logger.info(f"展开短链接失败: {e}")
             return None
     
     @staticmethod
@@ -213,7 +216,7 @@ class DouyinUtils:
             
             return DouyinUtils.clean_filename(filename)
         except Exception as e:
-            print(f"格式化文件名失败: {e}")
+            logger.info(f"格式化文件名失败: {e}")
             return f"douyin_{int(time.time())}"
     
     @staticmethod
@@ -314,7 +317,7 @@ class DouyinUtils:
             
             return urls
         except Exception as e:
-            print(f"从文本提取URL失败: {e}")
+            logger.info(f"从文本提取URL失败: {e}")
             return []
     
     @staticmethod
@@ -335,7 +338,7 @@ class DouyinUtils:
             
             return None
         except Exception as e:
-            print(f"解析分享文本失败: {e}")
+            logger.info(f"解析分享文本失败: {e}")
             return None
     
     @staticmethod
@@ -382,7 +385,7 @@ class DouyinUtils:
                 json.dump(video_info, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
-            print(f"保存元数据失败: {e}")
+            logger.info(f"保存元数据失败: {e}")
             return False
     
     @staticmethod
@@ -396,7 +399,7 @@ class DouyinUtils:
             with open(file_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"加载元数据失败: {e}")
+            logger.info(f"加载元数据失败: {e}")
             return None
     
     @staticmethod

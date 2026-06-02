@@ -65,19 +65,18 @@ RESOURCE_DIRECTORIES = [
 
 # 输出目录（空目录，需要创建）
 OUTPUT_DIRECTORIES = [
-    "downloads",            # 音频下载
-    "videos",               # 视频下载
-    "youtube_downloads",    # YouTube 视频
-    "twitter_downloads",    # Twitter 视频
-    "bilibili_downloads",   # Bilibili 视频
-    "douyin_downloads",     # 抖音视频
+    "youtube_audio",        # YouTube 音频
+    "youtube",              # YouTube 视频
+    "twitter",              # Twitter 视频
+    "bilibili",             # Bilibili 视频
+    "douyin",               # 抖音视频
     "transcripts",          # 转录文本
     "subtitles",            # 字幕文件
     "native_subtitles",     # 原生字幕
     "summaries",            # 摘要文章
     "videos_with_subtitles",# 嵌入字幕的视频
     "logs",                 # 日志文件
-    "live_downloads",       # 直播录制文件
+    "live",                 # 直播录制文件
 ]
 
 # 不需要复制的目录

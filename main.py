@@ -45,6 +45,15 @@ import html
 import subprocess
 import json
 
+from paths_config import (
+    ENV_FILE,
+    TEMPLATES_DIR,
+    LOGS_DIR,
+    DUBBING_OUTPUT_DIR,
+    IDLE_QUEUE_FILE,
+    LOCAL_YTDLP_DIR,
+)
+
 # 导入抖音下载模块
 try:
     from douyin import DouyinDownloader, DouyinConfig, DouyinUtils
@@ -370,7 +379,7 @@ class DouyinTextEdit(QTextEdit):
             self.paste()
 
 # 加载环境变量（指定 main.py 所在目录的 .env 文件）
-_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+_env_path = ENV_FILE
 load_dotenv(_env_path, override=True)  # override=True 确保总是从.env文件中加载最新的值
 print(f"✅ 已加载环境变量: {_env_path}")
 
@@ -395,11 +404,9 @@ def _save_env_key(env_path: str, key: str, value: str):
 
 
 # 创建模板目录
-TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
 # 创建日志目录
-LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # 日志文件路径
@@ -1482,9 +1489,8 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"  目标视频: {video_path}")
 
             try:
-                from src.paths_config import WORKSPACE_DIR
                 import os
-                output_dir = os.path.join(WORKSPACE_DIR, "dubbing_output")
+                output_dir = DUBBING_OUTPUT_DIR
                 os.makedirs(output_dir, exist_ok=True)
 
                 # 生成输出文件名
@@ -1594,7 +1600,7 @@ class MainWindow(QMainWindow):
         self.worker_thread = None
         
         # 初始化闲时任务相关变量
-        self.idle_queue_file = "idle_queue.json"  # 闲时队列持久化文件
+        self.idle_queue_file = IDLE_QUEUE_FILE  # 闲时队列持久化文件
         self.idle_tasks = []  # 闲时任务队列
         self.idle_start_time = "23:00"  # 默认闲时开始时间
         self.idle_end_time = "07:00"    # 默认闲时结束时间
@@ -3502,26 +3508,26 @@ class MainWindow(QMainWindow):
         # 创建复选框和打开目录按钮
         # 视频文件
         videos_layout = QHBoxLayout()
-        self.cleanup_videos_cb = QCheckBox("视频文件 (videos/ 目录)")
+        self.cleanup_videos_cb = QCheckBox("YouTube 视频 (youtube/ 目录)")
         self.cleanup_videos_cb.setChecked(True)
         videos_layout.addWidget(self.cleanup_videos_cb)
         videos_open_btn = QPushButton("📁")
         videos_open_btn.setFixedSize(30, 25)
-        videos_open_btn.setToolTip("打开 videos/ 目录")
-        videos_open_btn.clicked.connect(lambda: self.open_directory("videos"))
+        videos_open_btn.setToolTip("打开 youtube/ 目录")
+        videos_open_btn.clicked.connect(lambda: self.open_directory("youtube"))
         videos_layout.addWidget(videos_open_btn)
         videos_layout.addStretch()
         file_types_layout.addLayout(videos_layout)
         
         # 音频文件
         audios_layout = QHBoxLayout()
-        self.cleanup_audios_cb = QCheckBox("音频文件 (downloads/ 目录)")
+        self.cleanup_audios_cb = QCheckBox("YouTube 音频 (youtube_audio/ 目录)")
         self.cleanup_audios_cb.setChecked(True)
         audios_layout.addWidget(self.cleanup_audios_cb)
         audios_open_btn = QPushButton("📁")
         audios_open_btn.setFixedSize(30, 25)
-        audios_open_btn.setToolTip("打开 downloads/ 目录")
-        audios_open_btn.clicked.connect(lambda: self.open_directory("downloads"))
+        audios_open_btn.setToolTip("打开 youtube_audio/ 目录")
+        audios_open_btn.clicked.connect(lambda: self.open_directory("youtube_audio"))
         audios_layout.addWidget(audios_open_btn)
         audios_layout.addStretch()
         file_types_layout.addLayout(audios_layout)
@@ -3689,8 +3695,8 @@ class MainWindow(QMainWindow):
         
         # 定义目录和对应的文件扩展名（逻辑名称，实际路径通过 DIRECTORY_MAP 解析到 workspace/ 下）
         directories = {
-            "videos": ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"],
-            "downloads": ["*.mp3", "*.wav", "*.m4a", "*.aac", "*.ogg"],
+            "youtube": ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"],
+            "youtube_audio": ["*.mp3", "*.wav", "*.m4a", "*.aac", "*.ogg"],
             "subtitles": ["*.srt", "*.vtt", "*.ass"],
             "transcripts": ["*.txt"],
             "summaries": ["*.md", "*.txt"],
@@ -3746,9 +3752,9 @@ class MainWindow(QMainWindow):
         # 获取选中的清理类型（使用逻辑目录名，实际路径通过 DIRECTORY_MAP 映射）
         cleanup_types = []
         if self.cleanup_videos_cb.isChecked():
-            cleanup_types.append(("videos", ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"]))
+            cleanup_types.append(("youtube", ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"]))
         if self.cleanup_audios_cb.isChecked():
-            cleanup_types.append(("downloads", ["*.mp3", "*.wav", "*.m4a", "*.aac", "*.ogg"]))
+            cleanup_types.append(("youtube_audio", ["*.mp3", "*.wav", "*.m4a", "*.aac", "*.ogg"]))
         if self.cleanup_subtitles_cb.isChecked():
             cleanup_types.append(("subtitles", ["*.srt", "*.vtt", "*.ass"]))
         if self.cleanup_transcripts_cb.isChecked():
@@ -5718,8 +5724,7 @@ class MainWindow(QMainWindow):
     def download_ytdlp_exe(self):
         """下载 yt-dlp.exe"""
         # 确定下载目录
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        ytdlp_dir = os.path.join(base_dir, "bin")
+        ytdlp_dir = LOCAL_YTDLP_DIR
         os.makedirs(ytdlp_dir, exist_ok=True)
         exe_path = os.path.join(ytdlp_dir, "yt-dlp.exe")
 
@@ -7549,7 +7554,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
     def open_dubbing_output_dir(self):
         """打开配音输出目录"""
         # TODO: 使用实际输出路径
-        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workspace", "dubbing_output")
+        output_dir = DUBBING_OUTPUT_DIR
         os.makedirs(output_dir, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(output_dir))
 

@@ -59,11 +59,11 @@ class ChineseTTS:
     def _get_temp_audio_path(self) -> str:
         """获取临时音频文件路径，使用 workspace/dubbing_temp/"""
         try:
-            from .paths_config import WORKSPACE_DIR
+            from .paths_config import DUBBING_TEMP_DIR
         except ImportError:
-            from src.paths_config import WORKSPACE_DIR
+            from src.paths_config import DUBBING_TEMP_DIR
 
-        temp_dir = os.path.join(WORKSPACE_DIR, "dubbing_temp")
+        temp_dir = DUBBING_TEMP_DIR
         os.makedirs(temp_dir, exist_ok=True)
         return os.path.join(temp_dir, f"tts_audio_{int(time.time() * 1000)}.wav")
 
@@ -200,7 +200,7 @@ class ChineseTTS:
         # 移除多余空格
         text = ' '.join(text.split())
         # 保留中英文、数字和常用标点（包括！？？等影响语气的）
-        text = re.sub(r'[^一-龥a-zA-Z0-9，。！？、：；""''（）【】\[()].!?,:\s]', '', text)
+        text = re.sub(r"""[^一-龥a-zA-Z0-9，。！？、：；"'（）【】\[\]().!?,:\s]""", '', text)
         return text.strip()
 
     def _analyze_sentence_type(self, text: str) -> str:

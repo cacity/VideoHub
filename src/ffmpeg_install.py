@@ -9,12 +9,12 @@ Copyright (c) 2024 by Hmily, All Rights Reserved.
 import os
 import re
 import subprocess
-import sys
 import platform
 import zipfile
 from pathlib import Path
 import requests
 from tqdm import tqdm
+from paths_config import LOCAL_FFMPEG_DIR
 try:
     from live_recorder.logger import logger
 except ImportError:
@@ -26,9 +26,8 @@ except ImportError:
     logger = SimpleLogger()
 
 current_platform = platform.system()
-execute_dir = os.path.split(os.path.realpath(sys.argv[0]))[0]
 current_env_path = os.environ.get('PATH')
-ffmpeg_path = os.path.join(execute_dir, 'ffmpeg')
+ffmpeg_path = LOCAL_FFMPEG_DIR
 
 
 def unzip_file(zip_path: str | Path, extract_to: str | Path, delete: bool = True) -> None:

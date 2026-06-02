@@ -17,6 +17,8 @@ _root_path = Path(__file__).parent.parent
 if str(_root_path) not in sys.path:
     sys.path.insert(0, str(_root_path))
 
+from paths_config import DOUYIN_DOWNLOADS_DIR
+
 # 使用 importlib 避免循环导入
 import importlib.util
 spec = importlib.util.spec_from_file_location("douyin_core", _root_path / "douyin.py")
@@ -138,7 +140,7 @@ class DouyinVdExtractor:
             print(f"标准化视频信息失败: {e}")
             return video_info.to_dict() if hasattr(video_info, 'to_dict') else {}
     
-    def download_video(self, douyin_url: str, download_dir: str = "douyin_downloads") -> Dict[str, Any]:
+    def download_video(self, douyin_url: str, download_dir: str = DOUYIN_DOWNLOADS_DIR) -> Dict[str, Any]:
         """
         下载抖音视频
         :param douyin_url: 抖音分享链接

@@ -34,17 +34,17 @@ from paths_config import (
     NATIVE_SUBTITLES_DIR,
     DIRECTORY_MAP,
     DEFAULT_SUMMARY_DIR,
+    LOGS_DIR,
+    TEMPLATES_DIR,
 )
 
 # Load environment variables from .env file
 load_dotenv()
 
 # 创建模板目录（模板通常较小，仍然放在项目根目录下）
-TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
 # 创建日志目录（日志体积较小，保留在项目根目录下）
-LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # 日志文件路径
@@ -81,6 +81,15 @@ def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cooki
     import tempfile
     import re
 
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    started_at = time.time()
+    existing_files = {
+        str(path): path.stat().st_mtime
+        for path in Path(output_dir).glob("*")
+        if path.is_file()
+    }
+    video_id = extract_youtube_video_id(youtube_url)
+
     # 构建命令
     cmd = [exe_path]
 
@@ -92,7 +101,7 @@ def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cooki
         cmd.extend(['-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'])
 
     # 使用安全的文件名模板
-    safe_template = os.path.join(output_dir, 'video_%(id)s.%(ext)s')
+    safe_template = os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s')
     cmd.extend(['-o', safe_template])
 
     # 保留原始文件（不删除分片）
@@ -115,6 +124,7 @@ def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cooki
 
     # 添加 --no-check-certificate 避免证书问题
     cmd.append('--no-check-certificate')
+    cmd.append('--no-playlist')
 
     # 添加视频URL
     cmd.append(youtube_url)
@@ -148,35 +158,46 @@ def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cooki
 
         raise Exception(f"yt-dlp.exe 下载失败: {error_msg}")
 
-    # 扫描输出目录找下载的文件
-    downloaded_file = None
+    def _is_final_media_file(path: Path) -> bool:
+        name = path.name
+        if name.startswith('.') or name.endswith(('.part', '.temp', '.ytdl')):
+            return False
+        suffix = path.suffix.lower()
+        if ".f" in name and suffix in [".mp4", ".m4a", ".webm"]:
+            return False
+        if audio_only:
+            return suffix in [".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac", ".webm"]
+        return suffix in [".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv"]
 
-    # 扫描输出目录
-    if os.path.exists(output_dir):
-        files = [f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))]
-        for f in files:
-            # 跳过临时文件
-            if f.endswith('.part') or f.endswith('.temp') or f.startswith('.'):
-                continue
-            # 跳过分片文件
-            if '.f' in f and ('.mp4' in f or '.m4a' in f or '.webm' in f):
-                continue
-            # 跳过 .ytdl 文件
-            if f.endswith('.ytdl'):
-                continue
-            # 找到 mp4 或其他视频文件
-            ext = os.path.splitext(f)[1].lower()
-            if ext in ['.mp4', '.mkv', '.webm', '.avi', '.mov', '.flv']:
-                downloaded_file = os.path.join(output_dir, f)
-                break
+    candidates = []
+    output_path = Path(output_dir)
+    if video_id:
+        candidates.extend(
+            path for path in output_path.glob(f"*_{video_id}.*")
+            if path.is_file() and _is_final_media_file(path)
+        )
+    for path in output_path.glob("*"):
+        if not path.is_file() or not _is_final_media_file(path):
+            continue
+        previous_mtime = existing_files.get(str(path))
+        current_mtime = path.stat().st_mtime
+        if previous_mtime is None or current_mtime > previous_mtime or current_mtime >= started_at - 2:
+            candidates.append(path)
+
+    unique_candidates = list({str(path): path for path in candidates}.values())
+    downloaded_file = str(max(unique_candidates, key=lambda p: p.stat().st_mtime)) if unique_candidates else None
 
     if not downloaded_file or not os.path.exists(downloaded_file):
-        raise Exception(f"下载完成但无法找到输出文件\n输出目录: {output_dir}\n命令输出:\n{result.stdout}")
+        raise Exception(
+            f"下载完成但无法确认本次输出文件，已拒绝使用目录中的历史文件\n"
+            f"输出目录: {output_dir}\n命令输出:\n{result.stdout}\n错误输出:\n{result.stderr}"
+        )
 
     print(f"下载成功: {downloaded_file}")
 
     # 构建视频信息
     info = {
+        'id': video_id,
         'title': Path(downloaded_file).stem,
         'ext': Path(downloaded_file).suffix.lstrip('.'),
         'filepath': downloaded_file,
@@ -636,6 +657,24 @@ def format_timestamp_ass(seconds):
     centiseconds = int((secs - int(secs)) * 100)
     return f"{hours:01d}:{minutes:02d}:{int(secs):02d}.{centiseconds:02d}"
 
+def extract_youtube_video_id(url: str) -> str:
+    """Extract a YouTube video id from common watch/share URLs."""
+    try:
+        parsed_url = urlparse(url)
+        host = parsed_url.netloc.lower()
+        if "youtube.com" in host:
+            video_id = parse_qs(parsed_url.query).get("v", [None])[0]
+            if video_id:
+                return video_id
+            parts = [part for part in parsed_url.path.split("/") if part]
+            if len(parts) >= 2 and parts[0] in {"shorts", "embed", "live"}:
+                return parts[1]
+        if "youtu.be" in host:
+            return parsed_url.path.strip("/").split("/")[0]
+    except Exception:
+        pass
+    return ""
+
 def log_command(command_args):
     """
     记录执行的命令到日志文件
@@ -669,13 +708,18 @@ def log_downloaded_video(youtube_url, file_path, video_info=None):
                 # 如果文件格式不正确，创建新的列表
                 video_list = []
         
+        requested_video_id = extract_youtube_video_id(youtube_url)
+
         # 检查URL是否已存在
         for video in video_list:
             if video.get("url") == youtube_url:
                 # 更新现有记录
                 video["last_download_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 video["file_path"] = file_path
+                if requested_video_id:
+                    video["id"] = requested_video_id
                 if video_info:
+                    video["id"] = video_info.get("id") or video_info.get("display_id") or video.get("id", "")
                     video["title"] = video_info.get("title", "")
                     video["duration"] = video_info.get("duration", 0)
                     video["upload_date"] = video_info.get("upload_date", "")
@@ -688,7 +732,10 @@ def log_downloaded_video(youtube_url, file_path, video_info=None):
                 "first_download_time": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "last_download_time": time.strftime("%Y-%m-%d %H:%M:%S")
             }
+            if requested_video_id:
+                new_entry["id"] = requested_video_id
             if video_info:
+                new_entry["id"] = video_info.get("id") or video_info.get("display_id") or new_entry.get("id", "")
                 new_entry["title"] = video_info.get("title", "")
                 new_entry["duration"] = video_info.get("duration", 0)
                 new_entry["upload_date"] = video_info.get("upload_date", "")
@@ -1476,6 +1523,8 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
     except Exception:
         existing_list = []
 
+    requested_video_id = extract_youtube_video_id(youtube_url)
+
     def _has_expected_type(path: str, audio_only_flag: bool) -> bool:
         """根据扩展名粗略判断文件类型是否匹配当前需求（视频/音频）。"""
         ext = os.path.splitext(path)[1].lower()
@@ -1495,6 +1544,17 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
         if not os.path.isabs(candidate_path):
             candidate_path = os.path.abspath(candidate_path)
         if os.path.exists(candidate_path) and _has_expected_type(candidate_path, audio_only):
+            item_video_id = item.get("id") or item.get("video_id") or item.get("display_id") or ""
+            candidate_stem = os.path.splitext(os.path.basename(candidate_path))[0]
+            filename_has_requested_id = bool(requested_video_id and requested_video_id in candidate_stem)
+            if requested_video_id and item_video_id != requested_video_id and not filename_has_requested_id:
+                print(
+                    "警告: 已有下载记录缺少或不匹配当前 YouTube 视频 ID，"
+                    f"忽略历史文件并重新下载: requested={requested_video_id}, "
+                    f"recorded={item_video_id or '(missing)'}, file={candidate_path}"
+                )
+                continue
+
             # 如果有记录下来的标题，优先校验一下文件名与标题是否大致匹配，
             # 避免历史上因为回退逻辑把别的视频文件错误地记录到当前URL。
             title = item.get("title")
@@ -1553,7 +1613,7 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
+            'outtmpl': os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s'),
             'quiet': False,  # 显示下载进度和错误信息
             'ignoreerrors': True,  # 忽略部分错误，尝试继续下载
             'noplaylist': True  # 确保只下载单个视频的音频而不是整个播放列表
@@ -1564,7 +1624,7 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
         ydl_opts = {
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',  # 使用更可靠的格式组合
             'merge_output_format': 'mp4',  # 确保输出为mp4
-            'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
+            'outtmpl': os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s'),
             'quiet': False,  # 显示下载进度和错误信息
             'ignoreerrors': True,  # 忽略部分错误，尝试继续下载
             'noplaylist': True  # 确保只下载单个视频而不是整个播放列表
@@ -1677,11 +1737,13 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
             # 获取原始文件名并清理
             original_title = info.get('title', '未知视频')
             print(f"原始视频标题: {original_title}")
-            sanitized_title = sanitize_filename(original_title)
+            video_id_for_name = info.get('id') or requested_video_id
+            original_stem = f"{original_title}_{video_id_for_name}" if video_id_for_name else original_title
+            sanitized_title = sanitize_filename(original_stem)
             print(f"清理后的标题: {sanitized_title}")
             
             # 构建文件路径
-            original_path = os.path.join(output_dir, f"{original_title}.{expected_ext}")
+            original_path = os.path.join(output_dir, f"{original_stem}.{expected_ext}")
             sanitized_path = os.path.join(output_dir, f"{sanitized_title}.{expected_ext}")
             
             print(f"原始文件路径: {original_path}")
@@ -1778,7 +1840,7 @@ def download_youtube_audio(youtube_url, output_dir=DOWNLOADS_DIR, cookies_file=N
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
-        'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
+        'outtmpl': os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s'),
         'quiet': True
     }
     
@@ -1794,10 +1856,12 @@ def download_youtube_audio(youtube_url, output_dir=DOWNLOADS_DIR, cookies_file=N
             
             # 获取原始文件名并清理
             original_title = info['title']
-            sanitized_title = sanitize_filename(original_title)
+            video_id_for_name = info.get('id') or extract_youtube_video_id(youtube_url)
+            original_stem = f"{original_title}_{video_id_for_name}" if video_id_for_name else original_title
+            sanitized_title = sanitize_filename(original_stem)
             
             # 如果文件名被清理了，需要重命名文件
-            original_path = os.path.join(output_dir, f"{original_title}.mp3")
+            original_path = os.path.join(output_dir, f"{original_stem}.mp3")
             sanitized_path = os.path.join(output_dir, f"{sanitized_title}.mp3")
             
             if original_path != sanitized_path and os.path.exists(original_path):

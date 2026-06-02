@@ -3,11 +3,14 @@ yt-dlp 管理器 - 支持 Python 库模式和本地可执行文件模式
 """
 
 import os
+import json
+import shutil
 import subprocess
 import tempfile
 from typing import Optional, Dict, Any
 
 import yt_dlp
+from paths_config import LOCAL_YTDLP_DIR, YTDLP_CONFIG_FILE
 
 
 class YtDlpManager:
@@ -21,8 +24,37 @@ class YtDlpManager:
             mode: 运行模式，"python" (默认) 或 "exe"
             exe_path: 本地可执行文件路径（仅 exe 模式使用）
         """
-        self.mode = mode or os.getenv("YT_DLP_MODE", "python")
-        self.exe_path = exe_path or os.getenv("YT_DLP_EXE_PATH", "")
+        config = self._load_config()
+        self.mode = mode or os.getenv("YT_DLP_MODE") or config.get("ytdlp_mode", "python")
+        self.exe_path = exe_path or os.getenv("YT_DLP_EXE_PATH") or config.get("ytdlp_exe_path", "")
+        if self.mode == "auto":
+            self.exe_path = self.exe_path or self._find_exe_path() or ""
+            self.mode = "exe" if self.exe_path else "python"
+
+    @staticmethod
+    def _load_config() -> Dict[str, Any]:
+        defaults = {
+            "ytdlp_mode": "python",
+            "ytdlp_exe_path": "",
+        }
+        if not os.path.exists(YTDLP_CONFIG_FILE):
+            return defaults
+        try:
+            with open(YTDLP_CONFIG_FILE, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            config.pop("description", None)
+            return {**defaults, **config}
+        except Exception:
+            return defaults
+
+    @staticmethod
+    def _find_exe_path() -> Optional[str]:
+        candidate_names = ["yt-dlp.exe", "yt-dlp"]
+        for name in candidate_names:
+            candidate = os.path.join(LOCAL_YTDLP_DIR, name)
+            if os.path.isfile(candidate):
+                return candidate
+        return shutil.which("yt-dlp")
 
     def is_exe_mode(self) -> bool:
         """检查是否为本地可执行文件模式"""
@@ -177,9 +209,7 @@ class YtDlpManager:
 
 def get_ytdlp_manager() -> YtDlpManager:
     """获取 yt-dlp 管理器实例"""
-    mode = os.getenv("YT_DLP_MODE", "python")
-    exe_path = os.getenv("YT_DLP_EXE_PATH", "")
-    return YtDlpManager(mode=mode, exe_path=exe_path)
+    return YtDlpManager()
 
 
 def get_ytdlp_options(
@@ -234,10 +264,8 @@ def check_ytdlp_version() -> Optional[str]:
 
     try:
         # 再尝试本地 exe
-        mode = os.getenv("YT_DLP_MODE", "python")
-        exe_path = os.getenv("YT_DLP_EXE_PATH", "")
-
-        if mode == "exe" and exe_path and os.path.exists(exe_path):
+        exe_path = get_ytdlp_manager().get_exe_path()
+        if exe_path:
             result = subprocess.run([exe_path, "--version"], capture_output=True, text=True)
             if result.returncode == 0:
                 return result.stdout.strip()

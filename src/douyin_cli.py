@@ -185,7 +185,7 @@ def main():
 
     parser.add_argument("url", help="抖音视频链接或用户主页链接")
     parser.add_argument("-o", "--output", default=DOUYIN_DOWNLOADS_DIR,
-                       help="下载目录 (默认: workspace/douyin_downloads)")
+                       help="下载目录 (默认: workspace/douyin)")
     parser.add_argument("--limit", type=int, default=0,
                        help="用户主页批量下载数量限制，0 表示全部")
     parser.add_argument("--cookie", default=None,

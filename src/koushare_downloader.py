@@ -11,9 +11,12 @@ import re
 import os
 import subprocess
 import shutil
+import logging
 from urllib.parse import urlparse, parse_qs
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -176,7 +179,7 @@ def get_video_info(live_id: str, video_id: str) -> dict:
                     if str(item.get("videoId", "")) == str(video_id):
                         return item
     except Exception as e:
-        print(f"      [警告] livePlayback/list 失败: {e}")
+        logger.info(f"      [警告] livePlayback/list 失败: {e}")
     return {}
 
 
@@ -192,7 +195,7 @@ def get_playback_url(live_id: str, video_id: str) -> dict:
 
     sess = _get_session()
     has_auth = bool(sess.headers.get("Authorization"))
-    print(f"      [鉴权] Authorization header {'已设置' if has_auth else '未设置（未登录）'}")
+    logger.info(f"      [鉴权] Authorization header {'已设置' if has_auth else '未设置（未登录）'}")
 
     resp = sess.post(url, params=query_params, json={}, headers=headers, timeout=15)
     resp.raise_for_status()
@@ -210,7 +213,7 @@ def get_video_play_address(video_id: str) -> dict:
     """
     sess = _get_session()
     has_auth = bool(sess.headers.get("Authorization"))
-    print(f"      [鉴权] Authorization header {'已设置' if has_auth else '未设置（未登录）'}")
+    logger.info(f"      [鉴权] Authorization header {'已设置' if has_auth else '未设置（未登录）'}")
 
     # 步骤 1：checkVideoAuth → secret
     body = {"id": video_id}
@@ -248,7 +251,7 @@ def get_video_title(video_id: str, secret: str) -> str:
             info = resp.json().get("data") or {}
             return info.get("title") or ""
     except Exception as e:
-        print(f"      [警告] 获取视频标题失败: {e}")
+        logger.info(f"      [警告] 获取视频标题失败: {e}")
     return ""
 
 
@@ -311,7 +314,7 @@ def select_quality(playback_data: dict, quality: str = "FHD") -> str:
         item_list = url_group.get("list") or []
 
         # ── 诊断：打印所有可用画质及其 URL 状态 ──────────────────────
-        print(f"      [画质列表] 共 {len(item_list)} 个画质选项:")
+        logger.info(f"      [画质列表] 共 {len(item_list)} 个画质选项:")
         for item in item_list:
             label = item.get("labelEn", "?")
             h = item.get("height", "?")
@@ -329,15 +332,15 @@ def select_quality(playback_data: dict, quality: str = "FHD") -> str:
             if (item.get("labelEn") or "").upper() == quality:
                 url = _pick_url(item)
                 if url:
-                    print(f"      [选择] {quality} 画质 URL 已找到")
+                    logger.info(f"      [选择] {quality} 画质 URL 已找到")
                     return url
                 else:
                     login_px = item.get("appLoginPx", 0)
                     has_auth = bool(_get_session().headers.get("Authorization"))
                     if login_px and not has_auth:
-                        print(f"      [提示] {quality} 需要登录才能获取 URL（appLoginPx={login_px}），请先在设置中登录蔻享账号")
+                        logger.info(f"      [提示] {quality} 需要登录才能获取 URL（appLoginPx={login_px}），请先在设置中登录蔻享账号")
                     else:
-                        print(f"      [警告] {quality} URL 为空（fileUrl/preUrl 均无 .m3u8），将尝试回退")
+                        logger.info(f"      [警告] {quality} URL 为空（fileUrl/preUrl 均无 .m3u8），将尝试回退")
                 break
 
         # ── 按画质顺序回退 ────────────────────────────────────────────
@@ -345,7 +348,7 @@ def select_quality(playback_data: dict, quality: str = "FHD") -> str:
             for item in item_list:
                 url = _pick_url(item)
                 if url and (item.get("labelEn") or "").upper() == q:
-                    print(f"      [回退] {quality} 不可用，改用 {q}（{item.get('height', '?')}p）")
+                    logger.info(f"      [回退] {quality} 不可用，改用 {q}（{item.get('height', '?')}p）")
                     return url
 
     url = playback_data.get("url") or playback_data.get("playUrl")
@@ -416,7 +419,7 @@ def _parse_m3u8(m3u8_url: str) -> tuple:
 def download_with_ffmpeg(m3u8_url: str, output_path: str, progress_callback=None):
     """使用 ffmpeg 下载并合并 HLS 流，通过 -progress 实时报告进度"""
     ffmpeg_exe = _get_ffmpeg_executable()
-    print(f"[ffmpeg] 开始下载: {output_path}")
+    logger.info(f"[ffmpeg] 开始下载: {output_path}")
 
     # 先解析 m3u8 获取总时长，用于计算进度百分比（仅对 HLS 有效）
     total_segments = 0
@@ -432,7 +435,7 @@ def download_with_ffmpeg(m3u8_url: str, output_path: str, progress_callback=None
                     30,
                 )
         except Exception as e:
-            print(f"[警告] 解析 m3u8 失败，将无法显示精确进度: {e}")
+            logger.info(f"[警告] 解析 m3u8 失败，将无法显示精确进度: {e}")
             if progress_callback:
                 progress_callback("正在下载视频流...", 30)
     else:
@@ -482,7 +485,7 @@ def download_with_ffmpeg(m3u8_url: str, output_path: str, progress_callback=None
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg 下载失败（returncode={proc.returncode}），请检查网络或 URL 是否有效")
 
-    print(f"[完成] 已保存到: {output_path}")
+    logger.info(f"[完成] 已保存到: {output_path}")
     if progress_callback:
         progress_callback("下载完成", 100)
 
@@ -502,17 +505,17 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
     :return: {"success": bool, "file_path": str, "title": str, "error": str}
     """
     try:
-        print(f"[1/3] 解析 URL: {url}")
+        logger.info(f"[1/3] 解析 URL: {url}")
         if progress_callback:
             progress_callback("正在解析 URL...", 5)
 
         live_id, video_id = parse_koushare_url(url)
-        print(f"      liveId={live_id}, videoId={video_id}")
+        logger.info(f"      liveId={live_id}, videoId={video_id}")
 
         title = f"koushare_{video_id}"
 
         # ── 步骤 2：获取标题 ───────────────────────────────────────────
-        print("[2/3] 获取视频信息...")
+        logger.info("[2/3] 获取视频信息...")
         if progress_callback:
             progress_callback("正在获取视频信息...", 15)
 
@@ -523,7 +526,7 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
                 raw_title = video_item.get("title") or video_item.get("name")
                 if raw_title:
                     title = sanitize_filename(raw_title)
-                    print(f"      分集标题: {title}")
+                    logger.info(f"      分集标题: {title}")
 
             # 兜底：用直播间/系列名称
             if title == f"koushare_{video_id}":
@@ -531,18 +534,18 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
                     info = get_live_info(live_id)
                     raw_title = info.get("title") or info.get("name") or title
                     title = sanitize_filename(raw_title)
-                    print(f"      系列标题（兜底）: {title}")
+                    logger.info(f"      系列标题（兜底）: {title}")
                 except Exception as e:
-                    print(f"      [警告] 获取系列标题失败: {e}")
+                    logger.info(f"      [警告] 获取系列标题失败: {e}")
 
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
         # ── 步骤 3：下载 ───────────────────────────────────────────────
-        print(f"[3/3] 获取 {quality} 画质播放地址...")
+        logger.info(f"[3/3] 获取 {quality} 画质播放地址...")
         has_auth = bool(_get_session().headers.get("Authorization"))
         if quality == "FHD" and not has_auth:
-            print("      [提示] 请求 FHD 画质但尚未登录，FHD 可能需要登录才可用（请在设置中登录蔻享账号）")
+            logger.info("      [提示] 请求 FHD 画质但尚未登录，FHD 可能需要登录才可用（请在设置中登录蔻享账号）")
         if progress_callback:
             progress_callback("正在获取播放地址...", 25)
 
@@ -565,7 +568,7 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
             if raw_title:
                 title = sanitize_filename(raw_title)
                 output_path = os.path.join(output_dir, f"{title}.mp4")
-                print(f"      视频标题: {title}")
+                logger.info(f"      视频标题: {title}")
 
             # 获取播放地址
             params = {"videoId": video_id, "secret": secret}
@@ -579,7 +582,7 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
             playback_data = {"playbackUrls": data2.get("data") or []}
 
         m3u8_url = select_quality(playback_data, quality)
-        print(f"      m3u8: {m3u8_url[:80]}...")
+        logger.info(f"      m3u8: {m3u8_url[:80]}...")
         if progress_callback:
             progress_callback(f"正在下载: {title}", 30)
         download_with_ffmpeg(m3u8_url, output_path, progress_callback)
@@ -587,5 +590,5 @@ def download(url: str, output_dir: str = ".", quality: str = "FHD",
         return {"success": True, "file_path": output_path, "title": title}
 
     except Exception as e:
-        print(f"[错误] 寇享视频下载失败: {e}")
+        logger.info(f"[错误] 寇享视频下载失败: {e}")
         return {"success": False, "error": str(e)}

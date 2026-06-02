@@ -1,52 +1,75 @@
+"""Central path configuration for VideoHub.
+
+Runtime output belongs under ``workspace/``. Repository-owned source,
+configuration, and static assets stay under the project root.
+"""
+
+from __future__ import annotations
+
 import os
-
-"""
-统一管理项目运行时产生的大文件目录（视频、音频、字幕、摘要等）。
-
-所有下载/生成的大体积文件都会放在项目根目录下的 `workspace/` 目录中，
-便于本地调试时集中管理，也便于通过 .gitignore 一次性忽略这些文件。
-"""
-
-# 项目根目录（此文件在 src/ 下，向上一级即为项目根）
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# 统一的工作目录
-WORKSPACE_DIR = os.path.join(BASE_DIR, "workspace")
-os.makedirs(WORKSPACE_DIR, exist_ok=True)
+from pathlib import Path
 
 
-def _ensure_subdir(name: str) -> str:
-    """
-    在工作目录下创建并返回子目录路径，例如:
-    _ensure_subdir("videos") -> <项目根>/workspace/videos
-    """
-    path = os.path.join(WORKSPACE_DIR, name)
-    os.makedirs(path, exist_ok=True)
-    return path
+BASE_PATH = Path(__file__).resolve().parent.parent
+SRC_PATH = BASE_PATH / "src"
+WORKSPACE_PATH = BASE_PATH / "workspace"
+
+BASE_DIR = str(BASE_PATH)
+SRC_DIR = str(SRC_PATH)
+WORKSPACE_DIR = str(WORKSPACE_PATH)
 
 
-# 各类运行时目录（统一挂在 workspace/ 下）
-VIDEOS_DIR = _ensure_subdir("videos")
-DOWNLOADS_DIR = _ensure_subdir("downloads")
-SUBTITLES_DIR = _ensure_subdir("subtitles")
-TRANSCRIPTS_DIR = _ensure_subdir("transcripts")
-SUMMARIES_DIR = _ensure_subdir("summaries")
-VIDEOS_WITH_SUBTITLES_DIR = _ensure_subdir("videos_with_subtitles")
-NATIVE_SUBTITLES_DIR = _ensure_subdir("native_subtitles")
-
-# 其他平台相关目录
-TWITTER_DOWNLOADS_DIR = _ensure_subdir("twitter_downloads")
-BILIBILI_DOWNLOADS_DIR = _ensure_subdir("bilibili_downloads")
-DOUYIN_DOWNLOADS_DIR = _ensure_subdir("douyin_downloads")
-LIVE_DOWNLOADS_DIR = _ensure_subdir("live_downloads")
-KOUSHARE_DOWNLOADS_DIR = _ensure_subdir("koushare_downloads")
-
-# AI 配音相关目录
-DUBBING_TEMP_DIR = _ensure_subdir("dubbing_temp")
+def _ensure_dir(path: Path) -> str:
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
-# 逻辑名称到实际目录路径的映射，供清理/打开目录等功能使用
+def _ensure_workspace_subdir(name: str) -> str:
+    return _ensure_dir(WORKSPACE_PATH / name)
+
+
+# Runtime directories.
+YOUTUBE_DIR = _ensure_workspace_subdir("youtube")
+YOUTUBE_AUDIO_DIR = _ensure_workspace_subdir("youtube_audio")
+TWITTER_DIR = _ensure_workspace_subdir("twitter")
+BILIBILI_DIR = _ensure_workspace_subdir("bilibili")
+DOUYIN_DIR = _ensure_workspace_subdir("douyin")
+LIVE_DIR = _ensure_workspace_subdir("live")
+KOUSHARE_DIR = _ensure_workspace_subdir("koushare")
+
+# Backward-compatible constant names used throughout the app.
+VIDEOS_DIR = YOUTUBE_DIR
+DOWNLOADS_DIR = YOUTUBE_AUDIO_DIR
+SUBTITLES_DIR = _ensure_workspace_subdir("subtitles")
+TRANSCRIPTS_DIR = _ensure_workspace_subdir("transcripts")
+SUMMARIES_DIR = _ensure_workspace_subdir("summaries")
+VIDEOS_WITH_SUBTITLES_DIR = _ensure_workspace_subdir("videos_with_subtitles")
+NATIVE_SUBTITLES_DIR = _ensure_workspace_subdir("native_subtitles")
+TWITTER_DOWNLOADS_DIR = TWITTER_DIR
+BILIBILI_DOWNLOADS_DIR = BILIBILI_DIR
+DOUYIN_DOWNLOADS_DIR = DOUYIN_DIR
+LIVE_DOWNLOADS_DIR = LIVE_DIR
+KOUSHARE_DOWNLOADS_DIR = KOUSHARE_DIR
+DUBBING_TEMP_DIR = _ensure_workspace_subdir("dubbing_temp")
+DUBBING_OUTPUT_DIR = _ensure_workspace_subdir("dubbing_output")
+LOGS_DIR = _ensure_workspace_subdir("logs")
+TEMPLATES_DIR = _ensure_workspace_subdir("templates")
+GLOSSARIES_DIR = _ensure_workspace_subdir("glossaries")
+QA_REPORTS_DIR = _ensure_workspace_subdir("qa_reports")
+REVIEW_PACKS_DIR = _ensure_workspace_subdir("review_packs")
+
+
 DIRECTORY_MAP = {
+    "youtube": YOUTUBE_DIR,
+    "youtube_audio": YOUTUBE_AUDIO_DIR,
+    "audio": YOUTUBE_AUDIO_DIR,
+    "twitter": TWITTER_DIR,
+    "bilibili": BILIBILI_DIR,
+    "douyin": DOUYIN_DIR,
+    "live": LIVE_DIR,
+    "koushare": KOUSHARE_DIR,
+
+    # Legacy logical names kept for older code and saved settings.
     "videos": VIDEOS_DIR,
     "downloads": DOWNLOADS_DIR,
     "subtitles": SUBTITLES_DIR,
@@ -60,9 +83,49 @@ DIRECTORY_MAP = {
     "live_downloads": LIVE_DOWNLOADS_DIR,
     "koushare_downloads": KOUSHARE_DOWNLOADS_DIR,
     "dubbing_temp": DUBBING_TEMP_DIR,
+    "dubbing_output": DUBBING_OUTPUT_DIR,
+    "logs": LOGS_DIR,
+    "templates": TEMPLATES_DIR,
+    "glossaries": GLOSSARIES_DIR,
+    "qa_reports": QA_REPORTS_DIR,
+    "review_packs": REVIEW_PACKS_DIR,
 }
 
 
-# 默认摘要目录（供各处作为默认值使用）
+# Repository-root state/config files.
+ENV_FILE = str(BASE_PATH / ".env")
+IDLE_QUEUE_FILE = str(BASE_PATH / "idle_queue.json")
+FFMPEG_CONFIG_FILE = str(BASE_PATH / "ffmpeg_config.json")
+YTDLP_CONFIG_FILE = str(BASE_PATH / "ytdlp_config.json")
+LOCAL_FFMPEG_DIR = str(BASE_PATH / "ffmpeg")
+LOCAL_YTDLP_DIR = str(BASE_PATH / "ytdlp")
+
+
 DEFAULT_SUMMARY_DIR = SUMMARIES_DIR
 
+
+def get_directory(name: str) -> str:
+    try:
+        return DIRECTORY_MAP[name]
+    except KeyError as exc:
+        available = ", ".join(sorted(DIRECTORY_MAP))
+        raise KeyError(f"Unknown directory '{name}'. Available directories: {available}") from exc
+
+
+def list_all_directories() -> dict[str, str]:
+    return DIRECTORY_MAP.copy()
+
+
+def get_workspace_size() -> dict[str, int]:
+    sizes: dict[str, int] = {}
+    for name, directory in DIRECTORY_MAP.items():
+        total_size = 0
+        for dirpath, _, filenames in os.walk(directory):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                try:
+                    total_size += os.path.getsize(filepath)
+                except OSError:
+                    pass
+        sizes[name] = total_size
+    return sizes

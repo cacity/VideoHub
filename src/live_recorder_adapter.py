@@ -201,7 +201,7 @@ class LiveRecorderManager:
         self.config.set('Settings', 'monitoring_time', settings.get('interval', 60))
         self.config.set('Settings', 'video_format', settings.get('format', 'ts'))
         self.config.set('Settings', 'video_quality', settings.get('quality', '原画'))
-        self.config.set('Settings', 'save_path', settings.get('save_path', './live_downloads'))
+        self.config.set('Settings', 'save_path', settings.get('save_path', LIVE_DOWNLOADS_DIR))
         self.config.set('Settings', 'show_ffmpeg_log', '1' if settings.get('show_ffmpeg_log', False) else '0')
         self.config.set('Settings', 'save_log', '1' if settings.get('save_log', True) else '0')
         
@@ -438,7 +438,7 @@ class LiveRecorderManager:
     def _start_recording(self, url: str, settings: Dict[str, Any]):
         """开始录制直播"""
         try:
-            save_path = settings.get('save_path', './live_downloads')
+            save_path = settings.get('save_path', LIVE_DOWNLOADS_DIR)
             video_format = settings.get('format', 'ts')
             
             # 确保保存目录存在

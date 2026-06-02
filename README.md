@@ -1,6 +1,6 @@
 # 视频转录工具 (Video Hub)
 
-**当前版本: v0.1.1**
+**当前版本: v0.1.2**
 
 简体中文  | [English](./README_en.md)
 
@@ -8,7 +8,7 @@
 
 ## ✨ 加入讨论群
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260522145558006.png)
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260602090441231.png)
 
 ## ✨ 核心功能
 

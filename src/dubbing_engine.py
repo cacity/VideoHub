@@ -96,8 +96,8 @@ class VideoDubbingEngine:
 
     def _get_temp_dir(self) -> str:
         """获取临时工作目录，使用 workspace/dubbing_temp/"""
-        from .paths_config import WORKSPACE_DIR
-        temp_dir = os.path.join(WORKSPACE_DIR, "dubbing_temp")
+        from .paths_config import DUBBING_TEMP_DIR
+        temp_dir = DUBBING_TEMP_DIR
         os.makedirs(temp_dir, exist_ok=True)
         return temp_dir
 

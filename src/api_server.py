@@ -8,7 +8,10 @@ from flask_cors import CORS
 import json
 import os
 import threading
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 import logging
 
 try:
@@ -46,7 +49,7 @@ class APIServer:
                 if hasattr(self.main_window, 'log_extension_event'):
                     self.main_window.log_extension_event(message)
             except Exception as err:
-                print(f"API状态提示失败: {err}")
+                logger.debug(f"API状态提示失败: {err}")
 
         try:
             if QTimer:
@@ -54,7 +57,7 @@ class APIServer:
             else:
                 show_message()
         except Exception as err:
-            print(f"API状态通知异常: {err}")
+            logger.debug(f"API状态通知异常: {err}")
 
     def setup_routes(self):
         """设置API路由"""
@@ -94,7 +97,7 @@ class APIServer:
             """添加任务到队列"""
             try:
                 data = request.get_json()
-                print(f"API服务器: 收到添加到队列请求 {data}")
+                logger.debug(f"API服务器: 收到添加到队列请求 {data}")
                 if not data:
                     return jsonify({
                         'success': False,
@@ -342,7 +345,7 @@ class APIServer:
         
         def run_server():
             try:
-                print(f"启动API服务器，监听端口 {self.port}")
+                logger.info(f"启动API服务器，监听端口 {self.port}")
                 self.app.run(
                     host='127.0.0.1',
                     port=self.port,
@@ -351,15 +354,15 @@ class APIServer:
                     threaded=True
                 )
             except Exception as e:
-                print(f"API服务器启动失败: {e}")
+                logger.error(f"API服务器启动失败: {e}")
         
         self.server_thread = threading.Thread(target=run_server, daemon=True)
         self.server_thread.start()
         self.running = True
-        print(f"API服务器已启动: http://127.0.0.1:{self.port}")
+        logger.info(f"API服务器已启动: http://127.0.0.1:{self.port}")
     
     def stop_server(self):
         """停止API服务器"""
         if self.running:
             self.running = False
-            print("API服务器已停止")
+            logger.info("API服务器已停止")

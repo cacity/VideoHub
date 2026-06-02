@@ -12,6 +12,8 @@ import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 
+from paths_config import FFMPEG_CONFIG_FILE, LOCAL_FFMPEG_DIR
+
 try:
     from live_recorder.logger import logger
 except ImportError:
@@ -34,7 +36,7 @@ class FFmpegManager:
             config_path: 配置文件路径，默认为当前目录下的ffmpeg_config.json
         """
         self.execute_dir = os.path.split(os.path.realpath(sys.argv[0]))[0]
-        self.config_path = config_path or os.path.join(self.execute_dir, 'ffmpeg_config.json')
+        self.config_path = config_path or FFMPEG_CONFIG_FILE
         self.config = self._load_config()
         self.mode = None  # 实际使用的模式
         self.ffmpeg_exe = None  # ffmpeg可执行文件路径
@@ -169,7 +171,7 @@ class FFmpegManager:
                 return config_path
 
         # 2. 检查项目目录下的ffmpeg文件夹
-        local_ffmpeg_dir = os.path.join(self.execute_dir, 'ffmpeg')
+        local_ffmpeg_dir = LOCAL_FFMPEG_DIR
         if os.path.isdir(local_ffmpeg_dir):
             # Windows
             ffmpeg_exe = os.path.join(local_ffmpeg_dir, 'ffmpeg.exe')
