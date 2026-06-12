@@ -50,9 +50,12 @@ live/
 koushare/
 .gstack/
 .claude/
+website/
+frontend/
 downloads/
 .claude/
 CLAUDE.md
+AGENTS.md
 douyin_downloads/
 videos/
 videos_with_subtitles/
