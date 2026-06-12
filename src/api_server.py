@@ -310,6 +310,14 @@ class APIServer:
                 },
                 "title": f"B站: {data['title'][:50]}..."
             }
+        elif platform == 'instagram':
+            task = {
+                "type": "instagram",
+                "params": {
+                    "url": data['url']
+                },
+                "title": f"Instagram: {data['title'][:50]}..."
+            }
         elif platform == 'koushare':
             task = {
                 "type": "koushare",

@@ -33,6 +33,7 @@ YOUTUBE_DIR = _ensure_workspace_subdir("youtube")
 YOUTUBE_AUDIO_DIR = _ensure_workspace_subdir("youtube_audio")
 TWITTER_DIR = _ensure_workspace_subdir("twitter")
 BILIBILI_DIR = _ensure_workspace_subdir("bilibili")
+INSTAGRAM_DIR = _ensure_workspace_subdir("instagram")
 DOUYIN_DIR = _ensure_workspace_subdir("douyin")
 LIVE_DIR = _ensure_workspace_subdir("live")
 KOUSHARE_DIR = _ensure_workspace_subdir("koushare")
@@ -47,6 +48,7 @@ VIDEOS_WITH_SUBTITLES_DIR = _ensure_workspace_subdir("videos_with_subtitles")
 NATIVE_SUBTITLES_DIR = _ensure_workspace_subdir("native_subtitles")
 TWITTER_DOWNLOADS_DIR = TWITTER_DIR
 BILIBILI_DOWNLOADS_DIR = BILIBILI_DIR
+INSTAGRAM_DOWNLOADS_DIR = INSTAGRAM_DIR
 DOUYIN_DOWNLOADS_DIR = DOUYIN_DIR
 LIVE_DOWNLOADS_DIR = LIVE_DIR
 KOUSHARE_DOWNLOADS_DIR = KOUSHARE_DIR
@@ -65,6 +67,7 @@ DIRECTORY_MAP = {
     "audio": YOUTUBE_AUDIO_DIR,
     "twitter": TWITTER_DIR,
     "bilibili": BILIBILI_DIR,
+    "instagram": INSTAGRAM_DIR,
     "douyin": DOUYIN_DIR,
     "live": LIVE_DIR,
     "koushare": KOUSHARE_DIR,
@@ -79,6 +82,7 @@ DIRECTORY_MAP = {
     "native_subtitles": NATIVE_SUBTITLES_DIR,
     "twitter_downloads": TWITTER_DOWNLOADS_DIR,
     "bilibili_downloads": BILIBILI_DOWNLOADS_DIR,
+    "instagram_downloads": INSTAGRAM_DOWNLOADS_DIR,
     "douyin_downloads": DOUYIN_DOWNLOADS_DIR,
     "live_downloads": LIVE_DOWNLOADS_DIR,
     "koushare_downloads": KOUSHARE_DOWNLOADS_DIR,

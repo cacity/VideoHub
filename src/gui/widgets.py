@@ -344,7 +344,7 @@ class URLTextEdit(QTextEdit):
         clipboard_text = clipboard.text()
 
         if clipboard_text:
-            if any(keyword in clipboard_text.lower() for keyword in ['http', 'youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'tiktok.com', 'www.']):
+            if any(keyword in clipboard_text.lower() for keyword in ['http', 'youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'instagram.com', 'instagr.am', 'tiktok.com', 'www.']):
                 if not self.toPlainText().strip():
                     self.clear()
                     self.setPlainText(clipboard_text.strip())

@@ -34,6 +34,8 @@ class WorkerThread(QThread):
                 self.process_twitter()
             elif not self.stopped and self.task_type == "bilibili":
                 self.process_bilibili()
+            elif not self.stopped and self.task_type == "instagram":
+                self.process_instagram()
             elif not self.stopped and self.task_type == "koushare":
                 self.process_koushare()
             elif not self.stopped and self.task_type == "local_audio":
@@ -381,6 +383,75 @@ class WorkerThread(QThread):
         except Exception as e:
             import traceback
             error_msg = f"Bilibili视频下载失败: {str(e)}\n{traceback.format_exc()}"
+            self.update_signal.emit(error_msg)
+            self.finished_signal.emit("", False)
+
+    def process_instagram(self):
+        """Download Instagram video with yt-dlp."""
+        from paths_config import INSTAGRAM_DOWNLOADS_DIR
+
+        self.update_signal.emit("开始处理Instagram视频...")
+
+        instagram_url = self.params.get("url", "")
+        if not instagram_url:
+            self.update_signal.emit("错误: 未提供Instagram URL")
+            self.finished_signal.emit("", False)
+            return
+
+        self.update_signal.emit(f"Instagram URL: {instagram_url}")
+
+        try:
+            import os
+            import time
+            from pathlib import Path
+            import yt_dlp
+
+            download_dir = INSTAGRAM_DOWNLOADS_DIR
+            os.makedirs(download_dir, exist_ok=True)
+            before = {p.resolve() for p in Path(download_dir).glob("*") if p.is_file()}
+            started_at = time.time()
+
+            ydl_opts = {
+                "format": "bestvideo+bestaudio/best",
+                "outtmpl": os.path.join(download_dir, "%(title).180B_%(id)s.%(ext)s"),
+                "quiet": False,
+                "no_warnings": False,
+                "noplaylist": True,
+            }
+            cookies_file = self.params.get("cookies_file")
+            if cookies_file:
+                ydl_opts["cookiefile"] = cookies_file
+
+            self.update_signal.emit("正在下载Instagram视频...")
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(instagram_url, download=True)
+                candidates = []
+                for item in info.get("requested_downloads") or []:
+                    filepath = item.get("filepath")
+                    if filepath:
+                        candidates.append(Path(filepath))
+                candidates.append(Path(ydl.prepare_filename(info)))
+
+            existing = [p for p in candidates if p.exists()]
+            if not existing:
+                after = [p for p in Path(download_dir).glob("*") if p.is_file()]
+                existing = [
+                    p for p in after
+                    if p.resolve() not in before and p.stat().st_mtime >= started_at - 2
+                ]
+
+            if not existing:
+                raise RuntimeError("Instagram视频下载完成但未找到输出文件")
+
+            video_file = str(max(existing, key=lambda p: p.stat().st_mtime))
+            self.update_signal.emit("✓ Instagram视频下载完成!")
+            self.update_signal.emit(f"保存位置: {video_file}")
+            self.finished_signal.emit(video_file, True)
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Instagram视频下载失败: {str(e)}\n{traceback.format_exc()}"
             self.update_signal.emit(error_msg)
             self.finished_signal.emit("", False)
 

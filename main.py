@@ -457,6 +457,7 @@ from paths_config import (
     NATIVE_SUBTITLES_DIR,
     TWITTER_DOWNLOADS_DIR,
     BILIBILI_DOWNLOADS_DIR,
+    INSTAGRAM_DOWNLOADS_DIR,
     DOUYIN_DOWNLOADS_DIR,
     LIVE_DOWNLOADS_DIR,
     KOUSHARE_DOWNLOADS_DIR,
@@ -574,7 +575,7 @@ class URLLineEdit(QLineEdit):
             
             # 检查是否是简单的直接URL（排除复杂分享文本）
             clipboard_lines = clipboard_text.strip().split('\n')
-            if len(clipboard_lines) == 1 and any(keyword in clipboard_text.lower() for keyword in ['youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'tiktok.com', 'koushare.com']):
+            if len(clipboard_lines) == 1 and any(keyword in clipboard_text.lower() for keyword in ['youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'instagram.com', 'instagr.am', 'tiktok.com', 'koushare.com']):
                 self.clear()
                 self.setText(clipboard_text.strip())
                 event.accept()
@@ -614,7 +615,7 @@ class URLTextEdit(QTextEdit):
         # 如果剪贴板中有内容，检查是否包含URL
         if clipboard_text:
             # 检查是否看起来像包含URL
-            if any(keyword in clipboard_text.lower() for keyword in ['http', 'youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'tiktok.com', 'www.']):
+            if any(keyword in clipboard_text.lower() for keyword in ['http', 'youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'instagram.com', 'instagr.am', 'tiktok.com', 'www.']):
                 # 如果当前文本框为空，直接粘贴
                 if not self.toPlainText().strip():
                     self.clear()
@@ -813,6 +814,8 @@ class WorkerThread(QThread):
                 self.process_twitter()
             elif not self.stopped and self.task_type == "bilibili":
                 self.process_bilibili()
+            elif not self.stopped and self.task_type == "instagram":
+                self.process_instagram()
             elif not self.stopped and self.task_type == "koushare":
                 self.process_koushare()
             elif not self.stopped and self.task_type == "local_audio":
@@ -1143,6 +1146,73 @@ class WorkerThread(QThread):
         except Exception as e:
             import traceback
             error_msg = f"Bilibili视频下载失败: {str(e)}\n{traceback.format_exc()}"
+            self.update_signal.emit(error_msg)
+            self.finished_signal.emit("", False)
+
+    def process_instagram(self):
+        """Download Instagram video with yt-dlp."""
+        self.update_signal.emit("开始处理Instagram视频...")
+
+        instagram_url = self.params.get("url", "")
+        if not instagram_url:
+            self.update_signal.emit("错误: 未提供Instagram URL")
+            self.finished_signal.emit("", False)
+            return
+
+        self.update_signal.emit(f"Instagram URL: {instagram_url}")
+
+        try:
+            import os
+            import time
+            from pathlib import Path
+            import yt_dlp
+
+            download_dir = INSTAGRAM_DOWNLOADS_DIR
+            os.makedirs(download_dir, exist_ok=True)
+            before = {p.resolve() for p in Path(download_dir).glob("*") if p.is_file()}
+            started_at = time.time()
+
+            ydl_opts = {
+                "format": "bestvideo+bestaudio/best",
+                "outtmpl": os.path.join(download_dir, "%(title).180B_%(id)s.%(ext)s"),
+                "quiet": False,
+                "no_warnings": False,
+                "noplaylist": True,
+            }
+            cookies_file = self.params.get("cookies_file")
+            if cookies_file:
+                ydl_opts["cookiefile"] = cookies_file
+
+            self.update_signal.emit("正在下载Instagram视频...")
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(instagram_url, download=True)
+                candidates = []
+                for item in info.get("requested_downloads") or []:
+                    filepath = item.get("filepath")
+                    if filepath:
+                        candidates.append(Path(filepath))
+                candidates.append(Path(ydl.prepare_filename(info)))
+
+            existing = [p for p in candidates if p.exists()]
+            if not existing:
+                after = [p for p in Path(download_dir).glob("*") if p.is_file()]
+                existing = [
+                    p for p in after
+                    if p.resolve() not in before and p.stat().st_mtime >= started_at - 2
+                ]
+
+            if not existing:
+                raise RuntimeError("Instagram视频下载完成但未找到输出文件")
+
+            video_file = str(max(existing, key=lambda p: p.stat().st_mtime))
+            self.update_signal.emit("✓ Instagram视频下载完成!")
+            self.update_signal.emit(f"保存位置: {video_file}")
+            self.finished_signal.emit(video_file, True)
+
+        except Exception as e:
+            import traceback
+            error_msg = f"Instagram视频下载失败: {str(e)}\n{traceback.format_exc()}"
             self.update_signal.emit(error_msg)
             self.finished_signal.emit("", False)
 
@@ -1639,7 +1709,7 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """初始化用户界面"""
         # 设置窗口标题和大小
-        self.setWindowTitle("视频转录工具 (抖音/B站/YouTube/Twitter/X/蔻享/Koushare)")
+        self.setWindowTitle("视频转录工具 (抖音/B站/YouTube/Twitter/X/Instagram/蔻享/Koushare)")
         self.resize(900, 700)
         
         # 创建中央部件和主布局
@@ -1722,14 +1792,14 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         
         # 创建输入区域
-        input_group = QGroupBox("视频链接（支持YouTube、Twitter等平台）")
+        input_group = QGroupBox("视频链接（支持YouTube、Twitter/X、Instagram等平台）")
         input_layout = QVBoxLayout(input_group)
         
         # 添加URL输入框
         url_layout = QHBoxLayout()
         url_label = QLabel("视频URL:")
         self.youtube_url_input = URLLineEdit()
-        self.youtube_url_input.setPlaceholderText("输入YouTube、Twitter、X、抖音等视频链接或播放列表（右键可直接粘贴）...")
+        self.youtube_url_input.setPlaceholderText("输入YouTube、Twitter/X、Instagram、抖音等视频链接或播放列表（右键可直接粘贴）...")
         url_layout.addWidget(url_label)
         url_layout.addWidget(self.youtube_url_input)
         input_layout.addLayout(url_layout)
@@ -2170,12 +2240,12 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         
         # 创建输入区域
-        input_group = QGroupBox("批量处理视频（支持YouTube、Twitter等平台）")
+        input_group = QGroupBox("批量处理视频（支持YouTube、Twitter/X、Instagram等平台）")
         input_layout = QVBoxLayout(input_group)
         
         # 添加URL输入框
         self.batch_urls_text = URLTextEdit()
-        self.batch_urls_text.setPlaceholderText("输入多个视频链接，每行一个，支持YouTube、Twitter、X等（右键可直接粘贴）...")
+        self.batch_urls_text.setPlaceholderText("输入多个视频链接，每行一个，支持YouTube、Twitter/X、Instagram等（右键可直接粘贴）...")
         input_layout.addWidget(self.batch_urls_text)
         
         # 添加文件选择
@@ -4514,6 +4584,8 @@ class MainWindow(QMainWindow):
         # 寇享视频使用专用下载器
         if 'koushare.com' in youtube_url:
             self.worker_thread = WorkerThread("koushare", {"url": youtube_url})
+        elif 'instagram.com' in youtube_url.lower() or 'instagr.am' in youtube_url.lower():
+            self.worker_thread = WorkerThread("instagram", {"url": youtube_url, "cookies_file": params.get("cookies_file")})
         else:
             self.worker_thread = WorkerThread("youtube", params)
         self.worker_thread.update_signal.connect(self.update_youtube_output)
@@ -6066,27 +6138,36 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             # 创建任务参数
             model, base_url = self.get_model_and_base_url()
 
+            idle_task_type = "youtube"
+            idle_task_params = {
+                "youtube_url": youtube_url,
+                "model": model,
+                "api_key": None,
+                "base_url": base_url,
+                "whisper_model_size": self.whisper_model_combo.currentText(),
+                "stream": True,
+                "summary_dir": DEFAULT_SUMMARY_DIR,
+                "download_video": self.download_video_checkbox.isChecked(),
+                "custom_prompt": None,
+                "template_path": None,
+                "generate_subtitles": self.generate_subtitles_checkbox.isChecked(),
+                "translate_to_chinese": self.translate_checkbox.isChecked(),
+                "embed_subtitles": self.embed_subtitles_checkbox.isChecked(),
+                "cookies_file": self.cookies_path_input.text() if self.cookies_path_input.text() else None,
+                "prefer_native_subtitles": self.prefer_native_subtitles_checkbox.isChecked(),
+                "enable_transcription": self.enable_transcription_checkbox.isChecked(),
+                "generate_article": self.generate_article_checkbox.isChecked()
+            }
+            if 'instagram.com' in youtube_url.lower() or 'instagr.am' in youtube_url.lower():
+                idle_task_type = "instagram"
+                idle_task_params = {"url": youtube_url, "cookies_file": self.cookies_path_input.text() if self.cookies_path_input.text() else None}
+            elif 'koushare.com' in youtube_url.lower():
+                idle_task_type = "koushare"
+                idle_task_params = {"url": youtube_url}
+
             task = {
-                "type": "youtube",
-                "params": {
-                    "youtube_url": youtube_url,
-                    "model": model,
-                    "api_key": None,
-                    "base_url": base_url,
-                    "whisper_model_size": self.whisper_model_combo.currentText(),
-                    "stream": True,
-                    "summary_dir": DEFAULT_SUMMARY_DIR,
-                    "download_video": self.download_video_checkbox.isChecked(),
-                    "custom_prompt": None,
-                    "template_path": None,
-                    "generate_subtitles": self.generate_subtitles_checkbox.isChecked(),
-                    "translate_to_chinese": self.translate_checkbox.isChecked(),
-                    "embed_subtitles": self.embed_subtitles_checkbox.isChecked(),
-                    "cookies_file": self.cookies_path_input.text() if self.cookies_path_input.text() else None,
-                    "prefer_native_subtitles": self.prefer_native_subtitles_checkbox.isChecked(),
-                    "enable_transcription": self.enable_transcription_checkbox.isChecked(),
-                    "generate_article": self.generate_article_checkbox.isChecked()
-                },
+                "type": idle_task_type,
+                "params": idle_task_params,
                 "title": f"视频: {youtube_url[:50]}..."
             }
             
@@ -6207,6 +6288,20 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             self.worker_thread.finished_signal.connect(self.on_idle_task_finished)
             self.worker_thread.start()
 
+        elif task_type == "instagram":
+            print(f"[闲时任务] 开始处理 Instagram 视频: {task['title']}")
+            self.youtube_output_text.clear()
+            self.youtube_output_text.append(f"[闲时任务] 开始处理 Instagram 视频: {task['title']}")
+
+            self.youtube_process_button.setEnabled(False)
+            self.youtube_process_button.setText("闲时处理中...")
+            self.youtube_stop_button.setEnabled(True)
+
+            self.worker_thread = WorkerThread("instagram", task["params"])
+            self.worker_thread.update_signal.connect(self.update_youtube_output)
+            self.worker_thread.finished_signal.connect(self.on_idle_task_finished)
+            self.worker_thread.start()
+
         elif task_type == "koushare":
             # 寇享视频下载
             print(f"[闲时任务] 开始处理寇享视频: {task['title']}")
@@ -6313,6 +6408,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                     'youtube': 'YouTube',
                     'twitter': 'Twitter/X',
                     'bilibili': 'Bilibili',
+                    'instagram': 'Instagram',
                     'koushare': '寇享'
                 }
                 platform = platform_map.get(task_type, task.get('platform', task_type))
