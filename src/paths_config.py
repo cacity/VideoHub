@@ -37,6 +37,7 @@ INSTAGRAM_DIR = _ensure_workspace_subdir("instagram")
 DOUYIN_DIR = _ensure_workspace_subdir("douyin")
 LIVE_DIR = _ensure_workspace_subdir("live")
 KOUSHARE_DIR = _ensure_workspace_subdir("koushare")
+MOBILE_DOWNLOADS_DIR = _ensure_workspace_subdir("mobile")
 
 # Backward-compatible constant names used throughout the app.
 VIDEOS_DIR = YOUTUBE_DIR
@@ -71,6 +72,7 @@ DIRECTORY_MAP = {
     "douyin": DOUYIN_DIR,
     "live": LIVE_DIR,
     "koushare": KOUSHARE_DIR,
+    "mobile": MOBILE_DOWNLOADS_DIR,
 
     # Legacy logical names kept for older code and saved settings.
     "videos": VIDEOS_DIR,
@@ -86,6 +88,7 @@ DIRECTORY_MAP = {
     "douyin_downloads": DOUYIN_DOWNLOADS_DIR,
     "live_downloads": LIVE_DOWNLOADS_DIR,
     "koushare_downloads": KOUSHARE_DOWNLOADS_DIR,
+    "mobile_downloads": MOBILE_DOWNLOADS_DIR,
     "dubbing_temp": DUBBING_TEMP_DIR,
     "dubbing_output": DUBBING_OUTPUT_DIR,
     "logs": LOGS_DIR,
