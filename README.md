@@ -1,6 +1,6 @@
 # 视频转录工具 (Video Hub)
 
-**当前版本: v0.1.3**
+**当前版本: v0.1.4**
 
 简体中文  | [English](./README_en.md)
 
@@ -32,6 +32,23 @@
 - **视觉反馈**: 添加成功后按钮状态变化，避免重复添加
 
 正确安装插件后，在X/YouTube等视频网站，视频下方会出现处理按钮，后台运行主程序后，点击按钮即可把当前任务加入处理队列。
+
+### 📱 手机本地网页下载
+
+- **局域网访问**: 在电脑上启动轻量网页端后，iPhone/手机可通过同一 Wi-Fi 下的局域网地址访问
+- **手机粘贴链接**: 手机浏览器中长按输入框粘贴视频链接，点击按钮即可触发本地下载
+- **下载到手机相册**: 下载完成后页面会提供视频预览、打开视频和下载入口，iPhone 可通过 Safari 分享菜单保存到相册
+- **本地保存**: 下载文件统一保存在电脑的 `workspace/mobile/` 目录，便于后续管理和清理
+
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260613222654192.png)
+
+启动方式：
+
+```bash
+python src/mobile_web_server.py
+```
+
+启动后终端会显示类似 `http://局域网IP:8787` 的手机访问地址。手机和电脑需要连接到同一个局域网；如果无法访问，请检查 Windows 防火墙是否允许 `8787` 端口。
 
 ## 免责声明
 
@@ -236,6 +253,9 @@ python ffmpeg_install.py
 # 启动桌面应用（包含 HTTP API 服务器）
 python main.py
 
+# 启动手机本地网页下载服务（局域网访问，默认端口 8787）
+python src/mobile_web_server.py
+
 # 或使用抖音处理命令行工具
 python douyin_cli.py <抖音视频URL>
 ```
@@ -249,6 +269,7 @@ VideoHub/
 │   ├── api_server.py                  # HTTP API 服务器（供Chrome扩展调用）
 │   ├── douyin_cli.py                  # 抖音命令行处理工具
 │   ├── live_recorder_adapter.py       # 直播录制适配器
+│   ├── mobile_web_server.py           # 手机局域网网页下载服务
 │   ├── ffmpeg_install.py              # FFmpeg 自动安装脚本
 │   ├── msg_push.py                    # 消息推送模块
 │   └── requirements.txt               # Python 依赖
@@ -287,6 +308,7 @@ VideoHub/
 │   ├── videos/                        # 多平台视频文件 (.mp4/.webm/.mov等)
 │   ├── douyin_downloads/              # 抖音视频输出目录
 │   ├── live_downloads/                # 直播录制文件 (.ts/.flv/.mp4)
+│   ├── mobile/                        # 手机网页端下载文件
 │   ├── transcripts/                   # 转录文本 (.txt)
 │   ├── subtitles/                     # 字幕文件 (.srt/.vtt/.ass)
 │   ├── summaries/                     # 文章摘要 (.md)
