@@ -42,3 +42,9 @@ python src/youtube_transcriber.py --cleanup-preview
 - 这是当前最强的执行型 skill，优先走现有 CLI。
 - 对需要登录的 YouTube 内容，可使用 `--cookies`。
 - 输出目录遵循 `paths_config.py` 下的 workspace 结构。
+
+## Twitter/X 来源包
+- 可以接收来自 TweetClaw/OpenClaw 等工具的已审核公开 X/Twitter 来源包。
+- 来源包只应包含规范推文 URL、公开文本或摘录、作者 handle、采集时间、媒体说明和授权边界。
+- 之后仍由 VideoHub 执行下载、转写、字幕和总结流程。
+- 不要要求或记录 X Cookie、浏览器配置、会话 token、私信或 API key。

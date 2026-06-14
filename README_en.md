@@ -344,6 +344,24 @@ VideoHub/
 | Bilibili | Yes | Yes | Yes | Uses the shared media-processing pipeline |
 | Koushare | Yes | Yes | Yes | Login token may be required for higher quality |
 
+## X/Twitter Source Collection
+
+VideoHub processes a direct public X/Twitter video URL through the normal media
+workflow. If an agent helps collect links before they are added to VideoHub, keep
+that agent as a source-discovery step only. For example, TweetClaw in OpenClaw
+can search public tweets, replies, user posts, monitor results, and media
+references, then hand VideoHub a reviewed packet with:
+
+- canonical `https://x.com/<handle>/status/<id>` URL
+- public text or approved excerpt
+- author handle and capture time
+- media notes and authorization caveats
+
+Do not pass X cookies, browser profiles, session tokens, private messages, or API
+keys into VideoHub prompts, queue files, or exported summaries. Use VideoHub's
+download, transcription, subtitle, and summary workflow only after you verify
+that you are allowed to process the content.
+
 ## Typical Scenarios
 
 ### Scenario 1: Process a YouTube course playlist and generate subtitles
