@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import socket
 import threading
 import time
@@ -147,10 +148,10 @@ INDEX_HTML = r"""<!doctype html>
 <body>
   <main>
     <h1>VideoHub 手机下载</h1>
-    <p>在手机上长按输入框粘贴视频链接，下载完成后打开视频，再用 iOS 分享菜单保存到相册。</p>
+    <p>在手机上长按输入框粘贴视频链接或整段分享文案，下载完成后打开视频，再用 iOS 分享菜单保存到相册。</p>
 
     <label for="url">视频链接</label>
-    <textarea id="url" inputmode="url" placeholder="长按这里粘贴链接，例如 YouTube、Instagram、Twitter/X、Bilibili 等"></textarea>
+    <textarea id="url" inputmode="url" placeholder="长按这里粘贴链接或整段分享文案，例如抖音、YouTube、Instagram、Twitter/X、Bilibili 等"></textarea>
 
     <div class="row">
       <button id="start">下载视频</button>
@@ -193,6 +194,32 @@ INDEX_HTML = r"""<!doctype html>
       downloadLink.removeAttribute("href");
     }
 
+    function cleanUrl(url) {
+      return String(url || "")
+        .trim()
+        .replace(/[，。！？；：、"'“”‘’（）()【】\[\]<>]+$/g, "");
+    }
+
+    function extractVideoUrl(text) {
+      const raw = String(text || "");
+      const patterns = [
+        /https?:\/\/(?:www\.)?douyin\.com\/[^\s"'“”‘’<>，。！？；、）)】\]]+/i,
+        /https?:\/\/v\.douyin\.com\/[^\s"'“”‘’<>，。！？；、）)】\]]+/i,
+        /https?:\/\/dy\.tt\/[^\s"'“”‘’<>，。！？；、）)】\]]+/i,
+        /https?:\/\/(?:www\.)?iesdouyin\.com\/[^\s"'“”‘’<>，。！？；、）)】\]]+/i,
+        /https?:\/\/(?:www\.)?amemv\.com\/[^\s"'“”‘’<>，。！？；、）)】\]]+/i,
+        /https?:\/\/[^\s"'“”‘’<>，。！？；、）)】\]]+/i,
+      ];
+
+      for (const pattern of patterns) {
+        const match = raw.match(pattern);
+        if (match && match[0]) {
+          return cleanUrl(match[0]);
+        }
+      }
+      return cleanUrl(raw);
+    }
+
     async function poll(jobId) {
       const response = await fetch(`/api/jobs/${jobId}`);
       const job = await response.json();
@@ -219,12 +246,31 @@ INDEX_HTML = r"""<!doctype html>
       }
     }
 
+    urlInput.addEventListener("paste", event => {
+      const text = event.clipboardData?.getData("text") || "";
+      const extracted = extractVideoUrl(text);
+      if (extracted && extracted !== text.trim()) {
+        event.preventDefault();
+        urlInput.value = extracted;
+        setStatus("已从分享文案中提取链接。");
+      }
+    });
+
+    urlInput.addEventListener("blur", () => {
+      const extracted = extractVideoUrl(urlInput.value);
+      if (extracted && extracted !== urlInput.value.trim()) {
+        urlInput.value = extracted;
+        setStatus("已自动提取链接。");
+      }
+    });
+
     startButton.addEventListener("click", async () => {
-      const url = urlInput.value.trim();
+      const url = extractVideoUrl(urlInput.value);
       if (!url) {
         setStatus("请先粘贴视频链接。");
         return;
       }
+      urlInput.value = url;
 
       resetResult();
       startButton.disabled = true;
@@ -272,9 +318,10 @@ def create_app() -> Flask:
     @app.post("/api/download")
     def start_download():
         data = request.get_json(silent=True) or {}
-        url = str(data.get("url", "")).strip()
+        submitted_text = str(data.get("url", "")).strip()
+        url = extract_video_url(submitted_text)
         if not _is_allowed_url(url):
-            return jsonify({"success": False, "error": "请提供 http 或 https 视频链接"}), 400
+            return jsonify({"success": False, "error": "未从粘贴内容中识别到 http 或 https 视频链接"}), 400
 
         job_id = uuid.uuid4().hex
         job = {
@@ -327,6 +374,49 @@ def create_app() -> Flask:
         )
 
     return app
+
+
+def extract_video_url(text: str) -> str:
+    """Extract the first usable video URL from a URL or shared text."""
+    if not text:
+        return ""
+
+    douyin_url = _extract_douyin_url(text)
+    if douyin_url:
+        return douyin_url
+
+    match = re.search(r"https?://[^\s\"'“”‘’<>，。！？；、）)】\]]+", text, re.IGNORECASE)
+    if not match:
+        return text.strip()
+    return _clean_extracted_url(match.group(0))
+
+
+def _extract_douyin_url(text: str) -> str:
+    try:
+        from douyin.utils import DouyinUtils
+
+        url = DouyinUtils.parse_share_text(text)
+        if url:
+            return _clean_extracted_url(url)
+    except Exception:
+        pass
+
+    douyin_patterns = [
+        r"https?://(?:www\.)?douyin\.com/[^\s\"'“”‘’<>，。！？；、）)】\]]+",
+        r"https?://v\.douyin\.com/[^\s\"'“”‘’<>，。！？；、）)】\]]+",
+        r"https?://dy\.tt/[^\s\"'“”‘’<>，。！？；、）)】\]]+",
+        r"https?://(?:www\.)?iesdouyin\.com/[^\s\"'“”‘’<>，。！？；、）)】\]]+",
+        r"https?://(?:www\.)?amemv\.com/[^\s\"'“”‘’<>，。！？；、）)】\]]+",
+    ]
+    for pattern in douyin_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return _clean_extracted_url(match.group(0))
+    return ""
+
+
+def _clean_extracted_url(url: str) -> str:
+    return re.sub(r"[，。！？；：、\"'“”‘’（）()【】\[\]<>]+$", "", url.strip())
 
 
 def _is_allowed_url(url: str) -> bool:
