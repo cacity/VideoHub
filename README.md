@@ -1,6 +1,6 @@
 # 视频转录工具 (Video Hub)
 
-**当前版本: v0.1.4**
+**当前版本: v0.1.5**
 
 简体中文  | [English](./README_en.md)
 
@@ -8,7 +8,7 @@
 
 ## ✨ 加入讨论群
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260612090803970.png)
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260616092826435.png)
 
 ## ✨ 核心功能
 
@@ -40,7 +40,7 @@
 - **下载到手机相册**: 下载完成后页面会提供视频预览、打开视频和下载入口，iPhone 可通过 Safari 分享菜单保存到相册
 - **本地保存**: 下载文件统一保存在电脑的 `workspace/mobile/` 目录，便于后续管理和清理
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260613222654192.png)
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260616092447802.png)
 
 启动方式：
 
