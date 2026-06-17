@@ -40,6 +40,11 @@ class DubbingTask:
         output_path: Optional[str] = None,
         voice: str = 'xiaobei',
         speed: float = 1.0,
+        tts_backend: str = 'kokoro',
+        cosyvoice_url: str = 'http://127.0.0.1:8877',
+        cosyvoice_mode: str = 'sft',
+        cosyvoice_speaker: str = '中文女',
+        cosyvoice_instruction: str = '',
         keep_background_audio: bool = False,
         background_volume: float = 0.1,
         enable_translation: bool = True,
@@ -55,6 +60,11 @@ class DubbingTask:
             output_path: 输出视频路径（可选，默认自动生成）
             voice: 配音音色
             speed: 语速
+            tts_backend: TTS 后端，kokoro/cosyvoice
+            cosyvoice_url: CosyVoice 本地服务地址
+            cosyvoice_mode: CosyVoice 模式，sft/instruct
+            cosyvoice_speaker: CosyVoice 音色
+            cosyvoice_instruction: CosyVoice Instruct 指令
             keep_background_audio: 是否保留背景音
             background_volume: 背景音音量
             enable_translation: 是否启用字幕翻译
@@ -66,6 +76,11 @@ class DubbingTask:
         self.output_path = output_path
         self.voice = voice
         self.speed = speed
+        self.tts_backend = tts_backend
+        self.cosyvoice_url = cosyvoice_url
+        self.cosyvoice_mode = cosyvoice_mode
+        self.cosyvoice_speaker = cosyvoice_speaker
+        self.cosyvoice_instruction = cosyvoice_instruction
         self.keep_background_audio = keep_background_audio
         self.background_volume = background_volume
         self.enable_translation = enable_translation
@@ -192,7 +207,12 @@ class VideoDubbingEngine:
                 task.subtitle_path,
                 task.voice,
                 task.speed,
-                task.video_path
+                task.video_path,
+                task.tts_backend,
+                task.cosyvoice_url,
+                task.cosyvoice_mode,
+                task.cosyvoice_speaker,
+                task.cosyvoice_instruction,
             )
 
             # 步骤 5: 合并最终视频
@@ -299,9 +319,23 @@ class VideoDubbingEngine:
         subtitle_path: str,
         voice: str,
         speed: float,
-        video_path: str = None
+        video_path: str = None,
+        tts_backend: str = 'kokoro',
+        cosyvoice_url: str = 'http://127.0.0.1:8877',
+        cosyvoice_mode: str = 'sft',
+        cosyvoice_speaker: str = '中文女',
+        cosyvoice_instruction: str = '',
     ) -> str:
         """合成中文音频"""
+        if tts_backend == 'cosyvoice':
+            return self._synthesize_audio_cosyvoice(
+                subtitle_path,
+                cosyvoice_url,
+                cosyvoice_mode,
+                cosyvoice_speaker,
+                cosyvoice_instruction,
+            )
+
         if not self.kokoro_available:
             raise RuntimeError("Kokoro TTS 不可用，无法合成音频")
 
@@ -408,6 +442,105 @@ class VideoDubbingEngine:
             raise RuntimeError("没有生成任何音频数据")
 
         self._report_progress(100, "音频合成完成")
+        return temp_audio_path
+
+    def _synthesize_audio_cosyvoice(
+        self,
+        subtitle_path: str,
+        cosyvoice_url: str,
+        cosyvoice_mode: str,
+        cosyvoice_speaker: str,
+        cosyvoice_instruction: str,
+    ) -> str:
+        """通过本地 CosyVoice TTS 服务合成中文音频。"""
+        self._report_progress(0, "初始化 CosyVoice TTS 服务...")
+
+        try:
+            from .chinese_tts import ChineseTTS as CTTS
+            from .cosyvoice_tts_client import CosyVoiceTTSClient
+            import numpy as np
+            import soundfile as sf
+        except ImportError:
+            from src.chinese_tts import ChineseTTS as CTTS
+            from src.cosyvoice_tts_client import CosyVoiceTTSClient
+            import numpy as np
+            import soundfile as sf
+
+        mode = 'instruct' if cosyvoice_mode == 'instruct' else 'sft'
+        client = CosyVoiceTTSClient(
+            base_url=cosyvoice_url,
+            mode=mode,
+            speaker=cosyvoice_speaker,
+            instruction=cosyvoice_instruction,
+        )
+        try:
+            health = client.check_health()
+            self._log(f"CosyVoice 服务可用: {health.get('models_loaded', {})}")
+        except Exception as exc:
+            raise RuntimeError(f"CosyVoice 服务不可用，请先启动 tts_service.py: {exc}") from exc
+
+        temp_dir = self._get_temp_dir()
+        temp_audio_path = os.path.join(temp_dir, f"dubbing_audio_cosyvoice_{self._get_timestamp()}.wav")
+        parser = CTTS.__new__(CTTS)
+        segments = parser._parse_srt(subtitle_path)
+        sample_rate = None
+        all_audio = []
+        current_time = 0.0
+
+        total_segments = len(segments)
+        self._log(f"字幕解析完成，共 {total_segments} 段")
+        self._log(f"CosyVoice 模式: {mode}, speaker={cosyvoice_speaker}")
+
+        for idx, seg in enumerate(segments):
+            progress = int((idx / max(total_segments, 1)) * 100)
+            self._report_progress(progress, f"CosyVoice 合成第 {idx + 1}/{total_segments} 句...")
+
+            text = seg.get('text', '').strip()
+            if not text:
+                self._log(f"  跳过空文本段落 {idx + 1}")
+                continue
+
+            if sample_rate is not None and current_time < seg['start']:
+                silence_duration = seg['start'] - current_time
+                silence_samples = int(silence_duration * sample_rate)
+                if silence_samples > 0:
+                    all_audio.append(np.zeros(silence_samples, dtype=np.float32))
+                current_time = seg['start']
+
+            try:
+                audio_path = client.synthesize(text)
+                audio, sr = sf.read(audio_path, always_2d=False)
+                if audio.ndim > 1:
+                    audio = audio.mean(axis=1)
+                audio = audio.astype(np.float32)
+                if sample_rate is None:
+                    sample_rate = sr
+                elif sr != sample_rate:
+                    import librosa
+                    audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate).astype(np.float32)
+
+                if current_time < seg['start']:
+                    silence_duration = seg['start'] - current_time
+                    silence_samples = int(silence_duration * sample_rate)
+                    if silence_samples > 0:
+                        all_audio.append(np.zeros(silence_samples, dtype=np.float32))
+                    current_time = seg['start']
+
+                all_audio.append(audio)
+                current_time = seg['start'] + len(audio) / sample_rate
+            except Exception as exc:
+                self._log(f"  段落 {idx + 1} CosyVoice 合成失败: {exc}")
+                continue
+
+        if not all_audio or sample_rate is None:
+            raise RuntimeError("CosyVoice 没有生成任何音频数据")
+
+        final_audio = np.concatenate(all_audio)
+        sf.write(temp_audio_path, final_audio, sample_rate)
+        self._log(f"CosyVoice 音频已保存到: {temp_audio_path}")
+        self._log(f"最终音频长度: {len(final_audio) / sample_rate:.2f}秒")
+
+        self._report_progress(100, "CosyVoice 音频合成完成")
         return temp_audio_path
 
     def _combine_video(

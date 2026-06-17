@@ -16,6 +16,7 @@ import threading
 import time
 import subprocess
 import platform
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -1547,6 +1548,11 @@ class WorkerThread(QThread):
         output_path = self.params.get("output_path", "")
         voice = self.params.get("voice", "xiaobei")
         speed = self.params.get("speed", 1.0)
+        tts_backend = self.params.get("tts_backend", "kokoro")
+        cosyvoice_url = self.params.get("cosyvoice_url", "http://127.0.0.1:8877")
+        cosyvoice_mode = self.params.get("cosyvoice_mode", "sft")
+        cosyvoice_speaker = self.params.get("cosyvoice_speaker", "中文女")
+        cosyvoice_instruction = self.params.get("cosyvoice_instruction", "")
         enable_transcription = self.params.get("enable_transcription", True)
         enable_translation = self.params.get("enable_translation", True)
         audio_only_mode = self.params.get("audio_only_mode", False)
@@ -1594,11 +1600,14 @@ class WorkerThread(QThread):
                 self.finished_signal.emit("", False)
                 return
 
-        # 检查 Kokoro 是否可用（非音频模式）
-        if not check_kokoro_available():
+        # 检查 TTS 后端是否可用（非音频模式）
+        if tts_backend != "cosyvoice" and not check_kokoro_available():
             self.update_signal.emit("[ERROR] Kokoro TTS 未安装，请先运行: pip install kokoro>=0.9.4 soundfile")
             self.finished_signal.emit("", False)
             return
+        if tts_backend == "cosyvoice":
+            self.update_signal.emit(f"🔊 使用 CosyVoice TTS: {cosyvoice_mode}, speaker={cosyvoice_speaker}")
+            self.update_signal.emit(f"   服务地址: {cosyvoice_url}")
 
         # 创建配音任务
         task = DubbingTask(
@@ -1608,6 +1617,11 @@ class WorkerThread(QThread):
             output_path=output_path if output_path else None,
             voice=voice,
             speed=speed,
+            tts_backend=tts_backend,
+            cosyvoice_url=cosyvoice_url,
+            cosyvoice_mode=cosyvoice_mode,
+            cosyvoice_speaker=cosyvoice_speaker,
+            cosyvoice_instruction=cosyvoice_instruction,
             enable_transcription=enable_transcription,
             enable_translation=enable_translation
         )
@@ -1661,6 +1675,61 @@ class WorkerThread(QThread):
         self.update_signal.emit("正在停止任务...")
         # 等待一小段时间，给线程一个优雅停止的机会
         QTimer.singleShot(500, self.terminate)
+
+
+class VoicePreviewThread(QThread):
+    """后台生成 TTS 音色试听音频。"""
+
+    finished_signal = pyqtSignal(bool, str, str)
+
+    def __init__(self, params):
+        super().__init__()
+        self.params = params
+
+    def run(self):
+        try:
+            import shutil
+            from pathlib import Path
+
+            backend = self.params.get("tts_backend", "kokoro")
+            sample_text = self.params.get("sample_text") or "这是当前音色的试听。语气自然，句子之间有一点停顿。"
+            cache_path = self.params.get("preview_cache_path", "")
+
+            if cache_path and Path(cache_path).exists():
+                self.finished_signal.emit(True, cache_path, "使用已缓存的试听音频")
+                return
+
+            if backend == "cosyvoice":
+                from src.cosyvoice_tts_client import CosyVoiceTTSClient
+
+                client = CosyVoiceTTSClient(
+                    base_url=self.params.get("cosyvoice_url", "http://127.0.0.1:8877"),
+                    mode=self.params.get("cosyvoice_mode", "sft"),
+                    speaker=self.params.get("cosyvoice_speaker", "中文女"),
+                    instruction=self.params.get("cosyvoice_instruction", ""),
+                )
+                path = client.synthesize(sample_text)
+                if cache_path:
+                    Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, cache_path)
+                    path = cache_path
+            else:
+                from src.chinese_tts import ChineseTTS
+
+                tts = ChineseTTS(
+                    voice=self.params.get("voice", "xiaobei"),
+                    speed=self.params.get("speed", 1.0),
+                )
+                if cache_path:
+                    Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+                    path = tts.synthesize(sample_text, cache_path)
+                else:
+                    path = tts.synthesize(sample_text)
+
+            self.finished_signal.emit(True, path, "试听音频已生成")
+        except Exception as exc:
+            self.finished_signal.emit(False, "", str(exc))
+
 
 class MainWindow(QMainWindow):
     """主窗口类"""
@@ -2820,16 +2889,17 @@ class MainWindow(QMainWindow):
         # 左侧：音色选择
         voice_layout = QVBoxLayout()
         voice_label = QLabel("配音音色:")
+        voice_control_layout = QHBoxLayout()
         self.dubbing_voice_combo = QComboBox()
-        self.dubbing_voice_combo.addItems([
-            "晓贝 (女声)",
-            "晓晓 (女声)",
-            "晓艺 (女声)",
-            "云健 (男声)",
-            "云扬 (男声)"
-        ])
+        self.apply_readable_combo_style(self.dubbing_voice_combo)
+        self.refresh_dubbing_voice_options()
+        self.dubbing_voice_preview_button = QPushButton("试听")
+        self.dubbing_voice_preview_button.setToolTip("生成并播放当前音色的试听音频")
+        self.dubbing_voice_preview_button.clicked.connect(self.preview_dubbing_voice)
+        voice_control_layout.addWidget(self.dubbing_voice_combo)
+        voice_control_layout.addWidget(self.dubbing_voice_preview_button)
         voice_layout.addWidget(voice_label)
-        voice_layout.addWidget(self.dubbing_voice_combo)
+        voice_layout.addLayout(voice_control_layout)
 
         # 语速调整
         speed_layout = QVBoxLayout()
@@ -4006,6 +4076,67 @@ class MainWindow(QMainWindow):
         translate_method_layout.addWidget(translate_method_label)
         translate_method_layout.addWidget(self.translate_method_combo)
         api_layout.addLayout(translate_method_layout)
+
+        # TTS 后端设置
+        tts_group = CollapsibleGroupBox("TTS 配音设置", collapsed=True)
+        tts_layout = tts_group.content_layout
+
+        tts_backend_layout = QHBoxLayout()
+        tts_backend_label = QLabel("TTS 引擎版本:")
+        self.tts_backend_combo = QComboBox()
+        self.tts_backend_combo.addItems(["Kokoro（原版，默认）", "CosyVoice SFT", "CosyVoice Instruct"])
+        self.apply_readable_combo_style(self.tts_backend_combo)
+        current_tts_backend = os.getenv("TTS_BACKEND", "kokoro")
+        current_cosyvoice_mode = os.getenv("COSYVOICE_TTS_MODE", "sft")
+        if current_tts_backend == "cosyvoice" and current_cosyvoice_mode == "instruct":
+            self.tts_backend_combo.setCurrentText("CosyVoice Instruct")
+        elif current_tts_backend == "cosyvoice":
+            self.tts_backend_combo.setCurrentText("CosyVoice SFT")
+        else:
+            self.tts_backend_combo.setCurrentText("Kokoro（原版，默认）")
+        tts_backend_layout.addWidget(tts_backend_label)
+        tts_backend_layout.addWidget(self.tts_backend_combo)
+        tts_layout.addLayout(tts_backend_layout)
+
+        cosyvoice_url_layout = QHBoxLayout()
+        cosyvoice_url_label = QLabel("CosyVoice 服务地址:")
+        self.cosyvoice_url_input = QLineEdit()
+        self.cosyvoice_url_input.setPlaceholderText("默认: http://127.0.0.1:8877")
+        self.cosyvoice_url_input.setText(os.getenv("COSYVOICE_TTS_URL", "http://127.0.0.1:8877"))
+        cosyvoice_url_layout.addWidget(cosyvoice_url_label)
+        cosyvoice_url_layout.addWidget(self.cosyvoice_url_input)
+        tts_layout.addLayout(cosyvoice_url_layout)
+
+        cosyvoice_speaker_layout = QHBoxLayout()
+        cosyvoice_speaker_label = QLabel("CosyVoice 音色:")
+        self.cosyvoice_speaker_combo = QComboBox()
+        self.cosyvoice_speaker_combo.addItems(["中文女", "中文男", "日语男", "粤语女", "英文女", "英文男", "韩语女"])
+        self.apply_readable_combo_style(self.cosyvoice_speaker_combo)
+        self.cosyvoice_speaker_combo.setCurrentText(os.getenv("COSYVOICE_TTS_SPEAKER", "中文女"))
+        self.cosyvoice_speaker_combo.currentTextChanged.connect(lambda _text: self.refresh_dubbing_voice_options())
+        cosyvoice_speaker_layout.addWidget(cosyvoice_speaker_label)
+        cosyvoice_speaker_layout.addWidget(self.cosyvoice_speaker_combo)
+        tts_layout.addLayout(cosyvoice_speaker_layout)
+
+        cosyvoice_instruction_layout = QVBoxLayout()
+        cosyvoice_instruction_label = QLabel("CosyVoice Instruct 指令:")
+        self.cosyvoice_instruction_input = QLineEdit()
+        self.cosyvoice_instruction_input.setPlaceholderText("例如: 用自然、清晰、适合视频讲解的语气朗读")
+        self.cosyvoice_instruction_input.setText(os.getenv(
+            "COSYVOICE_TTS_INSTRUCTION",
+            "用自然、清晰、适合视频讲解的语气朗读，句子之间保留适当停顿。"
+        ))
+        cosyvoice_instruction_layout.addWidget(cosyvoice_instruction_label)
+        cosyvoice_instruction_layout.addWidget(self.cosyvoice_instruction_input)
+        tts_layout.addLayout(cosyvoice_instruction_layout)
+
+        tts_info = QLabel("默认使用原来的 Kokoro；只有手动切换到 CosyVoice 时，AI配音才会调用本地 tts_service.py。")
+        tts_info.setStyleSheet("color: #666; font-size: 11px;")
+        tts_info.setWordWrap(True)
+        tts_layout.addWidget(tts_info)
+        self.tts_backend_combo.currentTextChanged.connect(lambda _text: self.refresh_dubbing_voice_options())
+
+        layout.addWidget(tts_group)
 
         # 字幕字体设置（双语字幕）
         subtitle_font_group = CollapsibleGroupBox("字幕字体设置（双语字幕）", collapsed=True)
@@ -5534,6 +5665,148 @@ class MainWindow(QMainWindow):
         dialog = SubtitlePreviewDialog(self, primary_style, secondary_style, primary_font, secondary_font)
         dialog.exec()
 
+    def get_selected_tts_settings(self):
+        """返回设置页选择的 TTS 后端配置。"""
+        combo = getattr(self, "tts_backend_combo", None)
+        if combo:
+            tts_backend_text = combo.currentText()
+            if tts_backend_text == "CosyVoice Instruct":
+                return "cosyvoice", "instruct"
+            if tts_backend_text == "CosyVoice SFT":
+                return "cosyvoice", "sft"
+
+        if os.getenv("TTS_BACKEND", "kokoro") == "cosyvoice":
+            return "cosyvoice", os.getenv("COSYVOICE_TTS_MODE", "sft")
+        return "kokoro", "sft"
+
+    def apply_readable_combo_style(self, combo):
+        """修复部分主题下 QComboBox 选中项白字白底的问题。"""
+        combo.setStyleSheet("""
+            QComboBox {
+                color: #111827;
+                background-color: #ffffff;
+                selection-color: #ffffff;
+                selection-background-color: #2563eb;
+                border: 1px solid #b6c2d1;
+                border-radius: 4px;
+                padding: 3px 8px;
+            }
+            QComboBox QAbstractItemView {
+                color: #111827;
+                background-color: #ffffff;
+                selection-color: #ffffff;
+                selection-background-color: #2563eb;
+                outline: 0;
+            }
+            QComboBox:disabled {
+                color: #6b7280;
+                background-color: #f3f4f6;
+            }
+        """)
+
+    def refresh_dubbing_voice_options(self):
+        """根据 TTS 后端刷新 AI 配音页音色列表。"""
+        if not hasattr(self, "dubbing_voice_combo"):
+            return
+
+        current = self.dubbing_voice_combo.currentText()
+        tts_backend, _mode = self.get_selected_tts_settings()
+        self.dubbing_voice_combo.blockSignals(True)
+        self.dubbing_voice_combo.clear()
+        if tts_backend == "cosyvoice":
+            voices = ["中文女", "中文男", "日语男", "粤语女", "英文女", "英文男", "韩语女"]
+            self.dubbing_voice_combo.addItems(voices)
+            saved = (
+                self.cosyvoice_speaker_combo.currentText()
+                if hasattr(self, "cosyvoice_speaker_combo")
+                else os.getenv("COSYVOICE_TTS_SPEAKER", "中文女")
+            )
+            self.dubbing_voice_combo.setCurrentText(saved if saved in voices else "中文女")
+        else:
+            voices = ["晓贝 (女声)", "晓晓 (女声)", "晓艺 (女声)", "云健 (男声)", "云扬 (男声)"]
+            self.dubbing_voice_combo.addItems(voices)
+            self.dubbing_voice_combo.setCurrentText(current if current in voices else "晓贝 (女声)")
+        self.dubbing_voice_combo.blockSignals(False)
+
+    def preview_dubbing_voice(self):
+        """试听当前配音音色。"""
+        if hasattr(self, "voice_preview_thread") and self.voice_preview_thread.isRunning():
+            QMessageBox.information(self, "正在试听", "试听音频正在生成，请稍候。")
+            return
+
+        import hashlib
+        from pathlib import Path
+        try:
+            from src.paths_config import DUBBING_TEMP_DIR
+        except Exception:
+            from paths_config import DUBBING_TEMP_DIR
+
+        voice_display = self.dubbing_voice_combo.currentText()
+        tts_backend, cosyvoice_mode = self.get_selected_tts_settings()
+        sample_text = "这是当前音色的试听。语气自然，句子之间有一点停顿。"
+        voice_map = {
+            "晓贝 (女声)": "xiaobei",
+            "晓晓 (女声)": "xiaoxiao",
+            "晓艺 (女声)": "xiaoyi",
+            "云健 (男声)": "yunjian",
+            "云扬 (男声)": "yunyang",
+        }
+        params = {
+            "tts_backend": tts_backend,
+            "voice": voice_map.get(voice_display, "xiaobei"),
+            "speed": self.dubbing_speed_slider.value() / 10.0 if hasattr(self, "dubbing_speed_slider") else 1.0,
+            "cosyvoice_url": self.cosyvoice_url_input.text().strip() if hasattr(self, "cosyvoice_url_input") else "http://127.0.0.1:8877",
+            "cosyvoice_mode": cosyvoice_mode,
+            "cosyvoice_speaker": voice_display if tts_backend == "cosyvoice" else (
+                self.cosyvoice_speaker_combo.currentText() if hasattr(self, "cosyvoice_speaker_combo") else "中文女"
+            ),
+            "cosyvoice_instruction": self.cosyvoice_instruction_input.text().strip() if hasattr(self, "cosyvoice_instruction_input") else "",
+            "sample_text": sample_text,
+        }
+        cache_identity = "|".join([
+            params["tts_backend"],
+            params.get("cosyvoice_mode", ""),
+            params.get("voice", ""),
+            params.get("cosyvoice_speaker", ""),
+            f"{params.get('speed', 1.0):.2f}",
+            params.get("cosyvoice_instruction", ""),
+            sample_text,
+        ])
+        cache_key = hashlib.sha1(cache_identity.encode("utf-8")).hexdigest()[:16]
+        safe_voice = re.sub(r"[^0-9A-Za-z_\u4e00-\u9fff-]+", "_", voice_display).strip("_") or "voice"
+        cache_dir = Path(DUBBING_TEMP_DIR) / "voice_previews"
+        cache_path = cache_dir / f"{params['tts_backend']}_{cosyvoice_mode}_{safe_voice}_{cache_key}.wav"
+        params["preview_cache_path"] = str(cache_path)
+
+        if tts_backend == "cosyvoice" and not params["cosyvoice_url"]:
+            QMessageBox.warning(self, "配置错误", "请先填写 CosyVoice 服务地址。")
+            return
+
+        if cache_path.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(cache_path)))
+            if hasattr(self, "dubbing_log_text"):
+                self.dubbing_log_text.append(f"试听音频: {cache_path}（缓存）")
+            return
+
+        self.dubbing_voice_preview_button.setEnabled(False)
+        self.dubbing_voice_preview_button.setText("生成中...")
+        self.voice_preview_thread = VoicePreviewThread(params)
+        self.voice_preview_thread.finished_signal.connect(self.on_voice_preview_finished)
+        self.voice_preview_thread.start()
+
+    def on_voice_preview_finished(self, success, path, message):
+        """试听生成完成。"""
+        if hasattr(self, "dubbing_voice_preview_button"):
+            self.dubbing_voice_preview_button.setEnabled(True)
+            self.dubbing_voice_preview_button.setText("试听")
+
+        if success and path:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+            if hasattr(self, "dubbing_log_text"):
+                self.dubbing_log_text.append(f"试听音频: {path}")
+        else:
+            QMessageBox.warning(self, "试听失败", message or "试听音频生成失败")
+
     def save_settings(self):
         """保存设置"""
         # 保存API密钥到环境变量
@@ -5553,6 +5826,23 @@ class MainWindow(QMainWindow):
         # 保存翻译方式设置
         translation_method = "llm" if self.translate_method_combo.currentText() == "大模型翻译" else "google"
         os.environ["TRANSLATION_METHOD"] = translation_method
+
+        # 保存 TTS 后端设置
+        tts_backend_text = self.tts_backend_combo.currentText()
+        if tts_backend_text == "CosyVoice Instruct":
+            tts_backend = "cosyvoice"
+            cosyvoice_mode = "instruct"
+        elif tts_backend_text == "CosyVoice SFT":
+            tts_backend = "cosyvoice"
+            cosyvoice_mode = "sft"
+        else:
+            tts_backend = "kokoro"
+            cosyvoice_mode = "sft"
+        os.environ["TTS_BACKEND"] = tts_backend
+        os.environ["COSYVOICE_TTS_MODE"] = cosyvoice_mode
+        os.environ["COSYVOICE_TTS_URL"] = self.cosyvoice_url_input.text().strip() or "http://127.0.0.1:8877"
+        os.environ["COSYVOICE_TTS_SPEAKER"] = self.cosyvoice_speaker_combo.currentText()
+        os.environ["COSYVOICE_TTS_INSTRUCTION"] = self.cosyvoice_instruction_input.text().strip()
 
         # 保存摘要生成设置
         summary_mode = "two_stage" if self.summary_mode_combo.currentText() == "两阶段生成（思考+生成）" else "single"
@@ -5600,6 +5890,11 @@ class MainWindow(QMainWindow):
                 "SUBTITLE_FONT_JA": self.subtitle_font_ja_combo.currentFont().family(),
                 "SUBTITLE_FONT_JA_SIZE": str(self.subtitle_font_ja_size.value()),
                 "TRANSLATION_METHOD": translation_method,
+                "TTS_BACKEND": tts_backend,
+                "COSYVOICE_TTS_MODE": cosyvoice_mode,
+                "COSYVOICE_TTS_URL": self.cosyvoice_url_input.text().strip() or "http://127.0.0.1:8877",
+                "COSYVOICE_TTS_SPEAKER": self.cosyvoice_speaker_combo.currentText(),
+                "COSYVOICE_TTS_INSTRUCTION": self.cosyvoice_instruction_input.text().strip(),
                 "SUMMARY_GENERATION_MODE": summary_mode,
                 "THINKING_MODEL": self.thinking_model_combo.currentText(),
                 "OUTPUT_MODEL": self.output_model_combo.currentText(),
@@ -5661,6 +5956,7 @@ class MainWindow(QMainWindow):
                 from dotenv import load_dotenv
                 load_dotenv(env_path, override=True)
                 print(f"✅ 环境变量已重新加载")
+                self.refresh_dubbing_voice_options()
 
                 QMessageBox.information(self, "设置保存", f"✅ 设置已保存\n\n配置文件: {env_path}\n配置项数: {saved_lines}")
             else:
@@ -7576,8 +7872,32 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "云健 (男声)": "yunjian",
                 "云扬 (男声)": "yunyang"
             }
+            tts_backend = os.getenv("TTS_BACKEND", "kokoro")
+            cosyvoice_mode = os.getenv("COSYVOICE_TTS_MODE", "sft")
+            if hasattr(self, "tts_backend_combo"):
+                tts_backend, cosyvoice_mode = self.get_selected_tts_settings()
+
             params['voice'] = voice_map.get(voice_display, "xiaobei")
             params['speed'] = self.dubbing_speed_slider.value() / 10.0
+            params['tts_backend'] = tts_backend
+            params['cosyvoice_url'] = (
+                self.cosyvoice_url_input.text().strip()
+                if hasattr(self, "cosyvoice_url_input")
+                else os.getenv("COSYVOICE_TTS_URL", "http://127.0.0.1:8877")
+            ) or "http://127.0.0.1:8877"
+            params['cosyvoice_mode'] = cosyvoice_mode
+            if tts_backend == "cosyvoice":
+                params['cosyvoice_speaker'] = voice_display or os.getenv("COSYVOICE_TTS_SPEAKER", "中文女")
+            else:
+                params['cosyvoice_speaker'] = os.getenv("COSYVOICE_TTS_SPEAKER", "中文女")
+            params['cosyvoice_instruction'] = (
+                self.cosyvoice_instruction_input.text().strip()
+                if hasattr(self, "cosyvoice_instruction_input")
+                else os.getenv(
+                    "COSYVOICE_TTS_INSTRUCTION",
+                    "用自然、清晰、适合视频讲解的语气朗读，句子之间保留适当停顿。"
+                )
+            )
 
             # 获取步骤选项
             params['enable_transcription'] = self.dubbing_step_transcribe.isChecked()
@@ -7585,6 +7905,12 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
 
             self.dubbing_log_text.append(f"配音音色: {voice_display}")
             self.dubbing_log_text.append(f"语速: {params['speed']:.1f}x")
+            if tts_backend == "cosyvoice":
+                self.dubbing_log_text.append(
+                    f"TTS 引擎: CosyVoice {cosyvoice_mode}, speaker={params['cosyvoice_speaker']}"
+                )
+            else:
+                self.dubbing_log_text.append("TTS 引擎: Kokoro（原版）")
 
             # 更新UI状态
             self.dubbing_start_button.setEnabled(False)

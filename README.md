@@ -1,6 +1,6 @@
 # 视频转录工具 (Video Hub)
 
-**当前版本: v0.1.5**
+**当前版本: v0.2.0**
 
 简体中文  | [English](./README_en.md)
 
@@ -19,7 +19,7 @@
 - **精准转录**: 基于 OpenAI Whisper 的高质量语音转录技术
 - **多格式字幕**: 生成 .srt、.vtt、.ass 等多种格式的双语字幕文件
 - **字幕嵌入**: 支持将字幕直接嵌入到视频文件中
-- **AI 配音**: 基于 Kokoro TTS 技术，自动生成中文配音版本视频
+- **AI 配音**: 默认使用 Kokoro TTS，也可手动切换到 CosyVoice SFT / Instruct 生成更自然的中文配音版本视频
 - **内容摘要**: 利用 LLM（支持 OpenAI、DeepSeek 等）智能生成文章摘要
 
 ### 🌐 Chrome浏览器扩展
@@ -121,12 +121,34 @@ https://x.com/tanchibu37099/status/2000362448982102119
 
 ### 🎙️ AI 配音
 
-- **语音合成**: 基于 Kokoro TTS 技术，支持多种中文音色（晓贝、晓晓、晓艺、云健、云扬）
+- **样片演示**: [CosyVoice 中文配音合成样片](https://www.youtube.com/watch?v=zigNxozcGEQ)
+- **默认后端**: 默认使用原来的 Kokoro TTS，支持晓贝、晓晓、晓艺、云健、云扬等中文音色
+- **CosyVoice 后端**: 可在设置中手动切换到 CosyVoice SFT 或 CosyVoice Instruct，支持中文女、中文男、粤语女、英文女等音色
+- **音色试听**: 配音页可直接试听当前音色，试听文件会缓存到 `workspace/dubbing_temp/voice_previews/`，再次试听同一配置时直接播放旧文件
 - **智能转录**: 自动将视频语音转录为字幕
 - **流畅合成**: 保持原始视频节奏，自动填充静音
 - **灵活输出**: 可选择保留原声背景音，调节背景音音量
 
 **输出目录**: 配音文件保存在 `workspace/dubbing_temp/` 目录，完成后生成 `{原文件名}_中文配音.mp4`
+
+#### 使用 CosyVoice 配音
+
+CosyVoice 作为可选本地 TTS 后端，需要先启动独立服务：
+
+```bash
+python tts_service.py --host 127.0.0.1 --port 8877
+```
+
+服务启动后，在 VideoHub 中进入 `设置 -> TTS 配音设置`：
+
+1. `TTS 引擎版本` 选择 `CosyVoice SFT` 或 `CosyVoice Instruct`
+2. 确认 `CosyVoice 服务地址` 为 `http://127.0.0.1:8877`
+3. 选择 CosyVoice 音色，例如 `中文女` 或 `中文男`
+4. 如果使用 `CosyVoice Instruct`，填写朗读指令，例如“用自然、清晰、适合视频讲解的语气朗读”
+5. 保存设置后，到 `AI配音` 页面点击音色旁边的 `试听`
+6. 确认音色效果后，选择 YouTube 链接、本地视频或已有字幕，点击 `开始配音`
+
+切换到 CosyVoice 后，AI 配音页的音色列表会自动从 Kokoro 的“晓贝/晓晓/云健”等切换为 CosyVoice 的“中文女/中文男/粤语女”等。未手动切换时，VideoHub 仍保持原来的 Kokoro 配音流程。
 
 ### 🤖 Claude Code Skills
 
@@ -256,6 +278,9 @@ python main.py
 # 启动手机本地网页下载服务（局域网访问，默认端口 8787）
 python src/mobile_web_server.py
 
+# 启动 CosyVoice TTS 服务（使用 CosyVoice 配音前启动）
+python tts_service.py --host 127.0.0.1 --port 8877
+
 # 或使用抖音处理命令行工具
 python douyin_cli.py <抖音视频URL>
 ```
@@ -267,6 +292,7 @@ VideoHub/
 ├── 📁 核心文件
 │   ├── main.py                        # PyQt6 GUI 主程序（整合所有功能）
 │   ├── api_server.py                  # HTTP API 服务器（供Chrome扩展调用）
+│   ├── tts_service.py                 # CosyVoice 本地 TTS 服务
 │   ├── douyin_cli.py                  # 抖音命令行处理工具
 │   ├── live_recorder_adapter.py       # 直播录制适配器
 │   ├── mobile_web_server.py           # 手机局域网网页下载服务
