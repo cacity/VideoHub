@@ -122,6 +122,9 @@ https://x.com/tanchibu37099/status/2000362448982102119
 ### 🎙️ AI 配音
 
 - **样片演示**: [CosyVoice 中文配音合成样片](https://www.youtube.com/watch?v=zigNxozcGEQ)
+
+[![VideoHub 样片演示](https://img.youtube.com/vi/zigNxozcGEQ/hqdefault.jpg)](https://www.youtube.com/watch?v=zigNxozcGEQ)
+
 - **默认后端**: 默认使用原来的 Kokoro TTS，支持晓贝、晓晓、晓艺、云健、云扬等中文音色
 - **CosyVoice 后端**: 可在设置中手动切换到 CosyVoice SFT 或 CosyVoice Instruct，支持中文女、中文男、粤语女、英文女等音色
 - **音色试听**: 配音页可直接试听当前音色，试听文件会缓存到 `workspace/dubbing_temp/voice_previews/`，再次试听同一配置时直接播放旧文件
