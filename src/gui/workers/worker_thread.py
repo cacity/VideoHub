@@ -804,6 +804,11 @@ class WorkerThread(QThread):
         output_path = self.params.get("output_path", "")
         voice = self.params.get("voice", "xiaobei")
         speed = self.params.get("speed", 1.0)
+        tts_backend = self.params.get("tts_backend", "kokoro")
+        cosyvoice_url = self.params.get("cosyvoice_url", "http://127.0.0.1:8877")
+        cosyvoice_mode = self.params.get("cosyvoice_mode", "sft")
+        cosyvoice_speaker = self.params.get("cosyvoice_speaker", "中文女")
+        cosyvoice_instruction = self.params.get("cosyvoice_instruction", "")
         enable_transcription = self.params.get("enable_transcription", True)
         enable_translation = self.params.get("enable_translation", True)
         audio_only_mode = self.params.get("audio_only_mode", False)
@@ -852,11 +857,14 @@ class WorkerThread(QThread):
                 self.finished_signal.emit("", False)
                 return
 
-        # 检查 Kokoro 是否可用（非音频模式）
-        if not check_kokoro_available():
+        # 检查 TTS 后端是否可用（非音频模式）
+        if tts_backend != "cosyvoice" and not check_kokoro_available():
             self.update_signal.emit("[ERROR] Kokoro TTS 未安装，请先运行: pip install kokoro>=0.9.4 soundfile")
             self.finished_signal.emit("", False)
             return
+        if tts_backend == "cosyvoice":
+            self.update_signal.emit(f"🔊 使用 CosyVoice TTS: {cosyvoice_mode}, speaker={cosyvoice_speaker}")
+            self.update_signal.emit(f"   服务地址: {cosyvoice_url}")
 
         # 创建配音任务
         task = DubbingTask(
@@ -866,6 +874,11 @@ class WorkerThread(QThread):
             output_path=output_path if output_path else None,
             voice=voice,
             speed=speed,
+            tts_backend=tts_backend,
+            cosyvoice_url=cosyvoice_url,
+            cosyvoice_mode=cosyvoice_mode,
+            cosyvoice_speaker=cosyvoice_speaker,
+            cosyvoice_instruction=cosyvoice_instruction,
             enable_transcription=enable_transcription,
             enable_translation=enable_translation
         )

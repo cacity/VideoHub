@@ -67,6 +67,8 @@ subtitles/
 native_subtitles/
 summaries/
 logs/
+outputs/
+pretrained_models/
 
 # 用户配置和临时文件
 *.txt
