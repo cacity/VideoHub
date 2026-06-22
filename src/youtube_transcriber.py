@@ -620,6 +620,146 @@ def translate_text(text, target_language='zh-CN', source_language='auto'):
             print(f"使用谷歌翻译: {text[:50]}...")
         return translate_with_google(text, target_language, source_language)
 
+def _env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on", "enabled")
+
+
+def _extract_json_array(text):
+    """Extract a JSON array from a model response that may include markdown fences."""
+    import re
+
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+    try:
+        return json.loads(text)
+    except Exception:
+        match = re.search(r"\[[\s\S]*\]", text)
+        if not match:
+            raise
+        return json.loads(match.group(0))
+
+
+def _chunk_items(items, size):
+    for start in range(0, len(items), size):
+        yield items[start:start + size]
+
+
+def polish_subtitle_translations_with_deepseek(segments, chunk_size=50):
+    """
+    Lightly polish translated Chinese subtitle lines with DeepSeek.
+
+    segments item format:
+    {
+        "index": int,
+        "source": str,
+        "translation": str
+    }
+
+    The function never raises to callers. If DeepSeek is unavailable or one
+    chunk fails validation, the original Google translation is kept.
+    """
+    if not segments:
+        return segments
+
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if not api_key:
+        print("未配置 DEEPSEEK_API_KEY，跳过字幕润色，保留原翻译。")
+        return segments
+
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip() or "https://api.deepseek.com"
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat"
+
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url)
+    except Exception as e:
+        print(f"初始化 DeepSeek 客户端失败，跳过字幕润色: {e}")
+        return segments
+
+    polished_segments = [dict(item) for item in segments]
+    total = len(polished_segments)
+    print(f"开始 DeepSeek 字幕润色: 共 {total} 条")
+
+    system_prompt = (
+        "你是字幕中文润色助手。只对已有中文字幕做轻度润色，让中文更自然、"
+        "上下文更连贯、术语更一致。不要重新翻译，不要扩写，不要添加解释。"
+    )
+
+    for chunk_index, chunk in enumerate(_chunk_items(polished_segments, chunk_size), start=1):
+        payload = [
+            {
+                "index": item["index"],
+                "source": item.get("source", ""),
+                "translation": item.get("translation", ""),
+            }
+            for item in chunk
+        ]
+        prompt = (
+            "请润色下面字幕的 translation 字段。\n\n"
+            "严格要求：\n"
+            "1. 输出数量必须和输入数量完全一致。\n"
+            "2. 不要修改 index。\n"
+            "3. 只返回 JSON 数组，不要解释。\n"
+            "4. 每项格式为 {\"index\": 数字, \"polished\": \"润色后的中文\"}。\n"
+            "5. 每条字幕保持简短，适合屏幕显示。\n"
+            "6. 如果原翻译已经自然，可以基本保持不变。\n\n"
+            f"输入：\n{json.dumps(payload, ensure_ascii=False)}"
+        )
+
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                max_tokens=4000,
+            )
+            content = response.choices[0].message.content
+            result = _extract_json_array(content)
+
+            if not isinstance(result, list) or len(result) != len(chunk):
+                raise ValueError("DeepSeek 返回数量不匹配")
+
+            by_index = {}
+            for row in result:
+                if not isinstance(row, dict) or "index" not in row or "polished" not in row:
+                    raise ValueError("DeepSeek 返回格式不正确")
+                by_index[int(row["index"])] = str(row["polished"]).replace("\n", " ").strip()
+
+            for item in chunk:
+                polished = by_index.get(int(item["index"]), "")
+                original_translation = item.get("translation", "")
+                if not polished:
+                    continue
+                if original_translation and len(polished) > max(len(original_translation) * 3, 120):
+                    print(f"润色结果过长，保留原翻译: index={item['index']}")
+                    continue
+                item["translation"] = polished
+
+            print(f"DeepSeek 润色进度: {min(chunk_index * chunk_size, total)}/{total}")
+
+        except Exception as e:
+            print(f"DeepSeek 润色第 {chunk_index} 块失败，保留该块原翻译: {e}")
+            continue
+
+    print("DeepSeek 字幕润色完成")
+    return polished_segments
+
+
+def should_polish_translation(enable_translation_polish=None, target_language="zh-CN"):
+    if enable_translation_polish is None:
+        enable_translation_polish = _env_bool("TRANSLATION_POLISH_DEEPSEEK", False)
+    target_key = (target_language or "").lower()
+    return bool(enable_translation_polish) and target_key in ("zh-cn", "zh", "zh-hans", "chinese")
+
+
 def format_timestamp(seconds):
     """
     将秒数格式化为SRT时间戳格式 (HH:MM:SS,mmm)
@@ -1045,7 +1185,7 @@ def download_youtube_subtitles(youtube_url, output_dir=NATIVE_SUBTITLES_DIR,
         print(f"下载字幕时出错: {str(e)}")
         return []
 
-def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=None, output_dir=None, keep_lang_suffix=True):
+def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=None, output_dir=None, keep_lang_suffix=True, enable_translation_polish=None):
     """
     翻译字幕文件
     :param subtitle_path: 字幕文件路径
@@ -1101,6 +1241,7 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
             translated_blocks = []
             # 收集用于生成ASS样式字幕的数据: (timestamp_line, original_text, translated_text)
             ass_segments = []
+            subtitle_segments = []
             
             for i, block in enumerate(blocks):
                 if not block.strip():
@@ -1125,13 +1266,43 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
                     translated_text = translate_text(subtitle_text, target_language)
                     # 去掉翻译结果中的换行，避免同一时间段出现多行超短句
                     translated_text = translated_text.replace('\n', ' ').strip()
-                    
-                    # 重新组合
-                    translated_block = f"{seq_num}\n{timestamp}\n{translated_text}"
-                    translated_blocks.append(translated_block)
-                    
-                    # 记录用于ASS的双语内容
-                    ass_segments.append((timestamp, subtitle_text, translated_text))
+
+                    subtitle_segments.append({
+                        "seq_num": seq_num,
+                        "timestamp": timestamp,
+                        "source": subtitle_text,
+                        "translation": translated_text,
+                    })
+
+            polish_enabled = should_polish_translation(enable_translation_polish, target_language)
+            if polish_enabled:
+                google_output_path = os.path.join(file_dir, f"{filename_base}_google{ext}")
+                google_blocks = [
+                    f"{item['seq_num']}\n{item['timestamp']}\n{item['translation']}"
+                    for item in subtitle_segments
+                ]
+                with open(google_output_path, 'w', encoding='utf-8') as f:
+                    f.write('\n\n'.join(google_blocks))
+                    f.write('\n')
+                print(f"Google 初译字幕已保存: {google_output_path}")
+
+                output_path = os.path.join(file_dir, f"{filename_base}_polished{ext}")
+                polish_payload = [
+                    {
+                        "index": idx + 1,
+                        "source": item["source"],
+                        "translation": item["translation"],
+                    }
+                    for idx, item in enumerate(subtitle_segments)
+                ]
+                polished_payload = polish_subtitle_translations_with_deepseek(polish_payload)
+                if len(polished_payload) == len(subtitle_segments):
+                    for item, polished in zip(subtitle_segments, polished_payload):
+                        item["translation"] = polished.get("translation", item["translation"])
+
+            for item in subtitle_segments:
+                translated_blocks.append(f"{item['seq_num']}\n{item['timestamp']}\n{item['translation']}")
+                ass_segments.append((item["timestamp"], item["source"], item["translation"]))
             
             # 写入翻译后的文件
             with open(output_path, 'w', encoding='utf-8') as f:
@@ -1166,7 +1337,7 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
                     cs = int(ms / 10)  # 毫秒转厘秒
                     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
-                ass_path = os.path.join(file_dir, f"{filename_base}.ass")
+                ass_path = os.path.join(file_dir, f"{Path(output_path).stem}.ass")
                 with open(ass_path, 'w', encoding='utf-8') as ass_file:
                     # 获取字幕样式设置
                     style_settings = get_subtitle_style_settings()
@@ -2002,6 +2173,7 @@ def transcribe_audio_unified(
     translate_to_chinese=True,
     source_language=None,
     output_basename=None,
+    enable_translation_polish=None,
 ):
     """
     统一的音频转录函数：一次转录，同时生成文本和字幕文件
@@ -2083,23 +2255,67 @@ def transcribe_audio_unified(
             srt_path = os.path.join(subtitle_dir, f"{sanitized_name}.srt")
             vtt_path = os.path.join(subtitle_dir, f"{sanitized_name}.vtt")
             ass_path = os.path.join(subtitle_dir, f"{sanitized_name}.ass")
+
+            subtitle_rows = []
+            for i, segment in enumerate(result["segments"]):
+                original_text = segment["text"].strip()
+                translated_text = ""
+                if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
+                    try:
+                        translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
+                        if i < 3:
+                            print(f"翻译示例: {original_text} -> {translated_text}")
+                    except Exception as e:
+                        print(f"翻译失败: {str(e)}")
+
+                subtitle_rows.append({
+                    "index": i + 1,
+                    "start": segment["start"],
+                    "end": segment["end"],
+                    "source": original_text,
+                    "translation": translated_text,
+                })
+
+            polish_enabled = translate_to_chinese and should_polish_translation(enable_translation_polish, "zh-CN")
+            if polish_enabled:
+                google_srt_path = os.path.join(subtitle_dir, f"{sanitized_name}_google.srt")
+                with open(google_srt_path, "w", encoding="utf-8") as srt_file:
+                    for i, segment in enumerate(subtitle_rows):
+                        srt_file.write(f"{i+1}\n")
+                        srt_file.write(f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n")
+                        srt_file.write(f"{segment['source']}\n")
+                        if segment["translation"]:
+                            srt_file.write(f"{segment['translation']}\n")
+                        srt_file.write("\n")
+                print(f"Google 初译字幕已保存: {google_srt_path}")
+
+                polish_payload = [
+                    {
+                        "index": item["index"],
+                        "source": item["source"],
+                        "translation": item["translation"],
+                    }
+                    for item in subtitle_rows
+                    if item["translation"]
+                ]
+                polished_payload = polish_subtitle_translations_with_deepseek(polish_payload)
+                polished_by_index = {int(item["index"]): item.get("translation", "") for item in polished_payload}
+                for item in subtitle_rows:
+                    polished = polished_by_index.get(item["index"], "")
+                    if polished:
+                        item["translation"] = polished
+
+                srt_path = os.path.join(subtitle_dir, f"{sanitized_name}_polished.srt")
+                vtt_path = os.path.join(subtitle_dir, f"{sanitized_name}_polished.vtt")
+                ass_path = os.path.join(subtitle_dir, f"{sanitized_name}_polished.ass")
             
             # 创建SRT字幕文件
             with open(srt_path, "w", encoding="utf-8") as srt_file:
-                for i, segment in enumerate(result["segments"]):
+                for i, segment in enumerate(subtitle_rows):
                     start_time = segment["start"]
                     end_time = segment["end"]
-                    original_text = segment["text"].strip()
-                    
-                    # 翻译处理
-                    translated_text = ""
-                    if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
-                        try:
-                            translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
-                            if i < 3:  # 只显示前3个翻译示例
-                                print(f"翻译示例: {original_text} -> {translated_text}")
-                        except Exception as e:
-                            print(f"翻译失败: {str(e)}")
+                    original_text = segment["source"]
+                    translated_text = segment["translation"]
                     
                     # 写入SRT格式
                     srt_file.write(f"{i+1}\n")
@@ -2112,17 +2328,11 @@ def transcribe_audio_unified(
             # 创建VTT字幕文件  
             with open(vtt_path, "w", encoding="utf-8") as vtt_file:
                 vtt_file.write("WEBVTT\n\n")
-                for i, segment in enumerate(result["segments"]):
+                for i, segment in enumerate(subtitle_rows):
                     start_time = segment["start"]
                     end_time = segment["end"]
-                    original_text = segment["text"].strip()
-                    
-                    translated_text = ""
-                    if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
-                        try:
-                            translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
-                        except:
-                            pass
+                    original_text = segment["source"]
+                    translated_text = segment["translation"]
                     
                     vtt_file.write(f"{format_timestamp_vtt(start_time)} --> {format_timestamp_vtt(end_time)}\n")
                     vtt_file.write(f"{original_text}\n")
@@ -2156,17 +2366,11 @@ def transcribe_audio_unified(
                 ass_file.write("[Events]\n")
                 ass_file.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
                 
-                for segment in result["segments"]:
+                for segment in subtitle_rows:
                     start_time = segment["start"]
                     end_time = segment["end"]
-                    original_text = segment["text"].strip()
-
-                    translated_text = ""
-                    if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
-                        try:
-                            translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
-                        except:
-                            pass
+                    original_text = segment["source"]
+                    translated_text = segment["translation"]
 
                     # 处理特殊字符，避免在ASS字幕中出现问题
                     escaped_text = original_text.replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
@@ -2286,7 +2490,7 @@ def transcribe_only(audio_path, whisper_model_size="medium", output_dir=TRANSCRI
     print(f"音频转文本完成，文本已保存至: {text_path}")
     return text_path
 
-def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size="tiny", translate_to_chinese=True, source_language=None):
+def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size="tiny", translate_to_chinese=True, source_language=None, enable_translation_polish=None):
     """
     创建双语字幕文件
     :param audio_path: 音频文件路径
@@ -2356,23 +2560,74 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
         srt_path = os.path.join(output_dir, f"{sanitized_name}_bilingual.srt")
         vtt_path = os.path.join(output_dir, f"{sanitized_name}_bilingual.vtt")
         ass_path = os.path.join(output_dir, f"{sanitized_name}_bilingual.ass")
+
+        subtitle_rows = []
+        for i, segment in enumerate(result["segments"]):
+            original_text = segment["text"].strip()
+            translated_text = ""
+            if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
+                if not hasattr(create_bilingual_subtitles, 'translation_cache'):
+                    create_bilingual_subtitles.translation_cache = {}
+
+                if original_text in create_bilingual_subtitles.translation_cache:
+                    translated_text = create_bilingual_subtitles.translation_cache[original_text]
+                else:
+                    translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
+                    create_bilingual_subtitles.translation_cache[original_text] = translated_text
+                    print(f"翻译: {original_text} -> {translated_text}")
+
+            subtitle_rows.append({
+                "index": i + 1,
+                "start": segment["start"],
+                "end": segment["end"],
+                "source": original_text,
+                "translation": translated_text,
+            })
+
+        polish_enabled = translate_to_chinese and should_polish_translation(enable_translation_polish, "zh-CN")
+        if polish_enabled:
+            google_srt_path = os.path.join(output_dir, f"{sanitized_name}_bilingual_google.srt")
+            with open(google_srt_path, "w", encoding="utf-8") as srt_file:
+                for i, segment in enumerate(subtitle_rows):
+                    srt_file.write(f"{i+1}\n")
+                    srt_file.write(f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n")
+                    srt_file.write(f"{segment['source']}\n")
+                    if segment["translation"]:
+                        srt_file.write(f"{segment['translation']}\n")
+                    srt_file.write("\n")
+            print(f"Google 初译字幕已保存: {google_srt_path}")
+
+            polish_payload = [
+                {
+                    "index": item["index"],
+                    "source": item["source"],
+                    "translation": item["translation"],
+                }
+                for item in subtitle_rows
+                if item["translation"]
+            ]
+            polished_payload = polish_subtitle_translations_with_deepseek(polish_payload)
+            polished_by_index = {int(item["index"]): item.get("translation", "") for item in polished_payload}
+            for item in subtitle_rows:
+                polished = polished_by_index.get(item["index"], "")
+                if polished:
+                    item["translation"] = polished
+
+            srt_path = os.path.join(output_dir, f"{sanitized_name}_bilingual_polished.srt")
+            vtt_path = os.path.join(output_dir, f"{sanitized_name}_bilingual_polished.vtt")
+            ass_path = os.path.join(output_dir, f"{sanitized_name}_bilingual_polished.ass")
         
         # 创建SRT字幕文件
         with open(srt_path, "w", encoding="utf-8") as srt_file:
             # 写入SRT文件
-            for i, segment in enumerate(result["segments"]):
+            for i, segment in enumerate(subtitle_rows):
                 # 获取时间戳
                 start_time = segment["start"]
                 end_time = segment["end"]
                 
                 # 获取文本
-                original_text = segment["text"].strip()
-                
-                # 如果需要翻译且源语言不是中文
-                translated_text = ""
-                if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
-                    translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
-                    print(f"翻译: {original_text} -> {translated_text}")
+                original_text = segment["source"]
+                translated_text = segment["translation"]
                 
                 # 写入字幕索引
                 srt_file.write(f"{i+1}\n")
@@ -2396,7 +2651,7 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
             vtt_file.write("WEBVTT\n\n")
             
             # 写入字幕
-            for i, segment in enumerate(result["segments"]):
+            for i, segment in enumerate(subtitle_rows):
                 # 获取时间戳
                 start_time = segment["start"]
                 end_time = segment["end"]
@@ -2406,20 +2661,8 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
                 end_formatted = str(timedelta(seconds=end_time)).rjust(8, '0').replace(',', '.')
                 
                 # 获取文本
-                original_text = segment["text"].strip()
-                
-                # 如果需要翻译且源语言不是中文
-                translated_text = ""
-                if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
-                    # 使用缓存的翻译结果，避免重复翻译
-                    if not hasattr(create_bilingual_subtitles, 'translation_cache'):
-                        create_bilingual_subtitles.translation_cache = {}
-                    
-                    if original_text in create_bilingual_subtitles.translation_cache:
-                        translated_text = create_bilingual_subtitles.translation_cache[original_text]
-                    else:
-                        translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
-                        create_bilingual_subtitles.translation_cache[original_text] = translated_text
+                original_text = segment["source"]
+                translated_text = segment["translation"]
                 
                 # 写入时间戳
                 vtt_file.write(f"{start_formatted} --> {end_formatted}\n")
@@ -2465,7 +2708,7 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
             ass_file.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
             
             # 写入字幕
-            for i, segment in enumerate(result["segments"]):
+            for i, segment in enumerate(subtitle_rows):
                 # 获取时间戳
                 start_time = segment["start"]
                 end_time = segment["end"]
@@ -2484,7 +2727,7 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
                 end_formatted = f"{end_h}:{end_m:02d}:{end_s:02d}.{end_cs:02d}"
                 
                 # 获取文本
-                original_text = segment["text"].strip()
+                original_text = segment["source"]
                 
                 # 写入原文
                 # 处理特殊字符，避免在ASS字幕中出现问题
@@ -2492,17 +2735,8 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
                 ass_file.write(f"Dialogue: 0,{start_formatted},{end_formatted},Default,,0,0,0,,{escaped_text}\n")
                 
                 # 如果需要翻译且源语言不是中文
-                if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
-                    # 使用缓存的翻译结果
-                    if not hasattr(create_bilingual_subtitles, 'translation_cache'):
-                        create_bilingual_subtitles.translation_cache = {}
-                    
-                    if original_text in create_bilingual_subtitles.translation_cache:
-                        translated_text = create_bilingual_subtitles.translation_cache[original_text]
-                    else:
-                        translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
-                        create_bilingual_subtitles.translation_cache[original_text] = translated_text
-                    
+                translated_text = segment["translation"]
+                if translated_text:
                     # 处理特殊字符，避免在ASS字幕中出现问题
                     escaped_translated = translated_text.replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
                     # 写入翻译
@@ -2840,7 +3074,7 @@ def embed_subtitles_to_video(video_path, subtitle_path, output_dir=VIDEOS_WITH_S
         print(f"处理过程中出现错误: {str(e)}")
         raise Exception(f"嵌入字幕失败: {str(e)}")
 
-def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, enable_transcription=True, generate_article=True):
+def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, enable_transcription=True, generate_article=True, enable_translation_polish=None):
     """
     处理本地音频文件的主函数
     :param audio_path: 本地音频文件路径
@@ -2874,6 +3108,7 @@ def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whi
             generate_subtitles=generate_subtitles,
             translate_to_chinese=translate_to_chinese,
             output_basename=audio_path,
+            enable_translation_polish=enable_translation_polish,
         )
         print(f"转录文本已保存到: {text_path}")
         if subtitle_path:
@@ -2904,7 +3139,7 @@ def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whi
         print(f"处理过程中出现错误: {str(e)}")
         return None
 
-def process_local_video(video_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None):
+def process_local_video(video_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None):
     """
     处理本地视频文件的主函数
     :param video_path: 本地视频文件路径
@@ -2945,6 +3180,7 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
             translate_to_chinese=translate_to_chinese,
             source_language=source_language,
             output_basename=video_path,
+            enable_translation_polish=enable_translation_polish,
         )
         print(f"转录文本已保存到: {text_path}")
         
@@ -2990,7 +3226,7 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
         print(f"处理过程中出现错误: {str(e)}")
         return None
 
-def process_local_videos_batch(input_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None):
+def process_local_videos_batch(input_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None):
     """
     批量处理本地视频文件（支持单个文件或目录）
     :param input_path: 输入路径（可以是单个视频文件或包含视频文件的目录）
@@ -3076,7 +3312,8 @@ def process_local_videos_batch(input_path, model=None, api_key=None, base_url=No
                 embed_subtitles=embed_subtitles,
                 enable_transcription=enable_transcription,
                 generate_article=generate_article,
-                source_language=source_language
+                source_language=source_language,
+                enable_translation_polish=enable_translation_polish,
             )
             
             if result and result != "SKIPPED":
@@ -3849,7 +4086,7 @@ def check_cookies_file(cookies_file):
     print(f"检测到有效的cookies文件: {cookies_file}")
     return cookies_file
 
-def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True):
+def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True, enable_translation_polish=None):
     """
     处理YouTube视频的主函数
     :param youtube_url: YouTube视频链接
@@ -3942,6 +4179,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                                         base_name=video_title_base,
                                         output_dir=SUBTITLES_DIR,
                                         keep_lang_suffix=False,  # 与视频完全同名，只保留扩展名不同
+                                        enable_translation_polish=enable_translation_polish,
                                     )
                                     if translated_subtitle_file:
                                         print(f"已基于手动原生字幕生成中文字幕文件: {translated_subtitle_file}")
@@ -4043,6 +4281,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                                         base_name=video_title_base,
                                         output_dir=SUBTITLES_DIR,
                                         keep_lang_suffix=False,
+                                        enable_translation_polish=enable_translation_polish,
                                     )
                                     if translated_subtitle_file:
                                         print(f"已基于自动原生字幕生成中文字幕文件: {translated_subtitle_file}")
@@ -4154,6 +4393,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                 generate_subtitles=(generate_subtitles or embed_subtitles),
                 translate_to_chinese=translate_to_chinese,
                 output_basename=output_basename,
+                enable_translation_polish=enable_translation_polish,
             )
             print(f"转录文本已保存到: {text_path}")
             if subtitle_path:
@@ -4396,7 +4636,7 @@ def show_download_history():
         print(f"   文件路径: {file_path}")
         print()
 
-def process_youtube_videos_batch(youtube_urls, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True):
+def process_youtube_videos_batch(youtube_urls, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True, enable_translation_polish=None):
     """
     批量处理多个YouTube视频
     :param youtube_urls: YouTube视频链接列表
@@ -4444,7 +4684,8 @@ def process_youtube_videos_batch(youtube_urls, model=None, api_key=None, base_ur
                 cookies_file=cookies_file,
                 enable_transcription=enable_transcription,
                 generate_article=generate_article,
-                prefer_native_subtitles=True  # 批处理时默认使用原生字幕优化
+                prefer_native_subtitles=True,  # 批处理时默认使用原生字幕优化
+                enable_translation_polish=enable_translation_polish,
             )
             
             if summary_path:
@@ -4614,7 +4855,7 @@ def normalize_youtube_video_url(url: str) -> str:
     except Exception:
         return url
 
-def process_youtube_playlist(playlist_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True):
+def process_youtube_playlist(playlist_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True, enable_translation_polish=None):
     """
     处理YouTube播放列表，自动提取所有视频并批量处理
     :param playlist_url: YouTube播放列表链接
@@ -4665,7 +4906,8 @@ def process_youtube_playlist(playlist_url, model=None, api_key=None, base_url=No
         cookies_file=cookies_file,
         enable_transcription=enable_transcription,
         generate_article=generate_article,
-        prefer_native_subtitles=prefer_native_subtitles
+        prefer_native_subtitles=prefer_native_subtitles,
+        enable_translation_polish=enable_translation_polish,
     )
 
 def process_local_text(text_path, model=None, api_key=None, base_url=None, stream=True, summary_dir="summaries", custom_prompt=None, template_path=None):

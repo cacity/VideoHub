@@ -94,51 +94,17 @@ class SubtitleTranslateThread(QThread):
     def translate_single_file(self, file_path, target_language):
         """翻译单个字幕文件"""
         try:
-            # 读取字幕文件
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            from youtube_transcriber import translate_subtitle_file
 
-            # 解析字幕条目
-            from youtube_transcriber import parse_srt, format_srt_entry
-            entries = parse_srt(content)
-
-            if not entries:
-                self.update_signal.emit(f"⚠️ 未找到有效的字幕条目: {os.path.basename(file_path)}")
-                return False
-
-            self.update_signal.emit(f"找到 {len(entries)} 个字幕条目")
-
-            # 批量翻译文本
-            texts_to_translate = [entry['text'] for entry in entries]
-
-            # 使用 LLM 翻译
-            from youtube_transcriber import translate_texts
-
-            translated_texts = translate_texts(
-                texts_to_translate,
+            result = translate_subtitle_file(
+                file_path,
                 target_language=target_language,
-                model=os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo'),
-                api_key=os.getenv('OPENAI_API_KEY'),
-                base_url=os.getenv('OPENAI_BASE_URL'),
-                stream=False
+                enable_translation_polish=self.params.get("enable_translation_polish", False),
             )
-
-            if not translated_texts or len(translated_texts) != len(entries):
-                self.update_signal.emit(f"⚠️ 翻译结果数量不匹配")
-                return False
-
-            # 更新字幕条目
-            for i, entry in enumerate(entries):
-                entry['text'] = translated_texts[i]
-
-            # 生成新的字幕内容
-            new_content = "\n\n".join([format_srt_entry(entry) for entry in entries])
-
-            # 保存文件
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(new_content)
-
-            return True
+            if result:
+                self.update_signal.emit(f"已生成翻译文件: {result}")
+                return True
+            return False
 
         except Exception as e:
             self.update_signal.emit(f"翻译文件出错: {str(e)}")

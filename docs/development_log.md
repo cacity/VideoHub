@@ -23,6 +23,187 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-06-18：网页版官网和在线试用工具规划落地
+
+### 更新范围
+
+- 分支：`main`
+- 主要文件：
+  - `frontend/src/App.tsx`
+  - `frontend/src/lib/api.ts`
+  - `frontend/index.html`
+  - `website/backend/app.py`
+  - `website/backend/database.py`
+  - `website/backend/download_service.py`
+  - `website/README.md`
+  - `website/scripts/deploy_vps.sh`
+
+### 本次更新内容
+
+本次恢复历史提交中的网页端代码，并按“项目官网 + 轻量在线试用工具”的定位重新规划。
+
+主要内容包括：
+
+- 首页从单一字幕下载页改为 VideoHub 项目介绍页。
+- 第一屏突出 VideoHub 的核心定位：把长视频变成字幕、笔记和可复用知识资料。
+- 在线工具区拆成两个 Tab：
+  - YouTube 字幕下载
+  - 抖音单视频下载尝试
+- 桌面版能力区展示下载、转写、字幕翻译、AI 摘要、AI 配音、闲时队列、本地归档等核心能力。
+- 增加使用边界说明，明确网页端不是云端 VideoHub。
+- 后端新增抖音单视频下载接口。
+- 抖音下载支持粘贴完整分享文本，后端自动提取链接。
+- 抖音下载结果以临时文件形式保存，返回下载地址、文件名、大小和有效期。
+- 后端增加下载临时目录 TTL 清理和容量上限清理。
+- 后端增加基础 IP 频率限制，降低在线下载接口被刷的风险。
+- 数据库增加 `download_log`，记录抖音下载请求。
+- 部署脚本增加 `data/downloads` 目录创建。
+
+### 设计思路
+
+网站不做完整云端版 VideoHub，而是承担两个角色：一个是让用户理解项目的官网，另一个是让用户轻量体验字幕下载和单视频下载。
+
+这样设计的原因是，VideoHub 的核心能力依赖本地环境，包括 FFmpeg、yt-dlp、Whisper、TTS 模型、磁盘目录和用户自己的配置。如果把完整能力搬到服务器，会很快遇到服务器成本、平台限制、版权边界、队列调度和文件清理问题。因此网页端只保留低门槛试用能力，完整工作流继续引导用户去 GitHub 运行桌面版。
+
+抖音下载能力也被刻意限制为“单个公开视频尝试”。不支持主页批量、不支持登录内容、不支持长期保存文件。页面上也明确提示用户只处理自己有权访问和使用的公开内容。
+
+### 实现方式
+
+- `frontend/src/App.tsx`
+  - 重构为项目介绍 + 在线工具 + 桌面版能力 + 使用边界。
+  - 增加工具 Tab，在字幕下载和抖音下载之间切换。
+  - 抖音下载输入框支持完整分享文本。
+  - 结果区域显示临时文件有效期和下载按钮。
+
+- `frontend/src/lib/api.ts`
+  - 增加 `OnlineDouyinDownloadResult` 类型。
+  - 增加 `requestOnlineDouyinDownload()`。
+
+- `website/backend/download_service.py`
+  - 新增抖音下载服务。
+  - 提取分享文本中的抖音链接。
+  - 限制允许的抖音相关域名。
+  - 每次下载使用独立 job 目录。
+  - 下载完成后写入 `metadata.json`。
+  - 清理过期 job，并按总容量删除最旧目录。
+
+- `website/backend/app.py`
+  - 增加 `/api/downloads/douyin`。
+  - 增加 `/api/downloads/files/<file_id>`。
+  - 下载接口增加基础 IP 频率限制。
+
+- `website/backend/database.py`
+  - 增加 `download_log` 表。
+  - 增加下载请求日志记录方法。
+
+- `website/README.md`
+  - 更新网站定位、接口、临时文件清理、环境变量和部署说明。
+
+### 验证结果
+
+本次实现后需要执行：
+
+```bash
+python -m py_compile website/backend/app.py website/backend/database.py website/backend/download_service.py website/backend/subtitle_service.py
+npm run build --prefix frontend
+git diff --check
+```
+
+手动验证建议：
+
+- 打开首页，确认第一屏是项目介绍，不再只是字幕下载工具。
+- 在线字幕下载输入 YouTube 链接，确认可以返回字幕下载链接。
+- 抖音下载输入完整分享文本，确认可以提取链接并返回视频下载链接。
+- 检查 `/opt/videohub-site/data/downloads` 是否按 job 目录保存文件。
+- 缩短 `VIDEOHUB_DOUYIN_TTL_SECONDS` 后确认过期目录能被清理。
+
+### 遗留问题和后续计划
+
+- 抖音下载依赖 yt-dlp 对当前平台规则的支持，可能因平台变化失败。
+- 频率限制目前是进程内存级别，重启会清空，后续可改为 SQLite 或 Redis。
+- 抖音下载目前是同步请求，大视频或网络慢时前端会等待，后续可改为 job 轮询。
+- 视频下载仍有版权和平台条款边界，页面文案和免责声明需要保持明确。
+- `frontend/` 和 `website/` 当前仍属于网页端内容，是否上传 GitHub 需要单独确认。
+
+## 2026-06-18：AI 配音自然度优化和字幕烧录选项
+
+### 更新范围
+
+- 分支：`main`
+- 主要文件：
+  - `src/dubbing_engine.py`
+  - `main.py`
+  - `src/gui/workers/worker_thread.py`
+  - `docs/development_log.md`
+
+### 本次更新内容
+
+本次更新针对 AI 配音正式成片时“试听自然、实际配音偏硬”的问题做优化，并在 AI 配音流程中增加字幕烧录选项。
+
+主要内容包括：
+
+- CosyVoice 正式配音前会对字幕文本做轻度清理。
+- 对缺少句末标点的中文字幕自动补句号，帮助 TTS 模型判断停顿。
+- 对过短且时间相邻的字幕片段做小范围合并，减少“一条字幕一句话”的机械感。
+- CosyVoice Instruct 模式下，如果用户没有填写指令，会自动使用更适合视频讲解的默认指令。
+- AI 配音界面新增“字幕烧录”选项：
+  - 不压字幕
+  - 压单语字幕
+  - 压双语字幕
+- 配音流程会先生成中文配音视频，再按用户选择烧录字幕。
+- 双语字幕使用原字幕和译文字幕生成临时 ASS 文件，再复用现有字幕烧录流程。
+
+### 设计思路
+
+这次没有简单地更换音色，而是从输入结构上改善 TTS 的朗读条件。试听文本通常是一句完整、带标点、带停顿暗示的话，而实际配音来自字幕文件，常常是短句、碎片、缺少标点。如果直接逐条送给模型，模型每次都会重新起句，听起来就容易偏硬。
+
+因此这次优化的重点是：在不大幅改变字幕时间轴的前提下，把字幕片段整理成更适合 TTS 朗读的文本。自动补标点解决的是停顿判断问题，短句合并解决的是语气频繁重启问题，默认 instruct 指令解决的是用户未配置指令时模型风格过于普通的问题。
+
+字幕烧录则放在配音音轨合成之后处理。这样可以保留原有无字幕配音视频，也可以额外得到带字幕版本，流程更清晰，失败时也不会影响基础配音结果。
+
+### 实现方式
+
+- `src/dubbing_engine.py`
+  - 增加 `subtitle_burn_mode` 配置。
+  - 增加 CosyVoice 字幕片段预处理逻辑。
+  - 增加 `_normalize_tts_text()`，用于清理文本和补句末标点。
+  - 增加 `_merge_short_segments()`，用于合并过短且时间相邻的字幕片段。
+  - 增加 `_burn_selected_subtitles()`，按选项烧录单语或双语字幕。
+  - 增加 `_create_bilingual_ass()`，用原字幕和译文字幕生成双语 ASS。
+
+- `main.py`
+  - AI 配音页新增“字幕烧录”下拉框。
+  - 开始配音时把字幕烧录模式传给后台 Worker。
+  - 日志中显示当前字幕烧录选择。
+
+- `src/gui/workers/worker_thread.py`
+  - 同步 `subtitle_burn_mode` 参数。
+  - 同步字幕烧录步骤日志。
+
+### 验证结果
+
+本次实现后需要执行：
+
+```bash
+python -m py_compile main.py src\dubbing_engine.py src\gui\workers\worker_thread.py
+git diff --check
+```
+
+手动验证建议：
+
+- CosyVoice SFT 模式生成一段配音，确认短字幕不再明显逐字生硬。
+- CosyVoice Instruct 模式不填写指令时，确认仍能正常合成。
+- 选择“不压字幕”时，只生成普通配音视频。
+- 选择“压单语字幕”时，生成带中文字幕的视频。
+- 选择“压双语字幕”时，生成带原文和译文两行字幕的视频。
+
+### 遗留问题和后续计划
+
+- 短句合并目前采用保守规则，只合并很短且相邻的字幕，后续可以根据实际样片继续调整阈值。
+- 双语字幕目前按字幕顺序配对，如果原字幕和译文字幕段落数量差异较大，可能只能生成部分双语字幕。
+- 字幕样式先使用固定 ASS 样式，后续可以接入设置页已有的双语字幕字体和颜色配置。
+- 如果用户希望“压字幕后只保留一个最终文件”，后续可以增加输出策略选项。
+
 ## 2026-06-17：本地 CosyVoice TTS 配音能力合并
 
 ### 更新范围
@@ -128,3 +309,75 @@ git diff --check
 - 当前试听缓存按配置生成文件，后续可以增加清理入口，避免长期积累。
 - 不同显卡、CPU 环境下生成速度差异较大，后续需要补充最低配置和推荐配置说明。
 - 如果用户没有启动 `tts_service.py` 就切换到 CosyVoice，GUI 需要给出更明确的服务未连接提示。
+
+## 2026-06-21：字幕翻译增加 DeepSeek 可选润色
+
+### 更新内容
+
+- 在设置页增加“Google翻译后使用 DeepSeek 润色中文字幕”开关。
+- 默认不开启润色，保持原有翻译流程不变。
+- 开启润色后，字幕先按原逻辑完成翻译，再由 DeepSeek 对中文字幕做轻度整体润色。
+- 未配置 `DEEPSEEK_API_KEY`、DeepSeek 调用失败或返回格式异常时，自动保留原翻译结果，不影响主流程。
+- YouTube、本地音频、本地视频、批量处理、闲时队列、独立字幕翻译和 AI 配音流程都接入同一开关。
+- 开启润色时额外保留 Google 初译字幕和 DeepSeek 润色字幕，便于人工查看和对比。
+
+### 设计思路
+
+Google 免费翻译速度快、成本低，但逐句字幕翻译缺少上下文，容易出现术语不统一、中文语序生硬、跨句衔接不自然的问题。直接改成大模型逐句翻译会增加成本和等待时间，也可能破坏字幕条数。
+
+因此本次采用二阶段方案：
+
+```text
+原始字幕
+  -> Google/当前翻译方式初译
+  -> 保存 Google 初译字幕
+  -> DeepSeek 轻度润色
+  -> 校验条数和 index
+  -> 保存 DeepSeek 润色字幕
+```
+
+DeepSeek 只处理已翻译好的中文，不负责重译，不修改时间轴，不增删字幕条目。这样既能提升中文自然度，又能降低字幕结构被破坏的风险。
+
+### 实现方式
+
+主要涉及文件：
+
+- `src/youtube_transcriber.py`
+  - 新增 `polish_subtitle_translations_with_deepseek()`。
+  - 新增 `should_polish_translation()` 和 DeepSeek 返回 JSON 校验逻辑。
+  - `translate_subtitle_file()`、`transcribe_audio_unified()`、`process_youtube_video()`、本地音视频和批量处理函数增加 `enable_translation_polish` 参数。
+  - Whisper 生成 SRT/VTT/ASS 时改为先统一翻译并可选润色，再写出三种格式，避免不同格式翻译结果不一致。
+  - 开启润色时保存 `*_google.srt` 和 `*_polished.srt`，下游配音和字幕烧录默认使用润色版。
+
+- `main.py`
+  - 设置页增加润色开关。
+  - 保存设置时写入 `TRANSLATION_POLISH_DEEPSEEK`。
+  - 各处理入口和闲时队列参数增加 `enable_translation_polish`。
+  - 独立字幕翻译线程和 AI 配音任务透传润色开关。
+
+- `src/dubbing_engine.py`
+  - `DubbingTask` 增加 `enable_translation_polish`。
+  - AI 配音翻译字幕时传入该开关，保证配音使用润色后的中文字幕。
+
+- `src/gui/workers/worker_thread.py`
+  - 模块化 WorkerThread 同步润色参数，保持与 `main.py` 内嵌线程一致。
+
+- `src/gui/workers/subtitle_thread.py`
+  - 独立字幕翻译线程改为复用 `translate_subtitle_file()`，避免单独实现与主流程不一致。
+
+### 验证结果
+
+已执行：
+
+```bash
+python -m py_compile main.py src\youtube_transcriber.py src\dubbing_engine.py src\gui\workers\worker_thread.py src\gui\workers\subtitle_thread.py
+```
+
+结果：编译通过。
+
+### 遗留问题和后续计划
+
+- DeepSeek 返回仍有小概率不是合法 JSON，目前按“失败块保留原翻译”处理。
+- 润色强度当前固定为轻度，后续可以增加“轻度 / 标准 / 较强”选项。
+- 当前主要面向中文字幕润色，其他目标语言暂不启用。
+- 后续可以增加术语表输入，例如固定 `agent=智能体`、`prompt=提示词`。

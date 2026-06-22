@@ -4,6 +4,7 @@
 """
 
 import os
+import re
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 import shutil
@@ -45,6 +46,8 @@ class DubbingTask:
         cosyvoice_mode: str = 'sft',
         cosyvoice_speaker: str = '中文女',
         cosyvoice_instruction: str = '',
+        subtitle_burn_mode: str = 'none',
+        enable_translation_polish: bool = False,
         keep_background_audio: bool = False,
         background_volume: float = 0.1,
         enable_translation: bool = True,
@@ -65,6 +68,8 @@ class DubbingTask:
             cosyvoice_mode: CosyVoice 模式，sft/instruct
             cosyvoice_speaker: CosyVoice 音色
             cosyvoice_instruction: CosyVoice Instruct 指令
+            subtitle_burn_mode: 字幕烧录模式，none/single/bilingual
+            enable_translation_polish: 是否使用 DeepSeek 润色翻译后的中文字幕
             keep_background_audio: 是否保留背景音
             background_volume: 背景音音量
             enable_translation: 是否启用字幕翻译
@@ -81,6 +86,8 @@ class DubbingTask:
         self.cosyvoice_mode = cosyvoice_mode
         self.cosyvoice_speaker = cosyvoice_speaker
         self.cosyvoice_instruction = cosyvoice_instruction
+        self.subtitle_burn_mode = subtitle_burn_mode
+        self.enable_translation_polish = enable_translation_polish
         self.keep_background_audio = keep_background_audio
         self.background_volume = background_volume
         self.enable_translation = enable_translation
@@ -89,6 +96,7 @@ class DubbingTask:
         # 内部状态
         self.temp_files: list = []
         self.downloaded_video: Optional[str] = None
+        self.source_subtitle: Optional[str] = subtitle_path
         self.generated_subtitle: Optional[str] = None
         self.translated_subtitle: Optional[str] = None
         self.dubbing_audio: Optional[str] = None
@@ -104,6 +112,7 @@ class VideoDubbingEngine:
         'translate',     # 翻译中文字幕
         'tts',           # 合成中文音频
         'combine',       # 合并最终视频
+        'subtitle',      # 烧录字幕
     ]
 
     # 临时文件保留模式（True=保留，False=清理）
@@ -188,12 +197,15 @@ class VideoDubbingEngine:
                 self._report_step('transcribe', 1)
                 task.generated_subtitle = self._transcribe_video(task.video_path)
                 task.subtitle_path = task.generated_subtitle
+                task.source_subtitle = task.generated_subtitle
 
             # 步骤 3: 翻译字幕（如果需要）
             if task.enable_translation and task.subtitle_path:
                 self._report_step('translate', 2)
+                task.source_subtitle = task.source_subtitle or task.subtitle_path
                 task.translated_subtitle = self._translate_subtitle(
-                    task.subtitle_path
+                    task.subtitle_path,
+                    task.enable_translation_polish,
                 )
                 task.subtitle_path = task.translated_subtitle
 
@@ -224,6 +236,10 @@ class VideoDubbingEngine:
                 task.keep_background_audio,
                 task.background_volume
             )
+
+            if task.subtitle_burn_mode != 'none':
+                self._report_step('subtitle', 5)
+                output_path = self._burn_selected_subtitles(task, output_path)
 
             # 清理临时文件
             self._cleanup_temp_files(task)
@@ -291,7 +307,8 @@ class VideoDubbingEngine:
 
     def _translate_subtitle(
         self,
-        subtitle_path: str
+        subtitle_path: str,
+        enable_translation_polish: bool = False,
     ) -> str:
         """翻译字幕为中文"""
         from .youtube_transcriber import translate_subtitle_file
@@ -308,7 +325,8 @@ class VideoDubbingEngine:
         # 翻译字幕
         translated_path = translate_subtitle_file(
             subtitle_path,
-            target_language='zh-CN'
+            target_language='zh-CN',
+            enable_translation_polish=enable_translation_polish,
         )
 
         self._report_progress(100, f"翻译完成: {translated_path}")
@@ -467,6 +485,11 @@ class VideoDubbingEngine:
             import soundfile as sf
 
         mode = 'instruct' if cosyvoice_mode == 'instruct' else 'sft'
+        if mode == 'instruct' and not cosyvoice_instruction.strip():
+            cosyvoice_instruction = (
+                "用自然、温和、清晰的中文视频讲解语气朗读，语速稍慢，"
+                "句子之间保留适当停顿，不要像逐字念字幕。"
+            )
         client = CosyVoiceTTSClient(
             base_url=cosyvoice_url,
             mode=mode,
@@ -483,6 +506,7 @@ class VideoDubbingEngine:
         temp_audio_path = os.path.join(temp_dir, f"dubbing_audio_cosyvoice_{self._get_timestamp()}.wav")
         parser = CTTS.__new__(CTTS)
         segments = parser._parse_srt(subtitle_path)
+        segments = self._prepare_cosyvoice_segments(segments)
         sample_rate = None
         all_audio = []
         current_time = 0.0
@@ -542,6 +566,149 @@ class VideoDubbingEngine:
 
         self._report_progress(100, "CosyVoice 音频合成完成")
         return temp_audio_path
+
+    def _prepare_cosyvoice_segments(self, segments: list) -> list:
+        """整理字幕片段，让 CosyVoice 正式配音更接近自然朗读。"""
+        normalized = []
+        for seg in segments:
+            text = self._normalize_tts_text(seg.get('text', ''))
+            if not text:
+                continue
+            normalized.append({**seg, 'text': text})
+
+        merged = self._merge_short_segments(normalized)
+        if len(merged) != len(segments):
+            self._log(f"CosyVoice 字幕片段优化: {len(segments)} -> {len(merged)} 段")
+        return merged
+
+    def _normalize_tts_text(self, text: str) -> str:
+        """清理字幕文本并补足自然朗读所需的停顿标点。"""
+        text = re.sub(r'<[^>]+>', '', text or '')
+        text = re.sub(r'\s+', ' ', text).strip()
+        text = text.replace('...', '……')
+        text = re.sub(r'([。！？；])\s+', r'\1 ', text)
+        if not text:
+            return ''
+        if re.search(r'[\u4e00-\u9fff]$', text) and not re.search(r'[。！？；……]$', text):
+            text += '。'
+        return text
+
+    def _merge_short_segments(self, segments: list, min_chars: int = 14, max_chars: int = 70, max_gap: float = 0.45) -> list:
+        """把过短、时间相邻的字幕合并成更像口语句群的小段。"""
+        merged = []
+        pending = None
+
+        for seg in segments:
+            if pending is None:
+                pending = dict(seg)
+                continue
+
+            gap = max(0.0, seg['start'] - pending['end'])
+            combined_text = f"{pending['text']} {seg['text']}".strip()
+            should_merge = (
+                len(pending['text']) < min_chars
+                and len(combined_text) <= max_chars
+                and gap <= max_gap
+            )
+
+            if should_merge:
+                pending['text'] = combined_text
+                pending['end'] = seg['end']
+                pending['duration'] = pending['end'] - pending['start']
+            else:
+                merged.append(pending)
+                pending = dict(seg)
+
+        if pending is not None:
+            merged.append(pending)
+        return merged
+
+    def _burn_selected_subtitles(self, task: DubbingTask, video_path: str) -> str:
+        """按用户选择把单语或双语字幕烧录到配音后的视频中。"""
+        try:
+            from .youtube_transcriber import embed_subtitles_to_video
+        except ImportError:
+            from src.youtube_transcriber import embed_subtitles_to_video
+
+        subtitle_path = None
+        if task.subtitle_burn_mode == 'bilingual':
+            subtitle_path = self._create_bilingual_ass(task)
+            if not subtitle_path:
+                self._log("双语字幕不可用，回退到单语字幕烧录")
+
+        if not subtitle_path:
+            subtitle_path = task.subtitle_path or task.translated_subtitle or task.generated_subtitle or task.source_subtitle
+
+        if not subtitle_path or not os.path.exists(subtitle_path):
+            self._log("未找到可烧录的字幕文件，跳过字幕烧录")
+            return video_path
+
+        self._report_progress(80, f"烧录字幕: {subtitle_path}")
+        burned_path = embed_subtitles_to_video(video_path, subtitle_path)
+        if burned_path and os.path.exists(burned_path):
+            self._log(f"带字幕配音视频已生成: {burned_path}")
+            return burned_path
+        self._log("字幕烧录失败，保留无字幕配音视频")
+        return video_path
+
+    def _create_bilingual_ass(self, task: DubbingTask) -> Optional[str]:
+        """用原字幕和译文字幕生成双语 ASS 文件。"""
+        source_path = task.source_subtitle or task.generated_subtitle
+        target_path = task.translated_subtitle or task.subtitle_path
+        if not source_path or not target_path:
+            return None
+        if not os.path.exists(source_path) or not os.path.exists(target_path):
+            return None
+        if os.path.abspath(source_path) == os.path.abspath(target_path):
+            return None
+
+        try:
+            from .chinese_tts import ChineseTTS as CTTS
+        except ImportError:
+            from src.chinese_tts import ChineseTTS as CTTS
+
+        parser = CTTS.__new__(CTTS)
+        source_segments = parser._parse_srt(source_path)
+        target_segments = parser._parse_srt(target_path)
+        if not source_segments or not target_segments:
+            return None
+
+        temp_dir = self._get_temp_dir()
+        ass_path = os.path.join(temp_dir, f"dubbing_bilingual_{self._get_timestamp()}.ass")
+
+        def ass_time(seconds: float) -> str:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            centis = int((seconds - int(seconds)) * 100)
+            return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
+
+        def escape(text: str) -> str:
+            return (text or '').replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}').replace('\n', '\\N')
+
+        pair_count = min(len(source_segments), len(target_segments))
+        with open(ass_path, 'w', encoding='utf-8') as f:
+            f.write("[Script Info]\n")
+            f.write("Title: VideoHub Dubbing Bilingual Subtitles\n")
+            f.write("ScriptType: v4.00+\n")
+            f.write("WrapStyle: 0\n")
+            f.write("ScaledBorderAndShadow: Yes\n\n")
+            f.write("[V4+ Styles]\n")
+            f.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
+            f.write("Style: Source, Arial, 11, &H00FFFFFF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 1, 0, 2, 20, 20, 42, 1\n")
+            f.write("Style: Target, Microsoft YaHei, 18, &H0000D7FF, &H000000FF, &H00000000, &H80000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 1.2, 0, 2, 20, 20, 16, 1\n\n")
+            f.write("[Events]\n")
+            f.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+            for idx in range(pair_count):
+                source = source_segments[idx]
+                target = target_segments[idx]
+                start = ass_time(target.get('start', source['start']))
+                end = ass_time(target.get('end', source['end']))
+                f.write(f"Dialogue: 0,{start},{end},Source,,0,0,0,,{escape(source.get('text', ''))}\n")
+                f.write(f"Dialogue: 1,{start},{end},Target,,0,0,0,,{escape(target.get('text', ''))}\n")
+
+        self._log(f"双语字幕已生成: {ass_path}")
+        return ass_path
 
     def _combine_video(
         self,

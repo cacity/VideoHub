@@ -86,8 +86,12 @@ class WorkerThread(QThread):
         cookies_file = self.params.get("cookies_file", None)
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
+        enable_translation_polish = self.params.get("enable_translation_polish", False)
+        os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
         prefer_native_subtitles = self.params.get("prefer_native_subtitles", True)
         show_translation_logs = self.params.get("show_translation_logs", True)
+        enable_translation_polish = self.params.get("enable_translation_polish", False)
+        os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
 
         # 重定向print输出到信号
         original_print = print
@@ -215,7 +219,7 @@ class WorkerThread(QThread):
                     stream, summary_dir, download_video, custom_prompt,
                     template_path, generate_subtitles, translate_to_chinese,
                     embed_subtitles, cookies_file, enable_transcription, generate_article,
-                    prefer_native_subtitles
+                    prefer_native_subtitles, enable_translation_polish
                 )
 
                 if results:
@@ -241,7 +245,7 @@ class WorkerThread(QThread):
                     stream, summary_dir, download_video, custom_prompt,
                     template_path, generate_subtitles, translate_to_chinese,
                     embed_subtitles, cookies_file, enable_transcription, generate_article,
-                    prefer_native_subtitles
+                    prefer_native_subtitles, enable_translation_polish
                 )
 
                 if result:
@@ -522,6 +526,8 @@ class WorkerThread(QThread):
         translate_to_chinese = self.params.get("translate_to_chinese", True)
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
+        enable_translation_polish = self.params.get("enable_translation_polish", False)
+        os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
 
         # 重定向print输出
         original_print = print
@@ -538,7 +544,8 @@ class WorkerThread(QThread):
             result = process_local_audio(
                 audio_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
-                generate_subtitles, translate_to_chinese, enable_transcription, generate_article
+                generate_subtitles, translate_to_chinese, enable_transcription, generate_article,
+                enable_translation_polish
             )
 
             if result:
@@ -576,6 +583,8 @@ class WorkerThread(QThread):
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
         source_language = self.params.get("source_language", None)
+        enable_translation_polish = self.params.get("enable_translation_polish", False)
+        os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
 
         # 重定向print输出
         original_print = print
@@ -593,7 +602,7 @@ class WorkerThread(QThread):
                 video_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, source_language
+                enable_transcription, generate_article, source_language, enable_translation_polish
             )
 
             if result:
@@ -631,6 +640,8 @@ class WorkerThread(QThread):
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
         source_language = self.params.get("source_language", None)
+        enable_translation_polish = self.params.get("enable_translation_polish", False)
+        os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
 
         # 重定向print输出
         original_print = print
@@ -648,7 +659,7 @@ class WorkerThread(QThread):
                 input_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, source_language
+                enable_transcription, generate_article, source_language, enable_translation_polish
             )
 
             if results:
@@ -762,7 +773,8 @@ class WorkerThread(QThread):
                 youtube_urls, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, download_video, custom_prompt,
                 template_path, generate_subtitles, translate_to_chinese,
-                embed_subtitles, cookies_file, enable_transcription, generate_article
+                embed_subtitles, cookies_file, enable_transcription, generate_article,
+                True, enable_translation_polish
             )
 
             # 统计成功和失败的数量
@@ -809,6 +821,8 @@ class WorkerThread(QThread):
         cosyvoice_mode = self.params.get("cosyvoice_mode", "sft")
         cosyvoice_speaker = self.params.get("cosyvoice_speaker", "中文女")
         cosyvoice_instruction = self.params.get("cosyvoice_instruction", "")
+        subtitle_burn_mode = self.params.get("subtitle_burn_mode", "none")
+        enable_translation_polish = self.params.get("enable_translation_polish", False)
         enable_transcription = self.params.get("enable_transcription", True)
         enable_translation = self.params.get("enable_translation", True)
         audio_only_mode = self.params.get("audio_only_mode", False)
@@ -865,6 +879,8 @@ class WorkerThread(QThread):
         if tts_backend == "cosyvoice":
             self.update_signal.emit(f"🔊 使用 CosyVoice TTS: {cosyvoice_mode}, speaker={cosyvoice_speaker}")
             self.update_signal.emit(f"   服务地址: {cosyvoice_url}")
+        if subtitle_burn_mode != "none":
+            self.update_signal.emit(f"📝 配音完成后烧录字幕: {subtitle_burn_mode}")
 
         # 创建配音任务
         task = DubbingTask(
@@ -879,6 +895,8 @@ class WorkerThread(QThread):
             cosyvoice_mode=cosyvoice_mode,
             cosyvoice_speaker=cosyvoice_speaker,
             cosyvoice_instruction=cosyvoice_instruction,
+            subtitle_burn_mode=subtitle_burn_mode,
+            enable_translation_polish=enable_translation_polish,
             enable_transcription=enable_transcription,
             enable_translation=enable_translation
         )
@@ -889,15 +907,17 @@ class WorkerThread(QThread):
             self.progress_signal.emit(percent)
 
         def step_callback(step_name, step_index):
+            total_steps = 6 if subtitle_burn_mode != "none" else 5
             step_names = {
                 'download': '📥 下载视频',
                 'transcribe': '📝 生成英文字幕',
                 'translate': '🌐 翻译中文字幕',
                 'tts': '🔊 合成中文音频',
-                'combine': '🎬 合成最终视频'
+                'combine': '🎬 合成最终视频',
+                'subtitle': '📝 烧录字幕'
             }
             display_name = step_names.get(step_name, step_name)
-            self.update_signal.emit(f"步骤 {step_index + 1}/5: {display_name}")
+            self.update_signal.emit(f"步骤 {step_index + 1}/{total_steps}: {display_name}")
 
         def log_callback(message):
             self.update_signal.emit(message)
