@@ -21,7 +21,7 @@ def build_downloader(output_dir=DOUYIN_DOWNLOADS_DIR, cookie=None):
     """创建下载器"""
     config = DouyinConfig()
     config.set("download_dir", output_dir)
-    config.set("save_metadata", True)
+    config.set("save_metadata", False)
     config.set("download_cover", True)
     config.set("download_music", False)
     if cookie:
@@ -179,7 +179,7 @@ def main():
 注意:
   - 主页批量下载通常需要提供有效 Cookie
   - 需要先启动 douyinVd 服务器: cd douyinVd && deno task dev
-  - 单视频下载默认尝试无水印版本，并保存 JSON 元数据
+  - 单视频下载默认尝试无水印版本，不保存 JSON 元数据
         """
     )
 

@@ -442,7 +442,7 @@ from youtube_transcriber import (
     log_downloaded_video, list_downloaded_videos, download_youtube_video,
     download_youtube_audio, extract_audio_from_video, transcribe_audio_to_text,
     transcribe_only, create_bilingual_subtitles, embed_subtitles_to_video,
-    process_local_audio, process_local_video, process_local_videos_batch, summarize_text, TextSummaryComposite,
+    process_local_audio, process_local_video, process_local_videos_batch, extract_audio_from_local_videos, summarize_text, TextSummaryComposite,
     check_cookies_file, process_youtube_video, show_download_history,
     process_youtube_videos_batch, process_local_text, create_template,
     list_templates, clean_markdown_formatting, load_template,
@@ -454,6 +454,7 @@ from paths_config import (
     WORKSPACE_DIR,
     VIDEOS_DIR,
     DOWNLOADS_DIR,
+    SONGS_DIR,
     SUBTITLES_DIR,
     TRANSCRIPTS_DIR,
     SUMMARIES_DIR,
@@ -828,6 +829,8 @@ class WorkerThread(QThread):
                 self.process_local_video()
             elif not self.stopped and self.task_type == "local_video_batch":
                 self.process_local_video_batch()
+            elif not self.stopped and self.task_type == "extract_audio":
+                self.process_extract_audio()
             elif not self.stopped and self.task_type == "local_text":
                 self.process_local_text()
             elif not self.stopped and self.task_type == "batch":
@@ -1439,7 +1442,44 @@ class WorkerThread(QThread):
             self.finished_signal.emit("", False)
         finally:
             builtins.print = original_print
-    
+
+    def process_extract_audio(self):
+        """从本地视频文件或目录批量提取音频"""
+        self.update_signal.emit("开始提取本地视频音频...")
+
+        input_path = self.params.get("input_path", "")
+        output_dir = self.params.get("output_dir", SONGS_DIR)
+        recursive = self.params.get("recursive", True)
+
+        original_print = print
+        def custom_print(*args, **kwargs):
+            text = " ".join(map(str, args))
+            self.update_signal.emit(text)
+            original_print(*args, **kwargs)
+
+        import builtins
+        builtins.print = custom_print
+
+        try:
+            results = extract_audio_from_local_videos(
+                input_path,
+                output_dir=output_dir,
+                recursive=recursive,
+            )
+
+            success_count = sum(1 for item in results if item.get("status") == "success")
+            if success_count > 0:
+                self.update_signal.emit(f"音频提取完成，成功 {success_count}/{len(results)} 个")
+                self.finished_signal.emit(output_dir, True)
+            else:
+                self.update_signal.emit("音频提取失败，没有成功生成音频文件")
+                self.finished_signal.emit("", False)
+        except Exception as e:
+            self.update_signal.emit(f"音频提取过程中出现错误: {str(e)}")
+            self.finished_signal.emit("", False)
+        finally:
+            builtins.print = original_print
+
     def process_local_text(self):
         """处理本地文本文件"""
         self.update_signal.emit("开始处理本地文本文件...")
@@ -2238,9 +2278,22 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.video_stop_button)
         button_layout.addWidget(self.video_idle_button)
         input_layout.addLayout(button_layout)
-        
+
+        extract_audio_group = QGroupBox("音频提取")
+        extract_audio_layout = QHBoxLayout(extract_audio_group)
+        self.video_extract_audio_label = QLabel(f"输出目录: {SONGS_DIR}")
+        self.video_extract_audio_button = QPushButton("提取音频到歌曲目录")
+        self.video_extract_audio_button.setMinimumHeight(36)
+        self.video_open_songs_dir_button = QPushButton("打开歌曲目录")
+        self.video_open_songs_dir_button.setMinimumHeight(36)
+        extract_audio_layout.addWidget(self.video_extract_audio_label)
+        extract_audio_layout.addStretch()
+        extract_audio_layout.addWidget(self.video_extract_audio_button)
+        extract_audio_layout.addWidget(self.video_open_songs_dir_button)
+        input_layout.addWidget(extract_audio_group)
+
         layout.addWidget(input_group)
-        
+
         # 创建输出区域
         output_group = QGroupBox("处理日志")
         output_layout = QVBoxLayout(output_group)
@@ -2256,7 +2309,9 @@ class MainWindow(QMainWindow):
         self.video_idle_button.clicked.connect(self.add_video_to_idle_queue)
         self.video_browse_button.clicked.connect(self.browse_video_path)
         self.video_mode_group.buttonClicked.connect(self.on_video_mode_changed)
-        
+        self.video_extract_audio_button.clicked.connect(self.extract_local_video_audio)
+        self.video_open_songs_dir_button.clicked.connect(lambda: self.open_directory("songs"))
+
         return tab
     
     def create_local_text_tab(self):
@@ -3163,7 +3218,7 @@ class MainWindow(QMainWindow):
         self.douyin_quality_combo.setCurrentText("高清")
         
         self.douyin_save_metadata_cb = QCheckBox("保存元数据")
-        self.douyin_save_metadata_cb.setChecked(True)
+        self.douyin_save_metadata_cb.setChecked(False)
         
         # 转录和摘要选项
         transcription_options_layout = QHBoxLayout()
@@ -3757,6 +3812,19 @@ class MainWindow(QMainWindow):
         videos_with_subtitles_layout.addWidget(videos_with_subtitles_open_btn)
         videos_with_subtitles_layout.addStretch()
         file_types_layout.addLayout(videos_with_subtitles_layout)
+
+        # 歌曲音频
+        songs_layout = QHBoxLayout()
+        self.cleanup_songs_cb = QCheckBox("歌曲音频 (songs/ 目录)")
+        self.cleanup_songs_cb.setChecked(False)  # 默认保留用户整理好的音频
+        songs_layout.addWidget(self.cleanup_songs_cb)
+        songs_open_btn = QPushButton("📁")
+        songs_open_btn.setFixedSize(30, 25)
+        songs_open_btn.setToolTip("打开 songs/ 目录")
+        songs_open_btn.clicked.connect(lambda: self.open_directory("songs"))
+        songs_layout.addWidget(songs_open_btn)
+        songs_layout.addStretch()
+        file_types_layout.addLayout(songs_layout)
         
         layout.addWidget(file_types_group)
         
@@ -3841,6 +3909,7 @@ class MainWindow(QMainWindow):
         self.cleanup_transcripts_cb.setChecked(True)
         self.cleanup_summaries_cb.setChecked(True)
         self.cleanup_videos_with_subtitles_cb.setChecked(True)
+        self.cleanup_songs_cb.setChecked(True)
     
     def select_none_cleanup_types(self):
         """全不选清理类型"""
@@ -3850,6 +3919,7 @@ class MainWindow(QMainWindow):
         self.cleanup_transcripts_cb.setChecked(False)
         self.cleanup_summaries_cb.setChecked(False)
         self.cleanup_videos_with_subtitles_cb.setChecked(False)
+        self.cleanup_songs_cb.setChecked(False)
     
     def select_common_cleanup_types(self):
         """常用清理选择（保留带字幕视频）"""
@@ -3859,6 +3929,7 @@ class MainWindow(QMainWindow):
         self.cleanup_transcripts_cb.setChecked(True)
         self.cleanup_summaries_cb.setChecked(True)
         self.cleanup_videos_with_subtitles_cb.setChecked(False)  # 保留带字幕的视频
+        self.cleanup_songs_cb.setChecked(False)  # 保留手动整理的歌曲音频
     
     def scan_cleanup_files(self):
         """扫描要清理的文件"""
@@ -3874,7 +3945,8 @@ class MainWindow(QMainWindow):
             "subtitles": ["*.srt", "*.vtt", "*.ass"],
             "transcripts": ["*.txt"],
             "summaries": ["*.md", "*.txt"],
-            "videos_with_subtitles": ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"]
+            "videos_with_subtitles": ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"],
+            "songs": ["*.mp3", "*.wav", "*.m4a", "*.aac", "*.ogg", "*.flac"]
         }
         
         stats = []
@@ -3937,6 +4009,8 @@ class MainWindow(QMainWindow):
             cleanup_types.append(("summaries", ["*.md", "*.txt"]))
         if self.cleanup_videos_with_subtitles_cb.isChecked():
             cleanup_types.append(("videos_with_subtitles", ["*.mp4", "*.avi", "*.mov", "*.webm", "*.mkv", "*.flv"]))
+        if self.cleanup_songs_cb.isChecked():
+            cleanup_types.append(("songs", ["*.mp3", "*.wav", "*.m4a", "*.aac", "*.ogg", "*.flac"]))
         
         if not cleanup_types:
             QMessageBox.warning(self, "清理错误", "请至少选择一种文件类型进行清理")
@@ -4899,6 +4973,37 @@ class MainWindow(QMainWindow):
         self.worker_thread.update_signal.connect(self.update_video_output)
         self.worker_thread.finished_signal.connect(self.on_video_finished)
         self.worker_thread.start()
+
+    def extract_local_video_audio(self):
+        """从本地视频文件或目录提取音频到歌曲目录"""
+        video_path = self.video_path_input.text().strip()
+        if not video_path or not os.path.exists(video_path):
+            if self.video_single_mode_radio.isChecked():
+                QMessageBox.warning(self, "输入错误", "请选择有效的本地视频文件")
+            else:
+                QMessageBox.warning(self, "输入错误", "请选择有效的包含视频文件的目录")
+            return
+
+        os.makedirs(SONGS_DIR, exist_ok=True)
+
+        self.video_output_text.clear()
+        self.video_output_text.append(f"准备提取音频到歌曲目录: {SONGS_DIR}")
+
+        self.video_process_button.setEnabled(False)
+        self.video_extract_audio_button.setEnabled(False)
+        self.video_extract_audio_button.setText("提取中...")
+        self.video_stop_button.setEnabled(True)
+
+        params = {
+            "input_path": video_path,
+            "output_dir": SONGS_DIR,
+            "recursive": self.video_batch_mode_radio.isChecked(),
+        }
+
+        self.worker_thread = WorkerThread("extract_audio", params)
+        self.worker_thread.update_signal.connect(self.update_video_output)
+        self.worker_thread.finished_signal.connect(self.on_video_finished)
+        self.worker_thread.start()
     
     def update_video_output(self, text):
         """更新视频输出文本"""
@@ -4913,9 +5018,24 @@ class MainWindow(QMainWindow):
         # 恢复按钮状态
         self.video_process_button.setEnabled(True)
         self.video_process_button.setText("开始处理")
+        if hasattr(self, "video_extract_audio_button"):
+            self.video_extract_audio_button.setEnabled(True)
+            self.video_extract_audio_button.setText("提取音频到歌曲目录")
         self.video_stop_button.setEnabled(False)
-        
+
         if success:
+            if result_path and os.path.isdir(result_path):
+                self.statusBar.showMessage(f"处理完成! 结果保存在: {result_path}")
+                reply = QMessageBox.question(
+                    self, "处理完成",
+                    f"处理已完成，结果保存在:\n{result_path}\n\n是否打开该目录?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(result_path))
+                return
+
             # 检查是否为批量处理模式
             is_batch_mode = hasattr(self, 'video_batch_mode_radio') and self.video_batch_mode_radio.isChecked()
             

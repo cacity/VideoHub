@@ -44,6 +44,8 @@ class WorkerThread(QThread):
                 self.process_local_video()
             elif not self.stopped and self.task_type == "local_video_batch":
                 self.process_local_video_batch()
+            elif not self.stopped and self.task_type == "extract_audio":
+                self.process_extract_audio()
             elif not self.stopped and self.task_type == "local_text":
                 self.process_local_text()
             elif not self.stopped and self.task_type == "batch":
@@ -682,6 +684,46 @@ class WorkerThread(QThread):
                 self.finished_signal.emit("", False)
         except Exception as e:
             self.update_signal.emit(f"批量处理过程中出现错误: {str(e)}")
+            self.finished_signal.emit("", False)
+        finally:
+            builtins.print = original_print
+
+    def process_extract_audio(self):
+        """从本地视频文件或目录批量提取音频"""
+        from youtube_transcriber import extract_audio_from_local_videos
+        from paths_config import SONGS_DIR
+
+        self.update_signal.emit("开始提取本地视频音频...")
+
+        input_path = self.params.get("input_path", "")
+        output_dir = self.params.get("output_dir", SONGS_DIR)
+        recursive = self.params.get("recursive", True)
+
+        original_print = print
+        def custom_print(*args, **kwargs):
+            text = " ".join(map(str, args))
+            self.update_signal.emit(text)
+            original_print(*args, **kwargs)
+
+        import builtins
+        builtins.print = custom_print
+
+        try:
+            results = extract_audio_from_local_videos(
+                input_path,
+                output_dir=output_dir,
+                recursive=recursive,
+            )
+
+            success_count = sum(1 for item in results if item.get("status") == "success")
+            if success_count > 0:
+                self.update_signal.emit(f"音频提取完成，成功 {success_count}/{len(results)} 个")
+                self.finished_signal.emit(output_dir, True)
+            else:
+                self.update_signal.emit("音频提取失败，没有成功生成音频文件")
+                self.finished_signal.emit("", False)
+        except Exception as e:
+            self.update_signal.emit(f"音频提取过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
             builtins.print = original_print

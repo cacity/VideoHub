@@ -140,11 +140,12 @@ class DouyinVdExtractor:
             print(f"标准化视频信息失败: {e}")
             return video_info.to_dict() if hasattr(video_info, 'to_dict') else {}
     
-    def download_video(self, douyin_url: str, download_dir: str = DOUYIN_DOWNLOADS_DIR) -> Dict[str, Any]:
+    def download_video(self, douyin_url: str, download_dir: str = DOUYIN_DOWNLOADS_DIR, save_metadata: bool = False) -> Dict[str, Any]:
         """
         下载抖音视频
         :param douyin_url: 抖音分享链接
         :param download_dir: 下载目录
+        :param save_metadata: 是否保存 JSON 元数据
         :return: 下载结果
         """
         try:
@@ -198,30 +199,32 @@ class DouyinVdExtractor:
                             print(f"\r下载进度: {progress:.1f}%", end="", flush=True)
             
             print(f"\n视频下载完成: {filepath}")
-            
-            # 保存元数据
-            metadata_path = os.path.join(download_dir, f"{base_filename}_metadata.json")
-            with open(metadata_path, 'w', encoding='utf-8') as f:
-                json.dump(video_info, f, ensure_ascii=False, indent=2)
-            
-            print(f"元数据保存完成: {metadata_path}")
-            
+
+            downloaded_files = [
+                {
+                    "type": "video",
+                    "path": filepath,
+                    "size": os.path.getsize(filepath),
+                    "is_no_watermark": True
+                }
+            ]
+
+            if save_metadata:
+                metadata_path = os.path.join(download_dir, f"{base_filename}_metadata.json")
+                with open(metadata_path, 'w', encoding='utf-8') as f:
+                    json.dump(video_info, f, ensure_ascii=False, indent=2)
+
+                print(f"元数据保存完成: {metadata_path}")
+                downloaded_files.append({
+                    "type": "metadata",
+                    "path": metadata_path,
+                    "size": os.path.getsize(metadata_path)
+                })
+
             return {
                 "success": True,
                 "video_info": video_info,
-                "downloaded_files": [
-                    {
-                        "type": "video",
-                        "path": filepath,
-                        "size": os.path.getsize(filepath),
-                        "is_no_watermark": True
-                    },
-                    {
-                        "type": "metadata",
-                        "path": metadata_path,
-                        "size": os.path.getsize(metadata_path)
-                    }
-                ],
+                "downloaded_files": downloaded_files,
                 "errors": []
             }
             

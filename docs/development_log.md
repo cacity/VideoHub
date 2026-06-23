@@ -23,6 +23,77 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-06-23：本地视频增加歌曲音频提取
+
+### 更新范围
+
+- 分支：`main`
+- 主要文件：
+  - `main.py`
+  - `src/youtube_transcriber.py`
+  - `src/gui/workers/worker_thread.py`
+  - `src/paths_config.py`
+
+### 本次更新内容
+
+本次在“本地视频”功能中增加独立的音频提取能力，用于把下载好的歌曲视频、MV 或本地视频批量转成音频文件。
+
+主要内容包括：
+
+- 本地视频页新增“音频提取”区域。
+- 支持单个视频文件提取音频。
+- 支持目录模式扫描并提取目录中的所有视频音频。
+- 音频统一输出到 `workspace/songs/`，方便和 YouTube 音频、临时下载音频区分。
+- 提取完成后直接提示是否打开歌曲目录。
+- `songs/` 加入统一目录映射和清理工具，但默认不清理，避免误删用户整理好的歌曲音频。
+
+### 设计思路
+
+这个功能不复用原来的“转录/总结”按钮，因为用户提取歌曲音频时通常不需要 Whisper 转写、字幕生成或文章总结。单独提供“提取音频到歌曲目录”按钮，可以让本地视频页同时保留知识处理能力和轻量音频整理能力。
+
+输出目录选择 `workspace/songs/`，而不是继续写入 `workspace/youtube_audio/` 或通用下载目录，原因是歌曲音频属于用户后续可能长期保留和整理的文件，应该从目录上就能看出用途。
+
+### 实现方式
+
+- `src/paths_config.py`
+  - 新增 `SONGS_DIR` 和 `LOCAL_SONGS_DIR`。
+  - 在 `DIRECTORY_MAP` 中注册 `songs` 和 `local_songs`。
+
+- `src/youtube_transcriber.py`
+  - 新增 `extract_audio_from_local_videos()`。
+  - 复用现有 `extract_audio_from_video()` 和 FFmpeg 提取逻辑。
+  - 目录模式按视频相对路径生成音频文件名，减少不同子目录同名视频互相覆盖的问题。
+
+- `main.py`
+  - 本地视频页新增“提取音频到歌曲目录”和“打开歌曲目录”按钮。
+  - 新增 `extract_local_video_audio()`，把单文件或目录提取任务交给后台线程执行。
+  - 完成回调识别目录结果，提示打开输出目录。
+  - 清理工具增加 `songs/` 入口，默认不勾选。
+
+- `src/gui/workers/worker_thread.py`
+  - 为拆分后的 WorkerThread 同步增加 `extract_audio` 任务类型。
+
+### 验证结果
+
+本次实现后需要执行：
+
+```bash
+python -m py_compile main.py src/youtube_transcriber.py src/paths_config.py src/gui/workers/worker_thread.py
+git diff --check
+```
+
+手动验证建议：
+
+- 在“本地视频”页选择单个 MP4/WebM 文件，点击“提取音频到歌曲目录”，确认 `workspace/songs/` 生成 MP3。
+- 切换到目录模式，选择包含多个视频的目录，确认可以批量生成音频。
+- 提取完成后确认弹窗打开的是 `workspace/songs/` 目录。
+- 在清理工具中确认 `songs/` 可扫描，但“常用选择”不默认勾选。
+
+### 遗留问题和后续计划
+
+- 当前音频统一输出 MP3，后续可以增加输出格式选择，例如 MP3、WAV、FLAC。
+- 目录模式目前按支持的视频扩展名扫描，后续可以允许用户自定义扩展名或排除子目录。
+
 ## 2026-06-18：网页版官网和在线试用工具规划落地
 
 ### 更新范围
@@ -381,3 +452,72 @@ python -m py_compile main.py src\youtube_transcriber.py src\dubbing_engine.py sr
 - 润色强度当前固定为轻度，后续可以增加“轻度 / 标准 / 较强”选项。
 - 当前主要面向中文字幕润色，其他目标语言暂不启用。
 - 后续可以增加术语表输入，例如固定 `agent=智能体`、`prompt=提示词`。
+
+## 2026-06-22：抖音下载默认不生成 JSON 元数据
+
+### 更新内容
+
+- 抖音下载默认不再保存 `_metadata.json` 文件。
+- GUI 中“保存元数据”复选框默认改为未勾选。
+- CLI 默认关闭 `save_metadata`。
+- `DouyinVdExtractor.download_video()` 增加 `save_metadata` 参数，只有显式开启时才写入 JSON。
+
+### 设计思路
+
+普通用户下载抖音视频时主要需要视频文件，JSON 元数据会让下载目录变得杂乱，也容易让用户误以为产生了额外无用文件。因此把元数据保存改为可选能力，默认保持目录干净。
+
+### 实现方式
+
+主要涉及文件：
+
+- `main.py`
+  - 抖音下载页“保存元数据”默认取消勾选。
+
+- `src/douyin/config.py`
+  - 默认配置 `save_metadata` 改为 `False`。
+
+- `src/douyin/downloader.py`
+  - 调用 `DouyinVdExtractor.download_video()` 时传入当前配置的 `save_metadata`。
+
+- `src/douyin/douyinvd_extractor.py`
+  - 只有 `save_metadata=True` 时才保存 `_metadata.json`，并把 metadata 文件加入下载结果列表。
+
+- `src/douyin_cli.py`
+  - CLI 默认不保存 JSON 元数据，并更新帮助说明。
+
+### 验证结果
+
+已执行：
+
+```bash
+python -m py_compile main.py src\douyin_cli.py src\douyin\config.py src\douyin\downloader.py src\douyin\douyinvd_extractor.py src\gui\workers\douyin_threads.py
+git diff --check
+```
+
+结果：检查通过。
+
+## 2026-06-22：新增 VideoHub 项目宣传文章
+
+### 更新内容
+
+- 新增 `docs/videohub_promotion_article.md`。
+- 文章面向公众号、项目推广和普通用户阅读场景。
+- 重点介绍 VideoHub 如何把视频变成字幕、笔记、摘要、配音和可复用资料。
+- 覆盖 YouTube/本地音视频处理、字幕翻译、DeepSeek 润色、AI 配音、闲时队列、手机本地网页下载等当前核心能力。
+
+### 设计思路
+
+宣传文章不按 README 的说明书结构罗列功能，而是围绕用户场景展开：长视频不好检索、英文视频理解成本高、批量处理耗时间、手机无法直接使用桌面工具等。每个场景对应一个 VideoHub 的能力，让读者先理解为什么需要这个工具，再理解怎么使用。
+
+### 实现方式
+
+主要涉及文件：
+
+- `docs/videohub_promotion_article.md`
+  - 开头用收藏视频难复用的场景引入。
+  - 中间按使用场景介绍功能。
+  - 结尾说明技术实现、使用边界和项目地址。
+
+### 验证结果
+
+已确认文档已创建，内容为 Markdown 格式，可直接用于公众号、博客或项目介绍页二次编辑。

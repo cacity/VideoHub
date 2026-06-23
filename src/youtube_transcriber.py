@@ -27,6 +27,7 @@ from paths_config import (
     WORKSPACE_DIR,
     VIDEOS_DIR,
     DOWNLOADS_DIR,
+    SONGS_DIR,
     SUBTITLES_DIR,
     TRANSCRIPTS_DIR,
     SUMMARIES_DIR,
@@ -2047,11 +2048,12 @@ def download_youtube_audio(youtube_url, output_dir=DOWNLOADS_DIR, cookies_file=N
     except Exception as e:
         raise Exception(f"下载音频失败: {str(e)}")
 
-def extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR):
+def extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR, output_stem=None):
     """
     从视频文件中提取音频
     :param video_path: 视频文件路径
     :param output_dir: 输出目录，默认为downloads
+    :param output_stem: 可选输出文件名 stem，用于批量目录提取时避免同名覆盖
     :return: 提取的音频文件路径
     """
     try:
@@ -2059,7 +2061,7 @@ def extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR):
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         
         # 获取视频文件名（不含扩展名）
-        video_name = Path(video_path).stem
+        video_name = output_stem if output_stem else Path(video_path).stem
         sanitized_name = sanitize_filename(video_name)
         
         # 设置输出音频路径
@@ -3375,6 +3377,94 @@ def process_local_videos_batch(input_path, model=None, api_key=None, base_url=No
                 print(f"✗ {os.path.basename(result['video_file'])} ({error_msg})")
     
     return results
+
+
+def extract_audio_from_local_videos(input_path, output_dir=SONGS_DIR, recursive=True):
+    """
+    从单个本地视频或目录中的所有视频提取音频到指定目录。
+    :param input_path: 视频文件路径或目录路径
+    :param output_dir: 音频输出目录，默认 workspace/songs
+    :param recursive: 目录模式下是否递归扫描子目录
+    :return: 处理结果列表
+    """
+    video_extensions = {
+        ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm",
+        ".m4v", ".3gp", ".mpg", ".mpeg", ".ts", ".mts", ".m2ts"
+    }
+
+    if not input_path or not os.path.exists(input_path):
+        print(f"错误：路径不存在: {input_path}")
+        return []
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    video_files = []
+    input_path_obj = Path(input_path)
+    if input_path_obj.is_file():
+        if input_path_obj.suffix.lower() in video_extensions:
+            video_files.append(str(input_path_obj))
+        else:
+            print(f"错误：文件不是支持的视频格式: {input_path}")
+            return []
+    else:
+        print(f"扫描目录中的视频文件: {input_path}")
+        iterator = input_path_obj.rglob("*") if recursive else input_path_obj.glob("*")
+        for path in iterator:
+            if path.is_file() and path.suffix.lower() in video_extensions:
+                video_files.append(str(path))
+
+    video_files = sorted(set(video_files))
+    if not video_files:
+        print(f"未找到可提取音频的视频文件: {input_path}")
+        return []
+
+    print(f"找到 {len(video_files)} 个视频文件，开始提取音频")
+    print(f"输出目录: {output_dir}")
+
+    results = []
+    success_count = 0
+    failed_count = 0
+
+    for index, video_file in enumerate(video_files, start=1):
+        try:
+            print(f"\n[{index}/{len(video_files)}] 提取音频: {os.path.basename(video_file)}")
+            output_stem = None
+            if input_path_obj.is_dir():
+                try:
+                    relative_stem = Path(video_file).relative_to(input_path_obj).with_suffix("")
+                    output_stem = "_".join(relative_stem.parts)
+                except ValueError:
+                    output_stem = Path(video_file).stem
+
+            audio_path = extract_audio_from_video(
+                video_file,
+                output_dir=output_dir,
+                output_stem=output_stem,
+            )
+            results.append({
+                "video_file": video_file,
+                "audio_path": audio_path,
+                "status": "success",
+            })
+            success_count += 1
+            print(f"音频提取成功: {audio_path}")
+        except Exception as e:
+            failed_count += 1
+            error = str(e)
+            results.append({
+                "video_file": video_file,
+                "audio_path": None,
+                "status": "failed",
+                "error": error,
+            })
+            print(f"音频提取失败: {os.path.basename(video_file)} - {error}")
+
+    print("\n音频提取完成")
+    print(f"成功: {success_count} 个")
+    print(f"失败: {failed_count} 个")
+    print(f"输出目录: {output_dir}")
+    return results
+
 
 def summarize_text(text_path, model=None, api_key=None, base_url=None, stream=False, output_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None):
     """

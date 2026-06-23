@@ -60,7 +60,7 @@ class DouyinConfig:
         "filter_ads": True,
         
         # 输出设置
-        "save_metadata": True,
+        "save_metadata": False,
         "metadata_format": "json",
         "log_level": "INFO",
         

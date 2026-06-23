@@ -382,7 +382,11 @@ class DouyinDownloader:
             
             # 使用 douyinVd 下载
             download_dir = self.config.get("download_dir")
-            result = self.douyinvd_extractor.download_video(url, download_dir)
+            result = self.douyinvd_extractor.download_video(
+                url,
+                download_dir,
+                save_metadata=self.config.get("save_metadata", False),
+            )
             
             if result.get("success"):
                 print("douyinVd 下载成功")
