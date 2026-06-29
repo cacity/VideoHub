@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import socket
 import sys
 import threading
 import time
@@ -23,6 +24,7 @@ os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
 import torch
 import torchaudio
+import onnxruntime
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -43,6 +45,7 @@ class ServiceConfig:
     instruct_model_dir: Path = Path(os.getenv("COSYVOICE_INSTRUCT_MODEL_DIR", DEFAULT_INSTRUCT_MODEL_DIR))
     output_dir: Path = Path(os.getenv("COSYVOICE_OUTPUT_DIR", DEFAULT_OUTPUT_DIR))
     cosyvoice_repo_path: str = os.getenv("COSYVOICE_REPO_PATH", "")
+    fp16: bool = os.getenv("COSYVOICE_FP16", "0").lower() in {"1", "true", "yes", "on"}
 
 
 class ModelSlot:
@@ -57,6 +60,10 @@ class CosyVoiceState:
         self.zero_shot = ModelSlot()
         self.instruct = ModelSlot()
         self.load_wav: Callable[[str, int], Any] | None = None
+        self.device: str = "cuda" if torch.cuda.is_available() else "cpu"
+        self.torch_cuda_available: bool = torch.cuda.is_available()
+        self.torch_cuda_device_name: str | None = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
+        self.onnxruntime_providers: list[str] = onnxruntime.get_available_providers()
 
 
 STATE = CosyVoiceState()
@@ -122,9 +129,25 @@ def _load_models() -> None:
     zero_shot_dir = _require_model_dir(ServiceConfig.zero_shot_model_dir, "CosyVoice-300M")
     instruct_dir = _require_model_dir(ServiceConfig.instruct_model_dir, "CosyVoice-300M-Instruct")
 
-    STATE.sft.model = CosyVoice(str(sft_dir))
-    STATE.zero_shot.model = CosyVoice(str(zero_shot_dir))
-    STATE.instruct.model = CosyVoice(str(instruct_dir))
+    if ServiceConfig.fp16 and not torch.cuda.is_available():
+        raise RuntimeError("COSYVOICE_FP16=1 需要可用的 CUDA GPU")
+
+    print(
+        "CosyVoice device:",
+        STATE.device,
+        "| torch cuda:",
+        STATE.torch_cuda_available,
+        STATE.torch_cuda_device_name or "",
+        "| onnxruntime providers:",
+        STATE.onnxruntime_providers,
+        "| fp16:",
+        ServiceConfig.fp16,
+        flush=True,
+    )
+
+    STATE.sft.model = CosyVoice(str(sft_dir), fp16=ServiceConfig.fp16)
+    STATE.zero_shot.model = CosyVoice(str(zero_shot_dir), fp16=ServiceConfig.fp16)
+    STATE.instruct.model = CosyVoice(str(instruct_dir), fp16=ServiceConfig.fp16)
     STATE.load_wav = load_wav
 
 
@@ -155,6 +178,16 @@ def health() -> dict[str, Any]:
             "sft": STATE.sft.model is not None,
             "zero_shot": STATE.zero_shot.model is not None,
             "instruct": STATE.instruct.model is not None,
+        },
+        "runtime": {
+            "device": STATE.device,
+            "torch_version": torch.__version__,
+            "torch_cuda_available": STATE.torch_cuda_available,
+            "torch_cuda_version": torch.version.cuda,
+            "torch_cuda_device_name": STATE.torch_cuda_device_name,
+            "onnxruntime_providers": STATE.onnxruntime_providers,
+            "onnxruntime_cuda_available": "CUDAExecutionProvider" in STATE.onnxruntime_providers,
+            "fp16": ServiceConfig.fp16,
         },
         "output_dir": str(ServiceConfig.output_dir.resolve()),
     }
@@ -388,9 +421,26 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _port_is_available(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
 def main() -> None:
     args = parse_args()
     import uvicorn
+
+    if not _port_is_available(args.host, args.port):
+        print(
+            f"CosyVoice TTS service already appears to be running at http://{args.host}:{args.port}. "
+            "Reuse the existing service, or stop it before starting a new one.",
+            file=sys.stderr,
+        )
+        raise SystemExit(0)
 
     uvicorn.run("tts_service:app", host=args.host, port=args.port)
 
