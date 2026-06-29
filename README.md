@@ -370,6 +370,22 @@ VideoHub/
 | 抖音      | ✅ 支持     | ✅ 高质量 | ✅ 转录生成 | 视场景而定   | 智能分享识别 |
 | Bilibili  | ✅ 支持     | ✅ 支持   | ✅ 转录生成 | 部分内容需要 | 弹幕处理     |
 
+### X/Twitter 来源整理
+
+VideoHub 处理的是已经确认的公开 X/Twitter 视频链接。如果在加入
+VideoHub 队列前先用 agent 收集素材，请把 agent 限定为来源发现步骤。
+例如，OpenClaw 中的 TweetClaw 可以搜索公开推文、回复、用户帖子、监控结果
+和媒体引用，然后把人工审核过的来源包交给 VideoHub：
+
+- 规范的 `https://x.com/<handle>/status/<id>` 链接
+- 公开文本或已批准摘录
+- 作者 handle 和采集时间
+- 媒体说明和授权边界
+
+不要把 X Cookie、浏览器配置、会话 token、私信或 API key 写入 VideoHub
+提示词、队列文件或导出的摘要。请先确认自己有权处理该内容，再使用
+VideoHub 的下载、转写、字幕和摘要工作流。
+
 
 
 ## 🤝 贡献
