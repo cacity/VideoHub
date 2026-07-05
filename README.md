@@ -4,7 +4,7 @@
 
 简体中文  | [English](./README_en.md)
 
-这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili**、寇享/koushare 等多平台视频内容的智能处理。提供媒体导入与处理、语音转录、双语字幕生成、**AI 配音**、内容摘要等完整工作流，并配备闲时调度、批量处理、Claude Code Skills 等高级功能。
+这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等多平台视频内容的智能处理。提供媒体导入与处理、语音转录、双语字幕生成、**AI 配音**、内容摘要等完整工作流，并配备闲时调度、批量处理、Claude Code Skills 等高级功能。
 
 ## ✨ 加入讨论群
 
@@ -14,7 +14,7 @@
 
 ### 🎬 多平台视频处理
 
-- **🎥 平台支持**: YouTube、Twitter/X、抖音、Bilibili 、寇享/koushare等主流视频平台
+- **🎥 平台支持**: YouTube、Twitter/X、抖音、Bilibili 等主流视频平台
 - **智能处理**: 支持视频/音频导入与本地处理，可选择完整视频或仅音频模式
 - **精准转录**: 基于 OpenAI Whisper 的高质量语音转录技术
 - **多格式字幕**: 生成 .srt、.vtt、.ass 等多种格式的双语字幕文件
@@ -162,7 +162,6 @@ python tts_service.py --host 127.0.0.1 --port 8877
 | `videohub`           | 通用开发辅助     |
 | `videohub-youtube`   | YouTube 处理流程 |
 | `videohub-douyin`    | 抖音处理流程     |
-| `videohub-koushare`  | 寇享平台集成     |
 | `videohub-queue`     | 闲时队列管理     |
 | `videohub-live`      | 直播录制配置     |
 | `videohub-ffmpeg`    | FFmpeg 操作      |

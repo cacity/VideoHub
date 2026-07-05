@@ -12,7 +12,7 @@ It is designed for users who want to turn online or local media into reusable as
 
 | Feature | Description |
 | --- | --- |
-| Multi-platform media processing | Import and process content from YouTube, Twitter/X, Douyin, Bilibili, Koushare, and more. |
+| Multi-platform media processing | Import and process content from YouTube, Twitter/X, Douyin, Bilibili, and more. |
 | Audio / video workflows | Save full video or audio-only output depending on the task. |
 | Whisper transcription | Transcribe local or online media using OpenAI Whisper. |
 | Bilingual subtitles | Generate `.srt`, `.vtt`, and `.ass` subtitles, with optional translation. |
@@ -85,7 +85,6 @@ OPENAI_API_KEY=your_openai_key
 OPENAI_BASE_URL=
 OPENAI_MODEL=
 DEEPSEEK_API_KEY=
-KOUSHARE_ACCESS_TOKEN=
 ```
 
 You can also configure many options from the GUI settings page instead of editing `.env` manually.
@@ -176,23 +175,6 @@ Notes:
 - It expects the required Douyin backend/service to be available.
 - User-profile batch download is not implemented in the current backend.
 
-## Koushare Support
-
-VideoHub includes dedicated Koushare support.
-
-Current behavior:
-
-- Login/token logic lives in the GUI and in `src/koushare_downloader.py`
-- `Authorization` uses the raw token value, **not** `Bearer <token>`
-- Higher-quality playback (such as FHD) may require a valid login token
-
-Recommended usage:
-
-- Open the desktop app
-- Go to the settings tab
-- Log in with your Koushare account or paste an existing token
-- Then process the target Koushare URL through the standard workflow
-
 ## AI Dubbing
 
 VideoHub supports AI-powered Chinese voice dubbing for videos. This feature transforms your original video content into Chinese-narrated versions automatically.
@@ -228,7 +210,6 @@ This project includes Claude Code skill integrations for enhanced development wo
 | `videohub` | General VideoHub development assistance |
 | `videohub-youtube` | YouTube processing workflows |
 | `videohub-douyin` | Douyin processing workflows |
-| `videohub-koushare` | Koushare platform integration |
 | `videohub-queue` | Idle queue management |
 | `videohub-live` | Live recording configuration |
 | `videohub-ffmpeg` | FFmpeg operations |
@@ -323,7 +304,6 @@ VideoHub/
 │   ├── douyin_cli.py
 │   ├── ffmpeg_config_cli.py
 │   ├── api_server.py
-│   ├── koushare_downloader.py
 │   ├── live_recorder_adapter.py
 │   └── subtitle_merger.py
 ├── chrome_extension/
@@ -342,7 +322,6 @@ VideoHub/
 | Twitter / X | Yes | Yes | Yes | Login/cookies may help on restricted content |
 | Douyin | Yes | Yes | Yes | Single-video workflow is the main supported path |
 | Bilibili | Yes | Yes | Yes | Uses the shared media-processing pipeline |
-| Koushare | Yes | Yes | Yes | Login token may be required for higher quality |
 
 ## Typical Scenarios
 
