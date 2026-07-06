@@ -521,3 +521,53 @@ git diff --check
 ### 验证结果
 
 已确认文档已创建，内容为 Markdown 格式，可直接用于公众号、博客或项目介绍页二次编辑。
+## 2026-07-06：字幕翻译备用方案、多目标语言和项目 Skills 同步
+
+### 更新内容
+
+- 字幕翻译默认仍使用 Google Translate；当 Google 返回 429、非 200 响应或网络异常时，自动尝试 DeepSeek/OpenAI 备用翻译。
+- YouTube、本地音频、本地视频、批处理和闲时队列流程增加 `target_language` 参数，默认 `zh-CN`，支持 `zh-CN`、`zh-TW`、`en`、`ja`、`ko`、`ru`、`fr`、`de`、`es`、`it`、`pt`、`ar`。
+- GUI 主流程增加目标语言下拉框，复用现有字幕翻译和字幕烧录逻辑。
+- DeepSeek 字幕润色限定为中文目标语言，避免非中文字幕被中文润色逻辑处理。
+- 同步更新 `.agents/skills/` 下 VideoHub 项目级 skills，修正过期入口、直播录制状态、抖音主页下载说明、字幕烧录入口和队列默认行为。
+- README / README_en 增加项目级 skills 介绍，说明 `.agents/skills/` 的用途、适用场景和主要复用入口。
+
+### 设计思路
+
+Google 翻译失败时原逻辑会直接返回原文，外层无法判断失败，也无法触发备用方案。本次改为在主翻译入口中使用可抛错的 Google 调用模式，捕获失败后再走 DeepSeek/OpenAI，并保留大模型翻译失败时回退 Google 的既有路径。
+
+目标语言继续使用旧参数 `translate_to_chinese` 作为“是否翻译字幕”的兼容开关，新增加 `target_language`，避免破坏已有队列、CLI 和 GUI 调用。
+
+### 实现方式
+
+主要涉及文件：
+- `src/youtube_transcriber.py`
+  - 增加目标语言映射、语言族判断和 Google -> DeepSeek/OpenAI fallback。
+  - `transcribe_audio_unified()`、`create_bilingual_subtitles()`、YouTube/本地音视频/批量处理入口透传 `target_language`。
+  - CLI 增加 `--target-language`。
+- `main.py`
+  - YouTube、本地音频、本地视频、批处理页面增加目标语言下拉框。
+  - WorkerThread 和闲时队列参数同步透传 `target_language`。
+- `src/gui/workers/worker_thread.py`
+  - 模块化 WorkerThread 同步目标语言参数。
+- `.agents/skills/*/SKILL.md`
+  - 同步当前项目入口、功能边界和最新字幕翻译/字幕烧录行为。
+- `README.md`、`README_en.md`
+  - 增加项目级 skills 说明，并修正英文 README 中过期限制描述。
+
+### 验证结果
+
+已执行：
+
+```bash
+python -m py_compile main.py src\youtube_transcriber.py src\gui\workers\worker_thread.py
+git diff --check -- README.md README_en.md .agents/skills
+```
+
+另外通过 monkeypatch smoke test 模拟 Google 429，确认 `translate_text()` 会进入 DeepSeek/OpenAI fallback 分支。
+
+### 遗留问题
+
+- DeepSeek/OpenAI 备用翻译依赖对应 API key；未配置时仍会保留原文并输出日志。
+- 非中文目标语言暂不执行 DeepSeek 润色。
+- `docs/videohub_promotion_article.md` 当前仍是未跟踪文件，本次提交不纳入。

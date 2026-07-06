@@ -39,6 +39,11 @@ curl -X DELETE http://127.0.0.1:8765/api/queue/clear
 - `url`
 - `title`
 
+## 当前任务默认值
+- `src/api_server.py` 会把扩展请求转换成闲时任务，默认生成字幕、嵌入字幕，但 `translate_to_chinese` 默认为 `False`。
+- 如果任务参数里没有 `target_language`，后端 worker 会使用默认 `zh-CN`。
+- 如需非中文字幕翻译，应在调用链中显式传入 `target_language`（例如 `ja`、`ko`、`ru`）。
+
 ## 注意
 - 这个 skill 不是独立后端，它依赖正在运行的 GUI 状态。
 - 队列实际执行仍由 `main.py` 中的 idle queue 定时逻辑负责。

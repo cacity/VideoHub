@@ -32,8 +32,8 @@ This project is intended for lawful and authorized use only. Please read [DISCLA
 
 ## Current Limitations
 
-- The live recording feature is currently **not fully functional** if the project root does not contain `live_recorder/`.
-- `src/douyin/downloader.py` still reports that **Douyin user-profile batch download is not implemented**.
+- Live recording availability still depends on runtime imports, FFmpeg availability, and the target platform parser.
+- Douyin user-profile download has an entry point, but usually requires a valid Cookie and optional dependencies; verify with a real run before relying on it.
 - Some live platform detection branches in `src/live_recorder_adapter.py` are incomplete.
 - Parts of the application are still centered around a large single-file GUI controller in `main.py`.
 
@@ -201,23 +201,30 @@ VideoHub supports AI-powered Chinese voice dubbing for videos. This feature tran
 
 ## Claude Code Skills
 
-This project includes Claude Code skill integrations for enhanced development workflows.
+This repository includes project-level skills under `.agents/skills/`. They are intended for Codex, Claude Code, and similar coding agents. They are not runtime dependencies for VideoHub; they document the current project entry points, routing rules, and implementation boundaries so agents can reuse existing GUI/CLI code instead of inventing parallel workflows.
 
 ### Available skills
 
-| Skill | Description |
+| Skill | When to use it | Main entry point |
 | --- | --- |
-| `videohub` | General VideoHub development assistance |
-| `videohub-youtube` | YouTube processing workflows |
-| `videohub-douyin` | Douyin processing workflows |
-| `videohub-queue` | Idle queue management |
-| `videohub-live` | Live recording configuration |
-| `videohub-ffmpeg` | FFmpeg operations |
-| `videohub-subtitles` | Subtitle generation and editing |
+| `videohub` | Router for deciding which VideoHub skill applies | `main.py`, `src/youtube_transcriber.py` |
+| `videohub-youtube` | YouTube, Twitter/X, Bilibili, local audio/video/text transcription, subtitles, translation, and summaries | `python src/youtube_transcriber.py --help` |
+| `videohub-douyin` | Douyin single-video and user-profile download workflows | `python src/douyin_cli.py <url>` |
+| `videohub-queue` | Idle queue, Chrome/Edge extension, and local API troubleshooting | `src/api_server.py`, `http://127.0.0.1:8765` |
+| `videohub-ffmpeg` | FFmpeg status, path, mode, download, and test workflows | `python src/ffmpeg_config_cli.py help` |
+| `videohub-subtitles` | Subtitle burn-in and standalone subtitle merge tool guidance | `embed_subtitles_to_video()`, `python src/subtitle_merger.py` |
+| `videohub-live` | Live recorder dependency, configuration, and runtime diagnostics | `src/live_recorder_adapter.py` |
 
 ### Using skills
 
-Skills are automatically available when using Claude Code CLI in this project. Simply invoke the relevant skill for context-aware assistance on specific features.
+Skills are automatically available to supported coding agents when working in this project. Use the router skill first for ambiguous requests, then the feature-specific skill for implementation or troubleshooting.
+
+Current synchronization notes:
+
+- Subtitle translation defaults to Google Translate and falls back to DeepSeek/OpenAI when Google fails.
+- Subtitle target languages include `zh-CN`, `zh-TW`, `en`, `ja`, `ko`, `ru`, `fr`, `de`, `es`, `it`, `pt`, and `ar`; the default is `zh-CN`.
+- Subtitle burn-in uses `embed_subtitles_to_video()` in `src/youtube_transcriber.py`; the standalone GUI tool is `src/subtitle_merger.py`.
+- Douyin user-profile downloads have an entry point, but real availability depends on Cookie validity and optional dependencies.
 
 ## Browser Extension
 

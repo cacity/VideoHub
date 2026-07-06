@@ -13,12 +13,13 @@ description: 处理直播录制相关诊断、配置和使用说明。适用于�
 - 排查 FFmpeg 或 live_recorder 模块缺失
 
 ## 当前已知限制
-- `F:/work/VideoHub/src/live_recorder_adapter.py:29` 会尝试导入 `live_recorder`
-- 如果项目根目录缺少 `live_recorder/`，则 `LIVE_RECORDER_AVAILABLE = False`
-- 在这种情况下，GUI 页面可能存在，但无法真正开始录制
+- `F:/work/VideoHub/src/live_recorder_adapter.py` 会尝试导入 `live_recorder`、`ffmpeg_install` 和 `msg_push`。
+- 当前项目根目录存在 `live_recorder/` 和 `live_recorder_backup/`。
+- 是否真正可用仍以运行时 `LIVE_RECORDER_AVAILABLE`、FFmpeg 状态和目标平台解析结果为准。
+- GUI 页面存在不代表录制一定成功；缺依赖、FFmpeg 不可用、平台解析失败都会导致录制不可用。
 
 ## 推荐操作
-- 先检查 live recorder 依赖是否恢复
+- 先检查 `src/live_recorder_adapter.py` 是否能导入并初始化
 - 再检查 FFmpeg 是否已安装可用
 - 真正录制和监控仍建议走 GUI 页面
 

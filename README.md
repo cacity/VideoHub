@@ -8,7 +8,7 @@
 
 ## ✨ 加入讨论群
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260622084446059.png)
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260706093215179.png)
 
 ## ✨ 核心功能
 
@@ -153,19 +153,26 @@ python tts_service.py --host 127.0.0.1 --port 8877
 
 切换到 CosyVoice 后，AI 配音页的音色列表会自动从 Kokoro 的“晓贝/晓晓/云健”等切换为 CosyVoice 的“中文女/中文男/粤语女”等。未手动切换时，VideoHub 仍保持原来的 Kokoro 配音流程。
 
-### 🤖 Claude Code Skills
+### 🤖 项目级 Skills
 
-集成 Claude Code CLI 智能开发技能，提供针对性的开发辅助：
+本项目在 `.agents/skills/` 下维护了一组项目级 skills，供 Codex、Claude Code 等智能编码助手读取。它们不是业务运行时依赖，也不会替代 GUI 或 CLI；它们的作用是让智能助手在处理 VideoHub 相关任务时，优先复用当前项目已有入口、脚本和约定，减少重复造轮子或误用过期路径。
 
-| 技能                 | 功能             |
-| -------------------- | ---------------- |
-| `videohub`           | 通用开发辅助     |
-| `videohub-youtube`   | YouTube 处理流程 |
-| `videohub-douyin`    | 抖音处理流程     |
-| `videohub-queue`     | 闲时队列管理     |
-| `videohub-live`      | 直播录制配置     |
-| `videohub-ffmpeg`    | FFmpeg 操作      |
-| `videohub-subtitles` | 字幕生成与编辑   |
+| Skill | 适用场景 | 主要复用入口 |
+| --- | --- | --- |
+| `videohub` | 总入口与任务路由，判断应使用哪个子 skill | `main.py`、`src/youtube_transcriber.py` |
+| `videohub-youtube` | YouTube、Twitter/X、Bilibili、本地音视频/文本的转写、字幕、翻译和总结 | `python src/youtube_transcriber.py --help` |
+| `videohub-douyin` | 抖音单视频和用户主页作品下载 | `python src/douyin_cli.py <url>` |
+| `videohub-queue` | 闲时队列、Chrome/Edge 扩展、本地 API 排查 | `src/api_server.py`、`http://127.0.0.1:8765` |
+| `videohub-ffmpeg` | FFmpeg 状态检查、路径配置、模式切换、下载和测试 | `python src/ffmpeg_config_cli.py help` |
+| `videohub-subtitles` | 字幕生成后的烧录、视频合成、独立字幕合成工具说明 | `embed_subtitles_to_video()`、`python src/subtitle_merger.py` |
+| `videohub-live` | 直播录制依赖、配置和运行状态诊断 | `src/live_recorder_adapter.py` |
+
+常见同步点：
+
+- 字幕翻译默认使用 Google；如果 Google 失败，会尝试 DeepSeek/OpenAI 作为备用翻译。
+- 字幕目标语言支持 `zh-CN`、`zh-TW`、`en`、`ja`、`ko`、`ru`、`fr`、`de`、`es`、`it`、`pt`、`ar`，默认 `zh-CN`。
+- 字幕烧录主流程复用 `src/youtube_transcriber.py` 中的 `embed_subtitles_to_video()`；独立 GUI 工具为 `src/subtitle_merger.py`。
+- 抖音用户主页下载已有入口，但通常需要有效 Cookie 和相关依赖，实际可用性以运行结果为准。
 
 
 

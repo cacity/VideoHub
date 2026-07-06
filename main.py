@@ -861,6 +861,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         embed_subtitles = self.params.get("embed_subtitles", False)
         cookies_file = self.params.get("cookies_file", None)
         enable_transcription = self.params.get("enable_transcription", True)
@@ -962,7 +963,7 @@ class WorkerThread(QThread):
                                         video_file, model, api_key, base_url, whisper_model_size,
                                         stream, summary_dir, custom_prompt, template_path,
                                         generate_subtitles, translate_to_chinese, embed_subtitles,
-                                        enable_transcription, generate_article
+                                        enable_transcription, generate_article, target_language
                                     )
                                 else:
                                     self.finished_signal.emit(video_file, True)
@@ -993,7 +994,7 @@ class WorkerThread(QThread):
                     stream, summary_dir, download_video, custom_prompt,
                     template_path, generate_subtitles, translate_to_chinese,
                     embed_subtitles, cookies_file, enable_transcription, generate_article,
-                    prefer_native_subtitles, enable_translation_polish
+                    prefer_native_subtitles, enable_translation_polish, target_language
                 )
                 
                 if results:
@@ -1019,7 +1020,7 @@ class WorkerThread(QThread):
                     stream, summary_dir, download_video, custom_prompt,
                     template_path, generate_subtitles, translate_to_chinese,
                     embed_subtitles, cookies_file, enable_transcription, generate_article,
-                    prefer_native_subtitles, enable_translation_polish
+                    prefer_native_subtitles, enable_translation_polish, target_language
                 )
                 
                 if result:
@@ -1035,10 +1036,10 @@ class WorkerThread(QThread):
             # 恢复原始print函数
             builtins.print = original_print
     
-    def process_douyin_transcription_and_summary(self, video_file, model, api_key, base_url, 
-                                                 whisper_model_size, stream, summary_dir, custom_prompt, 
-                                                 template_path, generate_subtitles, translate_to_chinese, 
-                                                 embed_subtitles, enable_transcription, generate_article):
+    def process_douyin_transcription_and_summary(self, video_file, model, api_key, base_url,
+                                                 whisper_model_size, stream, summary_dir, custom_prompt,
+                                                 template_path, generate_subtitles, translate_to_chinese,
+                                                 embed_subtitles, enable_transcription, generate_article, target_language="zh-CN"):
         """处理抖音视频的转录和摘要"""
         try:
             self.update_signal.emit("开始处理抖音视频转录和摘要...")
@@ -1051,7 +1052,7 @@ class WorkerThread(QThread):
                 video_file, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, None  # source_language
+                enable_transcription, generate_article, None, None, target_language
             )
             
             if result:
@@ -1287,6 +1288,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
         enable_translation_polish = self.params.get("enable_translation_polish", False)
@@ -1308,7 +1310,7 @@ class WorkerThread(QThread):
                 audio_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, enable_transcription, generate_article,
-                enable_translation_polish
+                enable_translation_polish, target_language
             )
             
             if result:
@@ -1339,6 +1341,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         embed_subtitles = self.params.get("embed_subtitles", False)
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
@@ -1362,7 +1365,7 @@ class WorkerThread(QThread):
                 video_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, source_language, enable_translation_polish
+                enable_transcription, generate_article, source_language, enable_translation_polish, target_language
             )
             
             if result:
@@ -1393,6 +1396,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         embed_subtitles = self.params.get("embed_subtitles", False)
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
@@ -1416,7 +1420,7 @@ class WorkerThread(QThread):
                 input_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, source_language, enable_translation_polish
+                enable_transcription, generate_article, source_language, enable_translation_polish, target_language
             )
             
             if results:
@@ -1540,6 +1544,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         embed_subtitles = self.params.get("embed_subtitles", False)
         cookies_file = self.params.get("cookies_file", None)
         enable_transcription = self.params.get("enable_transcription", True)
@@ -1562,7 +1567,7 @@ class WorkerThread(QThread):
                 stream, summary_dir, download_video, custom_prompt,
                 template_path, generate_subtitles, translate_to_chinese,
                 embed_subtitles, cookies_file, enable_transcription, generate_article,
-                True, enable_translation_polish
+                True, enable_translation_polish, target_language
             )
             
             # 统计成功和失败的数量
@@ -1918,6 +1923,30 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.statusBar)
         self.statusBar.showMessage("就绪")
     
+    def create_translation_target_combo(self):
+        combo = QComboBox()
+        for label, code in [
+            ("中文（简体）", "zh-CN"),
+            ("中文（繁体）", "zh-TW"),
+            ("日语", "ja"),
+            ("韩语", "ko"),
+            ("俄语", "ru"),
+            ("英语", "en"),
+            ("法语", "fr"),
+            ("德语", "de"),
+            ("西班牙语", "es"),
+            ("意大利语", "it"),
+            ("葡萄牙语", "pt"),
+            ("阿拉伯语", "ar"),
+        ]:
+            combo.addItem(label, code)
+        combo.setCurrentIndex(0)
+        return combo
+
+    def get_combo_data(self, combo, default="zh-CN"):
+        value = combo.currentData()
+        return value if value else default
+
     def create_youtube_tab(self):
         """创建YouTube视频选项卡"""
         tab = QWidget()
@@ -1943,7 +1972,7 @@ class MainWindow(QMainWindow):
         left_options = QVBoxLayout()
         self.download_video_checkbox = QCheckBox("下载完整视频（而不仅是音频）")
         self.generate_subtitles_checkbox = QCheckBox("生成字幕文件")
-        self.translate_checkbox = QCheckBox("将字幕翻译成中文")
+        self.translate_checkbox = QCheckBox("翻译字幕")
         self.translate_checkbox.setChecked(True)
         self.embed_subtitles_checkbox = QCheckBox("将字幕嵌入到视频中")
         
@@ -1974,6 +2003,12 @@ class MainWindow(QMainWindow):
         self.whisper_model_combo.setCurrentText("small")
         model_layout.addWidget(model_label)
         model_layout.addWidget(self.whisper_model_combo)
+
+        target_lang_layout = QHBoxLayout()
+        target_lang_label = QLabel("目标语言:")
+        self.target_language_main_combo = self.create_translation_target_combo()
+        target_lang_layout.addWidget(target_lang_label)
+        target_lang_layout.addWidget(self.target_language_main_combo)
         
         cookies_layout = QHBoxLayout()
         cookies_label = QLabel("Cookies文件:")
@@ -2009,6 +2044,7 @@ class MainWindow(QMainWindow):
         )
         
         right_options.addLayout(model_layout)
+        right_options.addLayout(target_lang_layout)
 
         # 翻译日志开关（仅影响字幕翻译等详细日志输出）
         self.show_translation_logs_checkbox = QCheckBox("显示翻译日志")
@@ -2082,7 +2118,7 @@ class MainWindow(QMainWindow):
         # 左侧选项
         left_options = QVBoxLayout()
         self.audio_generate_subtitles_checkbox = QCheckBox("生成字幕文件")
-        self.audio_translate_checkbox = QCheckBox("将字幕翻译成中文")
+        self.audio_translate_checkbox = QCheckBox("翻译字幕")
         self.audio_translate_checkbox.setChecked(True)
         
         # 处理步骤选择
@@ -2107,8 +2143,15 @@ class MainWindow(QMainWindow):
         self.audio_whisper_model_combo.setCurrentText("small")
         audio_model_layout.addWidget(audio_model_label)
         audio_model_layout.addWidget(self.audio_whisper_model_combo)
-        
+
+        audio_target_lang_layout = QHBoxLayout()
+        audio_target_lang_label = QLabel("目标语言:")
+        self.audio_target_language_combo = self.create_translation_target_combo()
+        audio_target_lang_layout.addWidget(audio_target_lang_label)
+        audio_target_lang_layout.addWidget(self.audio_target_language_combo)
+
         right_options.addLayout(audio_model_layout)
+        right_options.addLayout(audio_target_lang_layout)
         right_options.addStretch()
         
         options_layout.addLayout(left_options)
@@ -2191,7 +2234,7 @@ class MainWindow(QMainWindow):
         # 左侧选项
         left_options = QVBoxLayout()
         self.video_generate_subtitles_checkbox = QCheckBox("生成字幕文件")
-        self.video_translate_checkbox = QCheckBox("将字幕翻译成中文")
+        self.video_translate_checkbox = QCheckBox("翻译字幕")
         self.video_translate_checkbox.setChecked(True)
         self.video_embed_subtitles_checkbox = QCheckBox("将字幕嵌入到视频中")
         
@@ -2259,6 +2302,12 @@ class MainWindow(QMainWindow):
         
         right_options.addLayout(video_model_layout)
         right_options.addLayout(source_lang_layout)
+        video_target_lang_layout = QHBoxLayout()
+        video_target_lang_label = QLabel("目标语言:")
+        self.video_target_language_combo = self.create_translation_target_combo()
+        video_target_lang_layout.addWidget(video_target_lang_label)
+        video_target_lang_layout.addWidget(self.video_target_language_combo)
+        right_options.addLayout(video_target_lang_layout)
         right_options.addStretch()
         
         options_layout.addLayout(left_options)
@@ -2413,7 +2462,7 @@ class MainWindow(QMainWindow):
         left_options = QVBoxLayout()
         self.batch_download_video_checkbox = QCheckBox("下载完整视频（而不仅是音频）")
         self.batch_generate_subtitles_checkbox = QCheckBox("生成字幕文件")
-        self.batch_translate_checkbox = QCheckBox("将字幕翻译成中文")
+        self.batch_translate_checkbox = QCheckBox("翻译字幕")
         self.batch_translate_checkbox.setChecked(True)
         self.batch_embed_subtitles_checkbox = QCheckBox("将字幕嵌入到视频中")
         
@@ -2455,6 +2504,12 @@ class MainWindow(QMainWindow):
         batch_cookies_layout.addWidget(self.batch_cookies_browse_button)
         
         right_options.addLayout(batch_model_layout)
+        batch_target_lang_layout = QHBoxLayout()
+        batch_target_lang_label = QLabel("目标语言:")
+        self.batch_target_language_combo = self.create_translation_target_combo()
+        batch_target_lang_layout.addWidget(batch_target_lang_label)
+        batch_target_lang_layout.addWidget(self.batch_target_language_combo)
+        right_options.addLayout(batch_target_lang_layout)
         right_options.addLayout(batch_cookies_layout)
         right_options.addStretch()
         
@@ -4185,13 +4240,13 @@ class MainWindow(QMainWindow):
         translate_method_layout.addWidget(self.translate_method_combo)
         api_layout.addLayout(translate_method_layout)
 
-        self.translation_polish_checkbox = QCheckBox("Google翻译后使用 DeepSeek 润色中文字幕")
+        self.translation_polish_checkbox = QCheckBox("使用 DeepSeek 润色中文字幕")
         self.translation_polish_checkbox.setChecked(
             os.getenv("TRANSLATION_POLISH_DEEPSEEK", "false").strip().lower()
             in ("1", "true", "yes", "on", "enabled")
         )
         self.translation_polish_checkbox.setToolTip(
-            "可选增强：先用当前翻译方式生成字幕，再用 DeepSeek 轻度统一术语和中文表达。未配置 DeepSeek Key 时会自动跳过。"
+            "可选增强：仅在目标语言为中文时，用 DeepSeek 轻度统一术语和中文表达。未配置 DeepSeek Key 时会自动跳过。Google 翻译失败时会自动尝试 DeepSeek/大模型备用翻译。"
         )
         api_layout.addWidget(self.translation_polish_checkbox)
 
@@ -4814,6 +4869,7 @@ class MainWindow(QMainWindow):
             "template_path": None,  # 使用默认模板
             "generate_subtitles": self.generate_subtitles_checkbox.isChecked(),
             "translate_to_chinese": self.translate_checkbox.isChecked(),
+            "target_language": self.get_combo_data(self.target_language_main_combo),
             "enable_translation_polish": self.is_translation_polish_enabled(),
             "embed_subtitles": self.embed_subtitles_checkbox.isChecked(),
             "cookies_file": self.cookies_path_input.text() if self.cookies_path_input.text() else None,
@@ -4947,6 +5003,7 @@ class MainWindow(QMainWindow):
             "template_path": None,  # 使用默认模板
             "generate_subtitles": self.video_generate_subtitles_checkbox.isChecked(),
             "translate_to_chinese": self.video_translate_checkbox.isChecked(),
+            "target_language": self.get_combo_data(self.video_target_language_combo),
             "enable_translation_polish": self.is_translation_polish_enabled(),
             "embed_subtitles": self.video_embed_subtitles_checkbox.isChecked(),
             "enable_transcription": self.video_enable_transcription_checkbox.isChecked(),
@@ -5104,6 +5161,7 @@ class MainWindow(QMainWindow):
             "template_path": None,  # 使用默认模板
             "generate_subtitles": self.audio_generate_subtitles_checkbox.isChecked(),
             "translate_to_chinese": self.audio_translate_checkbox.isChecked(),
+            "target_language": self.get_combo_data(self.audio_target_language_combo),
             "enable_translation_polish": self.is_translation_polish_enabled(),
             "enable_transcription": self.audio_enable_transcription_checkbox.isChecked(),
             "generate_article": self.audio_generate_article_checkbox.isChecked()
@@ -5268,6 +5326,7 @@ class MainWindow(QMainWindow):
             "template_path": None,  # 使用默认模板
             "generate_subtitles": self.batch_generate_subtitles_checkbox.isChecked(),
             "translate_to_chinese": self.batch_translate_checkbox.isChecked(),
+            "target_language": self.get_combo_data(self.batch_target_language_combo),
             "enable_translation_polish": self.is_translation_polish_enabled(),
             "embed_subtitles": self.batch_embed_subtitles_checkbox.isChecked(),
             "cookies_file": self.batch_cookies_path_input.text() if self.batch_cookies_path_input.text() else None,
@@ -6627,6 +6686,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "template_path": None,
                 "generate_subtitles": self.generate_subtitles_checkbox.isChecked(),
                 "translate_to_chinese": self.translate_checkbox.isChecked(),
+                "target_language": self.get_combo_data(self.target_language_main_combo),
                 "enable_translation_polish": self.is_translation_polish_enabled(),
                 "embed_subtitles": self.embed_subtitles_checkbox.isChecked(),
                 "cookies_file": self.cookies_path_input.text() if self.cookies_path_input.text() else None,
@@ -8297,6 +8357,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "template_path": None,
                 "generate_subtitles": self.audio_generate_subtitles_checkbox.isChecked(),
                 "translate_to_chinese": self.audio_translate_checkbox.isChecked(),
+                "target_language": self.get_combo_data(self.audio_target_language_combo),
                 "enable_translation_polish": self.is_translation_polish_enabled(),
                 "enable_transcription": enable_transcription,
                 "generate_article": generate_article
@@ -8342,6 +8403,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "template_path": None,
                 "generate_subtitles": self.video_generate_subtitles_checkbox.isChecked(),
                 "translate_to_chinese": self.video_translate_checkbox.isChecked(),
+                "target_language": self.get_combo_data(self.video_target_language_combo),
                 "enable_translation_polish": self.is_translation_polish_enabled(),
                 "embed_subtitles": self.video_embed_subtitles_checkbox.isChecked(),
                 "enable_transcription": enable_transcription,
@@ -8430,6 +8492,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "template_path": None,
                 "generate_subtitles": self.batch_generate_subtitles_checkbox.isChecked(),
                 "translate_to_chinese": self.batch_translate_checkbox.isChecked(),
+                "target_language": self.get_combo_data(self.batch_target_language_combo),
                 "enable_translation_polish": self.is_translation_polish_enabled(),
                 "embed_subtitles": self.batch_embed_subtitles_checkbox.isChecked(),
                 "cookies_file": self.batch_cookies_path_input.text() if self.batch_cookies_path_input.text() else None,

@@ -55,6 +55,43 @@ VIDEO_LIST_FILE = os.path.join(LOGS_DIR, "downloaded_videos.json")
 # 翻译日志开关：默认开启详细日志，GUI 可通过 set_translation_verbose 控制
 TRANSLATION_VERBOSE = True
 
+SUPPORTED_TRANSLATION_LANGUAGES = {
+    "zh-CN": "Simplified Chinese",
+    "zh-TW": "Traditional Chinese",
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "ru": "Russian",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "ar": "Arabic",
+}
+
+
+def normalize_target_language(target_language):
+    """Return a supported target language code, defaulting to Simplified Chinese."""
+    return target_language if target_language in SUPPORTED_TRANSLATION_LANGUAGES else "zh-CN"
+
+
+def get_translation_language_name(target_language):
+    return SUPPORTED_TRANSLATION_LANGUAGES.get(normalize_target_language(target_language), "Simplified Chinese")
+
+
+def _language_family(language_code):
+    if not language_code:
+        return ""
+    code = str(language_code).replace("_", "-").lower()
+    if code in ("zh", "chi", "zho", "cmn") or code.startswith("zh-"):
+        return "zh"
+    return code.split("-")[0]
+
+
+def should_translate_to_target(source_language, target_language):
+    return _language_family(source_language) != _language_family(normalize_target_language(target_language))
+
 def set_translation_verbose(verbose: bool):
     """
     控制是否输出详细的翻译日志。
@@ -261,6 +298,8 @@ def _normalize_lang_key(lang_code: str) -> str:
         return "zh"
     if code.startswith("ja") or code in {"jpn"}:
         return "ja"
+    if code.startswith("ko") or code in {"kor"}:
+        return "zh"
     if code.startswith("en"):
         return "en"
     return "en"
@@ -620,6 +659,109 @@ def translate_text(text, target_language='zh-CN', source_language='auto'):
         if TRANSLATION_VERBOSE:
             print(f"使用谷歌翻译: {text[:50]}...")
         return translate_with_google(text, target_language, source_language)
+
+def translate_with_llm(text, target_language='zh-CN', source_language='auto', fallback_to_google=True):
+    """Translate text with DeepSeek first, then OpenAI. Google fallback is optional."""
+    target_language = normalize_target_language(target_language)
+    try:
+        target_lang_name = get_translation_language_name(target_language)
+        deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+        openai_api_key = os.getenv("OPENAI_API_KEY", "")
+
+        if not deepseek_api_key and not openai_api_key:
+            if fallback_to_google:
+                if TRANSLATION_VERBOSE:
+                    print("No LLM translation API key configured, falling back to Google Translate.")
+                return translate_with_google(text, target_language, source_language)
+            print("No DeepSeek/OpenAI API key configured; cannot use fallback translation.")
+            return text
+
+        if deepseek_api_key:
+            client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
+            model = "deepseek-chat"
+        else:
+            client = OpenAI(api_key=openai_api_key)
+            model = "gpt-3.5-turbo"
+
+        prompt = (
+            f"Translate the following text into {target_lang_name}. "
+            "Return only the translated text, with no explanation or extra content.\n\n"
+            f"{text}"
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are a professional translator. Translate text into {target_lang_name}. "
+                        "Return only the translation."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=2000,
+        )
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        print(f"LLM translation failed: {str(e)}")
+        if fallback_to_google:
+            print("Trying Google Translate as fallback...")
+            return translate_with_google(text, target_language, source_language)
+        return text
+
+
+def translate_with_google(text, target_language='zh-CN', source_language='auto', raise_on_error=False):
+    """Translate text with the public Google Translate endpoint."""
+    target_language = normalize_target_language(target_language)
+    try:
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            "client": "gtx",
+            "sl": source_language,
+            "tl": target_language,
+            "dt": "t",
+            "q": text,
+        }
+        response = requests.get(url, params=params, timeout=30)
+        if response.status_code != 200:
+            error_message = f"Google translation request failed: {response.status_code}"
+            print(error_message)
+            if raise_on_error:
+                raise RuntimeError(error_message)
+            return text
+
+        result = response.json()
+        translated_text = "".join(sentence[0] for sentence in result[0] if sentence[0])
+        return html.unescape(translated_text)
+
+    except Exception as e:
+        print(f"Google translation failed: {str(e)}")
+        if raise_on_error:
+            raise
+        return text
+
+
+def translate_text(text, target_language='zh-CN', source_language='auto'):
+    """Translate text according to TRANSLATION_METHOD, with Google -> LLM fallback."""
+    target_language = normalize_target_language(target_language)
+    translation_method = os.getenv("TRANSLATION_METHOD", "google")
+
+    if translation_method == "llm":
+        if TRANSLATION_VERBOSE:
+            print(f"Using LLM translation: {text[:50]}...")
+        return translate_with_llm(text, target_language, source_language, fallback_to_google=True)
+
+    if TRANSLATION_VERBOSE:
+        print(f"Using Google Translate: {text[:50]}...")
+    try:
+        return translate_with_google(text, target_language, source_language, raise_on_error=True)
+    except Exception as e:
+        print(f"Google Translate failed, trying DeepSeek/LLM fallback: {str(e)}")
+        return translate_with_llm(text, target_language, source_language, fallback_to_google=False)
+
 
 def _env_bool(name, default=False):
     value = os.getenv(name)
@@ -2176,6 +2318,7 @@ def transcribe_audio_unified(
     source_language=None,
     output_basename=None,
     enable_translation_polish=None,
+    target_language="zh-CN",
 ):
     """
     统一的音频转录函数：一次转录，同时生成文本和字幕文件
@@ -2251,6 +2394,7 @@ def transcribe_audio_unified(
                 final_source_language = source_language
             else:
                 final_source_language = detected_language
+            target_language = normalize_target_language(target_language)
             print(f"检测到的语言: {final_source_language}")
             
             # 生成字幕文件路径（与视频同名，无额外后缀，便于播放器自动匹配）
@@ -2262,9 +2406,9 @@ def transcribe_audio_unified(
             for i, segment in enumerate(result["segments"]):
                 original_text = segment["text"].strip()
                 translated_text = ""
-                if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
+                if translate_to_chinese and should_translate_to_target(final_source_language, target_language):
                     try:
-                        translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
+                        translated_text = translate_text(original_text, target_language=target_language, source_language=final_source_language)
                         if i < 3:
                             print(f"翻译示例: {original_text} -> {translated_text}")
                     except Exception as e:
@@ -2278,7 +2422,7 @@ def transcribe_audio_unified(
                     "translation": translated_text,
                 })
 
-            polish_enabled = translate_to_chinese and should_polish_translation(enable_translation_polish, "zh-CN")
+            polish_enabled = translate_to_chinese and should_polish_translation(enable_translation_polish, target_language)
             if polish_enabled:
                 google_srt_path = os.path.join(subtitle_dir, f"{sanitized_name}_google.srt")
                 with open(google_srt_path, "w", encoding="utf-8") as srt_file:
@@ -2346,7 +2490,7 @@ def transcribe_audio_unified(
             with open(ass_path, "w", encoding="utf-8") as ass_file:
                 font_settings = get_subtitle_font_settings()
                 source_key = _normalize_lang_key(final_source_language)
-                target_key = "zh" if translate_to_chinese else source_key
+                target_key = _normalize_lang_key(target_language) if translate_to_chinese else source_key
                 source_font = font_settings[source_key]["font"]
                 source_size = font_settings[source_key]["size"]
                 target_font = font_settings[target_key]["font"]
@@ -2492,7 +2636,7 @@ def transcribe_only(audio_path, whisper_model_size="medium", output_dir=TRANSCRI
     print(f"音频转文本完成，文本已保存至: {text_path}")
     return text_path
 
-def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size="tiny", translate_to_chinese=True, source_language=None, enable_translation_polish=None):
+def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size="tiny", translate_to_chinese=True, source_language=None, enable_translation_polish=None, target_language="zh-CN"):
     """
     创建双语字幕文件
     :param audio_path: 音频文件路径
@@ -2554,6 +2698,7 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
             final_source_language = source_language
         else:
             final_source_language = detected_language
+        target_language = normalize_target_language(target_language)
         print(f"最终使用的语言: {final_source_language}")
         
         # 生成输出文件路径
@@ -2567,14 +2712,14 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
         for i, segment in enumerate(result["segments"]):
             original_text = segment["text"].strip()
             translated_text = ""
-            if translate_to_chinese and final_source_language != "zh" and final_source_language != "chi":
+            if translate_to_chinese and should_translate_to_target(final_source_language, target_language):
                 if not hasattr(create_bilingual_subtitles, 'translation_cache'):
                     create_bilingual_subtitles.translation_cache = {}
 
                 if original_text in create_bilingual_subtitles.translation_cache:
                     translated_text = create_bilingual_subtitles.translation_cache[original_text]
                 else:
-                    translated_text = translate_text(original_text, target_language="zh-CN", source_language=final_source_language)
+                    translated_text = translate_text(original_text, target_language=target_language, source_language=final_source_language)
                     create_bilingual_subtitles.translation_cache[original_text] = translated_text
                     print(f"翻译: {original_text} -> {translated_text}")
 
@@ -2586,7 +2731,7 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
                 "translation": translated_text,
             })
 
-        polish_enabled = translate_to_chinese and should_polish_translation(enable_translation_polish, "zh-CN")
+        polish_enabled = translate_to_chinese and should_polish_translation(enable_translation_polish, target_language)
         if polish_enabled:
             google_srt_path = os.path.join(output_dir, f"{sanitized_name}_bilingual_google.srt")
             with open(google_srt_path, "w", encoding="utf-8") as srt_file:
@@ -2683,7 +2828,7 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
         with open(ass_path, "w", encoding="utf-8") as ass_file:
             font_settings = get_subtitle_font_settings()
             source_key = _normalize_lang_key(final_source_language)
-            target_key = "zh" if translate_to_chinese else source_key
+            target_key = _normalize_lang_key(target_language) if translate_to_chinese else source_key
             source_font = font_settings[source_key]["font"]
             source_size = font_settings[source_key]["size"]
             target_font = font_settings[target_key]["font"]
@@ -3076,7 +3221,7 @@ def embed_subtitles_to_video(video_path, subtitle_path, output_dir=VIDEOS_WITH_S
         print(f"处理过程中出现错误: {str(e)}")
         raise Exception(f"嵌入字幕失败: {str(e)}")
 
-def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, enable_transcription=True, generate_article=True, enable_translation_polish=None):
+def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, enable_transcription=True, generate_article=True, enable_translation_polish=None, target_language="zh-CN"):
     """
     处理本地音频文件的主函数
     :param audio_path: 本地音频文件路径
@@ -3111,6 +3256,7 @@ def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whi
             translate_to_chinese=translate_to_chinese,
             output_basename=audio_path,
             enable_translation_polish=enable_translation_polish,
+            target_language=target_language,
         )
         print(f"转录文本已保存到: {text_path}")
         if subtitle_path:
@@ -3141,7 +3287,7 @@ def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whi
         print(f"处理过程中出现错误: {str(e)}")
         return None
 
-def process_local_video(video_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None):
+def process_local_video(video_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None, target_language="zh-CN"):
     """
     处理本地视频文件的主函数
     :param video_path: 本地视频文件路径
@@ -3183,6 +3329,7 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
             source_language=source_language,
             output_basename=video_path,
             enable_translation_polish=enable_translation_polish,
+            target_language=target_language,
         )
         print(f"转录文本已保存到: {text_path}")
         
@@ -3228,7 +3375,7 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
         print(f"处理过程中出现错误: {str(e)}")
         return None
 
-def process_local_videos_batch(input_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None):
+def process_local_videos_batch(input_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None, target_language="zh-CN"):
     """
     批量处理本地视频文件（支持单个文件或目录）
     :param input_path: 输入路径（可以是单个视频文件或包含视频文件的目录）
@@ -3316,6 +3463,7 @@ def process_local_videos_batch(input_path, model=None, api_key=None, base_url=No
                 generate_article=generate_article,
                 source_language=source_language,
                 enable_translation_polish=enable_translation_polish,
+                target_language=target_language,
             )
             
             if result and result != "SKIPPED":
@@ -4176,7 +4324,7 @@ def check_cookies_file(cookies_file):
     print(f"检测到有效的cookies文件: {cookies_file}")
     return cookies_file
 
-def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True, enable_translation_polish=None):
+def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True, enable_translation_polish=None, target_language="zh-CN"):
     """
     处理YouTube视频的主函数
     :param youtube_url: YouTube视频链接
@@ -4200,6 +4348,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
     try:
         # 验证cookies文件
         valid_cookies_file = check_cookies_file(cookies_file)
+        target_language = normalize_target_language(target_language)
         
         # 0. 优先检查原生字幕（如果启用了此选项，且需要生成文章或字幕/翻译）
         native_subtitle_text = None
@@ -4265,7 +4414,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
 
                                     translated_subtitle_file = translate_subtitle_file(
                                         subtitle_file,
-                                        target_language="zh-CN",
+                                        target_language=target_language,
                                         base_name=video_title_base,
                                         output_dir=SUBTITLES_DIR,
                                         keep_lang_suffix=False,  # 与视频完全同名，只保留扩展名不同
@@ -4367,7 +4516,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
 
                                     translated_subtitle_file = translate_subtitle_file(
                                         subtitle_file,
-                                        target_language="zh-CN",
+                                        target_language=target_language,
                                         base_name=video_title_base,
                                         output_dir=SUBTITLES_DIR,
                                         keep_lang_suffix=False,
@@ -4484,6 +4633,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                 translate_to_chinese=translate_to_chinese,
                 output_basename=output_basename,
                 enable_translation_polish=enable_translation_polish,
+                target_language=target_language,
             )
             print(f"转录文本已保存到: {text_path}")
             if subtitle_path:
@@ -4726,7 +4876,7 @@ def show_download_history():
         print(f"   文件路径: {file_path}")
         print()
 
-def process_youtube_videos_batch(youtube_urls, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True, enable_translation_polish=None):
+def process_youtube_videos_batch(youtube_urls, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True, enable_translation_polish=None, target_language="zh-CN"):
     """
     批量处理多个YouTube视频
     :param youtube_urls: YouTube视频链接列表
@@ -4776,6 +4926,7 @@ def process_youtube_videos_batch(youtube_urls, model=None, api_key=None, base_ur
                 generate_article=generate_article,
                 prefer_native_subtitles=True,  # 批处理时默认使用原生字幕优化
                 enable_translation_polish=enable_translation_polish,
+                target_language=target_language,
             )
             
             if summary_path:
@@ -4945,7 +5096,7 @@ def normalize_youtube_video_url(url: str) -> str:
     except Exception:
         return url
 
-def process_youtube_playlist(playlist_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True, enable_translation_polish=None):
+def process_youtube_playlist(playlist_url, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir="summaries", download_video=False, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, cookies_file=None, enable_transcription=True, generate_article=True, prefer_native_subtitles=True, enable_translation_polish=None, target_language="zh-CN"):
     """
     处理YouTube播放列表，自动提取所有视频并批量处理
     :param playlist_url: YouTube播放列表链接
@@ -4998,6 +5149,7 @@ def process_youtube_playlist(playlist_url, model=None, api_key=None, base_url=No
         generate_article=generate_article,
         prefer_native_subtitles=prefer_native_subtitles,
         enable_translation_polish=enable_translation_polish,
+        target_language=target_language,
     )
 
 def process_local_text(text_path, model=None, api_key=None, base_url=None, stream=True, summary_dir="summaries", custom_prompt=None, template_path=None):
@@ -5197,7 +5349,10 @@ if __name__ == "__main__":
     parser.add_argument('--transcribe-only', action='store_true', help='仅将音频转换为文本，不进行摘要生成')
     # 字幕相关参数
     parser.add_argument('--generate-subtitles', action='store_true', help='生成字幕文件（SRT、VTT和ASS格式）')
-    parser.add_argument('--no-translate', action='store_true', help='不将字幕翻译成中文')
+    parser.add_argument('--no-translate', action='store_true', help='不翻译字幕')
+    parser.add_argument('--target-language', type=str, default='zh-CN',
+                      choices=list(SUPPORTED_TRANSLATION_LANGUAGES.keys()),
+                      help='字幕目标语言，默认为zh-CN')
     parser.add_argument('--embed-subtitles', action='store_true', help='将字幕嵌入到视频中（仅当下载视频或处理本地视频时有效）')
     parser.add_argument('--no-summary', action='store_true', help='不生成摘要，仅进行转录和字幕生成')
     
@@ -5335,7 +5490,8 @@ if __name__ == "__main__":
                     cookies_file=args.cookies,
                     enable_transcription=not args.no_summary,
                     generate_article=not args.no_summary,
-                    prefer_native_subtitles=True  # 命令行默认使用原生字幕优化
+                    prefer_native_subtitles=True,  # 命令行默认使用原生字幕优化
+                    target_language=args.target_language,
                 )
             
             if summary_path:
@@ -5358,7 +5514,8 @@ if __name__ == "__main__":
                 template_path=template_path,
                 generate_subtitles=args.generate_subtitles,
                 translate_to_chinese=not args.no_translate,
-                embed_subtitles=args.embed_subtitles
+                embed_subtitles=args.embed_subtitles,
+                target_language=args.target_language,
             )
             
         elif args.batch:
@@ -5384,7 +5541,8 @@ if __name__ == "__main__":
                         template_path=template_path,
                         generate_subtitles=args.generate_subtitles,
                         translate_to_chinese=not args.no_translate,
-                        embed_subtitles=args.embed_subtitles
+                        embed_subtitles=args.embed_subtitles,
+                        target_language=args.target_language,
                     )
             except Exception as e:
                 print(f"读取批处理文件时出错: {str(e)}")
@@ -5406,7 +5564,8 @@ if __name__ == "__main__":
                     template_path=template_path,
                     generate_subtitles=args.generate_subtitles,
                     translate_to_chinese=not args.no_translate,
-                    embed_subtitles=args.embed_subtitles
+                    embed_subtitles=args.embed_subtitles,
+                    target_language=args.target_language,
                 )
             
             if summary_path:
@@ -5430,7 +5589,8 @@ if __name__ == "__main__":
                     custom_prompt=custom_prompt,
                     template_path=template_path,
                     generate_subtitles=args.generate_subtitles,
-                    translate_to_chinese=not args.no_translate
+                    translate_to_chinese=not args.no_translate,
+                    target_language=args.target_language,
                 )
             
             if summary_path:

@@ -84,6 +84,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         embed_subtitles = self.params.get("embed_subtitles", False)
         cookies_file = self.params.get("cookies_file", None)
         enable_transcription = self.params.get("enable_transcription", True)
@@ -190,7 +191,7 @@ class WorkerThread(QThread):
                                         video_file, model, api_key, base_url, whisper_model_size,
                                         stream, summary_dir, custom_prompt, template_path,
                                         generate_subtitles, translate_to_chinese, embed_subtitles,
-                                        enable_transcription, generate_article
+                                        enable_transcription, generate_article, target_language
                                     )
                                 else:
                                     self.finished_signal.emit(video_file, True)
@@ -221,7 +222,7 @@ class WorkerThread(QThread):
                     stream, summary_dir, download_video, custom_prompt,
                     template_path, generate_subtitles, translate_to_chinese,
                     embed_subtitles, cookies_file, enable_transcription, generate_article,
-                    prefer_native_subtitles, enable_translation_polish
+                    prefer_native_subtitles, enable_translation_polish, target_language
                 )
 
                 if results:
@@ -247,7 +248,7 @@ class WorkerThread(QThread):
                     stream, summary_dir, download_video, custom_prompt,
                     template_path, generate_subtitles, translate_to_chinese,
                     embed_subtitles, cookies_file, enable_transcription, generate_article,
-                    prefer_native_subtitles, enable_translation_polish
+                    prefer_native_subtitles, enable_translation_polish, target_language
                 )
 
                 if result:
@@ -267,7 +268,7 @@ class WorkerThread(QThread):
                                                    whisper_model_size, stream, summary_dir,
                                                    custom_prompt, template_path, generate_subtitles,
                                                    translate_to_chinese, embed_subtitles,
-                                                   enable_transcription, generate_article):
+                                                   enable_transcription, generate_article, target_language="zh-CN"):
         """处理抖音视频的转录和摘要"""
         try:
             from youtube_transcriber import process_local_video
@@ -279,7 +280,7 @@ class WorkerThread(QThread):
                 video_file, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, None  # source_language
+                enable_transcription, generate_article, None, None, target_language
             )
 
             if result:
@@ -526,6 +527,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
         enable_translation_polish = self.params.get("enable_translation_polish", False)
@@ -547,7 +549,7 @@ class WorkerThread(QThread):
                 audio_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, enable_transcription, generate_article,
-                enable_translation_polish
+                enable_translation_polish, target_language
             )
 
             if result:
@@ -581,6 +583,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         embed_subtitles = self.params.get("embed_subtitles", False)
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
@@ -604,7 +607,7 @@ class WorkerThread(QThread):
                 video_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, source_language, enable_translation_polish
+                enable_transcription, generate_article, source_language, enable_translation_polish, target_language
             )
 
             if result:
@@ -638,6 +641,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         embed_subtitles = self.params.get("embed_subtitles", False)
         enable_transcription = self.params.get("enable_transcription", True)
         generate_article = self.params.get("generate_article", True)
@@ -661,7 +665,7 @@ class WorkerThread(QThread):
                 input_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, source_language, enable_translation_polish
+                enable_transcription, generate_article, source_language, enable_translation_polish, target_language
             )
 
             if results:
@@ -794,6 +798,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         generate_subtitles = self.params.get("generate_subtitles", False)
         translate_to_chinese = self.params.get("translate_to_chinese", True)
+        target_language = self.params.get("target_language", "zh-CN")
         embed_subtitles = self.params.get("embed_subtitles", False)
         cookies_file = self.params.get("cookies_file", None)
         enable_transcription = self.params.get("enable_transcription", True)
@@ -816,7 +821,7 @@ class WorkerThread(QThread):
                 stream, summary_dir, download_video, custom_prompt,
                 template_path, generate_subtitles, translate_to_chinese,
                 embed_subtitles, cookies_file, enable_transcription, generate_article,
-                True, enable_translation_polish
+                True, enable_translation_polish, target_language
             )
 
             # 统计成功和失败的数量

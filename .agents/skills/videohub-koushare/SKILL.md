@@ -15,8 +15,9 @@ description: 处理蔻享学术视频下载与登录态说明。复用现有 kou
 - 需要解释为什么未登录时拿不到 FHD
 
 ## 当前约束
-- `set_token()` 在 `F:/work/VideoHub/src/koushare_downloader.py:91`
-- `login()` 在 `F:/work/VideoHub/src/koushare_downloader.py:102`
+- `set_token()` 在 `F:/work/VideoHub/src/koushare_downloader.py`
+- `login()` 在 `F:/work/VideoHub/src/koushare_downloader.py`
+- `download()` 在 `F:/work/VideoHub/src/koushare_downloader.py`
 - FHD 通常依赖登录态
 - `Authorization` 头直接使用 token，不是 `Bearer <token>`
 
