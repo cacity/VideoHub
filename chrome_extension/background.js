@@ -335,7 +335,7 @@ function createTask(platform, data) {
             
         case 'twitter':
             task = {
-                type: "twitter", 
+                type: "twitter",
                 params: {
                     ...baseParams,
                     url: data.url,
@@ -345,7 +345,20 @@ function createTask(platform, data) {
                 title: `Twitter: ${data.title}`
             };
             break;
-            
+
+        case 'tiktok':
+            task = {
+                type: "twitter",
+                params: {
+                    ...baseParams,
+                    url: data.url,
+                    author: data.author || '',
+                    text: data.title || ''
+                },
+                title: `TikTok: ${data.title}`
+            };
+            break;
+
         case 'bilibili':
             task = {
                 type: "bilibili",
@@ -356,16 +369,6 @@ function createTask(platform, data) {
                     videoId: data.videoId
                 },
                 title: `B站: ${data.title}`
-            };
-            break;
-
-        case 'koushare':
-            task = {
-                type: "koushare",
-                params: {
-                    url: data.url
-                },
-                title: `寇享: ${data.title}`
             };
             break;
 
@@ -471,7 +474,7 @@ function attemptApiCall(task, apiUrl, callback) {
     const requestData = {
         platform: task.platform,
         url: task.params.youtube_url || task.params.url,
-        title: task.title.replace(/^(视频|Twitter|B站|寇享): /, ''),
+        title: task.title.replace(/^(视频|Twitter|TikTok|B站): /, ''),
         videoId: task.params.videoId,
         uploader: task.params.uploader,
         author: task.params.author,

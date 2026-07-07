@@ -275,8 +275,8 @@ function updateStatus() {
                 'youtube.com',
                 'twitter.com',
                 'x.com',
-                'bilibili.com',
-                'koushare.com'
+                'tiktok.com',
+                'bilibili.com'
             ];
             
             const isSupported = supportedSites.some(site => url.includes(site));

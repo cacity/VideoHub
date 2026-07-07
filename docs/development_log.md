@@ -23,6 +23,69 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-07-07：浏览器扩展与字幕翻译流程更新
+
+### 更新范围
+
+- 分支：`main`
+- 主要文件：
+  - `main.py`
+  - `src/youtube_transcriber.py`
+  - `src/api_server.py`
+  - `src/gui/workers/worker_thread.py`
+  - `src/gui/workers/subtitle_thread.py`
+  - `src/paths_config.py`
+  - `chrome_extension/`
+  - `.agents/skills/`
+
+### 本次更新内容
+
+- 字幕翻译增加百分比和时间轴进度输出，长视频或播客翻译时可以看到当前处理到的字幕条数和视频时间。
+- Google 翻译触发 429 后会切换到 DeepSeek/OpenAI 备用翻译，并在本轮后续片段跳过 Google，避免反复限流。
+- YouTube 浏览器扩展按钮注入逻辑增加重试和新的页面选择器，适配当前页面结构。
+- 浏览器扩展增加 TikTok 页面按钮、权限和入队链路。
+- 移除一组 legacy platform-specific integration 的 GUI、扩展、API、路径配置和 agent skill 入口，避免继续暴露或执行相关功能。
+
+### 设计思路
+
+长视频翻译的主要问题是用户无法判断等待时间，因此进度以“百分比 + 字幕条数 + 当前视频时间 / 总时长”的方式输出。浏览器扩展侧沿用现有本地队列 API，不新增后端服务；新平台入队复用已有 yt-dlp 下载线程，减少重复实现。
+
+### 实现方式
+
+- `src/youtube_transcriber.py`
+  - 增加字幕时间解析、翻译进度输出、DeepSeek/OpenAI fallback 状态日志。
+  - 在 SRT 翻译、Whisper 逐段字幕翻译和 DeepSeek 润色阶段输出进度。
+- `src/gui/workers/subtitle_thread.py` 与 `main.py`
+  - 将字幕翻译核心函数的进度回调接到现有 GUI 进度条和日志框。
+- `chrome_extension/`
+  - 更新 YouTube content script 的重试注入逻辑。
+  - 新增 TikTok content script，并在 manifest、background、popup 中接入。
+  - 移除 legacy platform-specific content script、权限、平台分支和展示样式。
+- `src/api_server.py`、`src/gui/workers/worker_thread.py`、`src/paths_config.py`
+  - 同步清理已移除平台的 API、worker 和输出目录映射。
+
+### 验证结果
+
+已执行：
+
+```bash
+python -m py_compile main.py src\api_server.py src\paths_config.py src\gui\workers\worker_thread.py src\youtube_transcriber.py src\gui\workers\subtitle_thread.py
+node --check chrome_extension\background.js
+node --check chrome_extension\popup\popup.js
+node --check chrome_extension\content-scripts\youtube.js
+node --check chrome_extension\content-scripts\tiktok.js
+python -m json.tool chrome_extension\manifest.json
+npm run build
+git diff --check
+```
+
+并额外执行了全仓关键词残留检查，排除 `.git` 和 `frontend/node_modules` 后无残留。
+
+### 遗留问题
+
+- TikTok 页面结构可能随站点版本变化，后续如按钮位置变化，需要继续按页面 DOM 更新选择器。
+- 本地忽略目录中的前端原型已同步清理并重新构建，但该目录当前仍按仓库规则忽略，不随普通提交进入 Git。
+
 ## 2026-06-23：本地视频增加歌曲音频提取
 
 ### 更新范围

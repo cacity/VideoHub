@@ -36,8 +36,6 @@ class WorkerThread(QThread):
                 self.process_bilibili()
             elif not self.stopped and self.task_type == "instagram":
                 self.process_instagram()
-            elif not self.stopped and self.task_type == "koushare":
-                self.process_koushare()
             elif not self.stopped and self.task_type == "local_audio":
                 self.process_local_audio()
             elif not self.stopped and self.task_type == "local_video":
@@ -460,52 +458,6 @@ class WorkerThread(QThread):
             import traceback
             error_msg = f"Instagram视频下载失败: {str(e)}\n{traceback.format_exc()}"
             self.update_signal.emit(error_msg)
-            self.finished_signal.emit("", False)
-
-    def process_koushare(self):
-        """处理寇享视频 - 使用自定义下载器"""
-        from paths_config import KOUSHARE_DOWNLOADS_DIR
-
-        self.update_signal.emit("开始处理寇享视频...")
-
-        url = self.params.get("url", "")
-        if not url:
-            self.update_signal.emit("错误: 未提供寇享视频 URL")
-            self.finished_signal.emit("", False)
-            return
-
-        self.update_signal.emit(f"寇享 URL: {url}")
-
-        try:
-            import koushare_downloader
-
-            def progress_callback(message, percent):
-                if not self.stopped:
-                    self.update_signal.emit(f"[{percent}%] {message}")
-
-            result = koushare_downloader.download(
-                url,
-                output_dir=KOUSHARE_DOWNLOADS_DIR,
-                progress_callback=progress_callback,
-            )
-
-            if self.stopped:
-                return
-
-            if result.get("success"):
-                file_path = result.get("file_path", "")
-                title = result.get("title", "")
-                self.update_signal.emit(f"✅ 寇享视频下载完成: {title}")
-                self.update_signal.emit(f"保存位置: {file_path}")
-                self.finished_signal.emit(file_path, True)
-            else:
-                error = result.get("error", "未知错误")
-                self.update_signal.emit(f"❌ 寇享视频下载失败: {error}")
-                self.finished_signal.emit("", False)
-
-        except Exception as e:
-            import traceback
-            self.update_signal.emit(f"❌ 寇享视频下载异常: {str(e)}\n{traceback.format_exc()}")
             self.finished_signal.emit("", False)
 
     def process_local_audio(self):

@@ -54,6 +54,8 @@ VIDEO_LIST_FILE = os.path.join(LOGS_DIR, "downloaded_videos.json")
 
 # 翻译日志开关：默认开启详细日志，GUI 可通过 set_translation_verbose 控制
 TRANSLATION_VERBOSE = True
+GOOGLE_TRANSLATE_RATE_LIMITED = False
+GOOGLE_TRANSLATE_SKIP_NOTICE_SHOWN = False
 
 SUPPORTED_TRANSLATION_LANGUAGES = {
     "zh-CN": "Simplified Chinese",
@@ -671,17 +673,22 @@ def translate_with_llm(text, target_language='zh-CN', source_language='auto', fa
         if not deepseek_api_key and not openai_api_key:
             if fallback_to_google:
                 if TRANSLATION_VERBOSE:
-                    print("No LLM translation API key configured, falling back to Google Translate.")
+                    print("未配置 DeepSeek/OpenAI API Key，回退到 Google 翻译。")
                 return translate_with_google(text, target_language, source_language)
-            print("No DeepSeek/OpenAI API key configured; cannot use fallback translation.")
+            print("未配置 DeepSeek/OpenAI API Key，备用翻译不可用，保留原文。")
             return text
 
         if deepseek_api_key:
             client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
             model = "deepseek-chat"
+            provider = "DeepSeek"
         else:
             client = OpenAI(api_key=openai_api_key)
             model = "gpt-3.5-turbo"
+            provider = "OpenAI"
+
+        if TRANSLATION_VERBOSE:
+            print(f"使用 {provider} 备用翻译: {text[:50]}...")
 
         prompt = (
             f"Translate the following text into {target_lang_name}. "
@@ -703,18 +710,23 @@ def translate_with_llm(text, target_language='zh-CN', source_language='auto', fa
             temperature=0.3,
             max_tokens=2000,
         )
-        return response.choices[0].message.content.strip()
+        translated = response.choices[0].message.content.strip()
+        if TRANSLATION_VERBOSE:
+            print(f"{provider} 备用翻译成功: {translated[:50]}...")
+        return translated
 
     except Exception as e:
-        print(f"LLM translation failed: {str(e)}")
+        print(f"DeepSeek/OpenAI 备用翻译失败: {str(e)}")
         if fallback_to_google:
-            print("Trying Google Translate as fallback...")
+            print("尝试回退到 Google 翻译...")
             return translate_with_google(text, target_language, source_language)
         return text
 
 
 def translate_with_google(text, target_language='zh-CN', source_language='auto', raise_on_error=False):
     """Translate text with the public Google Translate endpoint."""
+    global GOOGLE_TRANSLATE_RATE_LIMITED
+
     target_language = normalize_target_language(target_language)
     try:
         url = "https://translate.googleapis.com/translate_a/single"
@@ -729,6 +741,9 @@ def translate_with_google(text, target_language='zh-CN', source_language='auto',
         if response.status_code != 200:
             error_message = f"Google translation request failed: {response.status_code}"
             print(error_message)
+            if response.status_code == 429:
+                GOOGLE_TRANSLATE_RATE_LIMITED = True
+                print("Google 翻译已触发 429 限流，本轮后续字幕将直接使用 DeepSeek/LLM 备用翻译。")
             if raise_on_error:
                 raise RuntimeError(error_message)
             return text
@@ -746,6 +761,8 @@ def translate_with_google(text, target_language='zh-CN', source_language='auto',
 
 def translate_text(text, target_language='zh-CN', source_language='auto'):
     """Translate text according to TRANSLATION_METHOD, with Google -> LLM fallback."""
+    global GOOGLE_TRANSLATE_SKIP_NOTICE_SHOWN
+
     target_language = normalize_target_language(target_language)
     translation_method = os.getenv("TRANSLATION_METHOD", "google")
 
@@ -754,12 +771,18 @@ def translate_text(text, target_language='zh-CN', source_language='auto'):
             print(f"Using LLM translation: {text[:50]}...")
         return translate_with_llm(text, target_language, source_language, fallback_to_google=True)
 
+    if GOOGLE_TRANSLATE_RATE_LIMITED:
+        if not GOOGLE_TRANSLATE_SKIP_NOTICE_SHOWN:
+            print("当前 Google 翻译处于 429 限流状态，跳过 Google，直接使用 DeepSeek/LLM 备用翻译。")
+            GOOGLE_TRANSLATE_SKIP_NOTICE_SHOWN = True
+        return translate_with_llm(text, target_language, source_language, fallback_to_google=False)
+
     if TRANSLATION_VERBOSE:
         print(f"Using Google Translate: {text[:50]}...")
     try:
         return translate_with_google(text, target_language, source_language, raise_on_error=True)
     except Exception as e:
-        print(f"Google Translate failed, trying DeepSeek/LLM fallback: {str(e)}")
+        print(f"Google 翻译失败，正在尝试 DeepSeek/LLM 备用翻译: {str(e)}")
         return translate_with_llm(text, target_language, source_language, fallback_to_google=False)
 
 
@@ -793,7 +816,7 @@ def _chunk_items(items, size):
         yield items[start:start + size]
 
 
-def polish_subtitle_translations_with_deepseek(segments, chunk_size=50):
+def polish_subtitle_translations_with_deepseek(segments, chunk_size=50, progress_callback=None):
     """
     Lightly polish translated Chinese subtitle lines with DeepSeek.
 
@@ -827,6 +850,7 @@ def polish_subtitle_translations_with_deepseek(segments, chunk_size=50):
     polished_segments = [dict(item) for item in segments]
     total = len(polished_segments)
     print(f"开始 DeepSeek 字幕润色: 共 {total} 条")
+    emit_translation_progress(progress_callback, "DeepSeek 润色进度", 0, total, force=True)
 
     system_prompt = (
         "你是字幕中文润色助手。只对已有中文字幕做轻度润色，让中文更自然、"
@@ -886,10 +910,25 @@ def polish_subtitle_translations_with_deepseek(segments, chunk_size=50):
                     continue
                 item["translation"] = polished
 
-            print(f"DeepSeek 润色进度: {min(chunk_index * chunk_size, total)}/{total}")
+            completed = min(chunk_index * chunk_size, total)
+            emit_translation_progress(
+                progress_callback,
+                "DeepSeek 润色进度",
+                completed,
+                total,
+                force=True,
+            )
 
         except Exception as e:
             print(f"DeepSeek 润色第 {chunk_index} 块失败，保留该块原翻译: {e}")
+            completed = min(chunk_index * chunk_size, total)
+            emit_translation_progress(
+                progress_callback,
+                "DeepSeek 润色进度",
+                completed,
+                total,
+                force=True,
+            )
             continue
 
     print("DeepSeek 字幕润色完成")
@@ -915,6 +954,74 @@ def format_timestamp(seconds):
     milliseconds = int((seconds - int(seconds)) * 1000)
     
     return f"{hours:02d}:{minutes:02d}:{int(seconds):02d},{milliseconds:03d}"
+
+
+def format_progress_duration(seconds):
+    """Format seconds for human-readable progress logs."""
+    if seconds is None:
+        return "未知"
+    try:
+        total_seconds = max(0, int(float(seconds)))
+    except (TypeError, ValueError):
+        return "未知"
+
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    secs = total_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def parse_subtitle_time_seconds(timestamp_text):
+    """Parse SRT/VTT timestamp text into seconds."""
+    import re
+
+    match = re.search(r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})", timestamp_text or "")
+    if not match:
+        return None
+
+    hours, minutes, seconds, milliseconds = match.groups()
+    milliseconds = int(milliseconds.ljust(3, "0")[:3])
+    return (
+        int(hours) * 3600
+        + int(minutes) * 60
+        + int(seconds)
+        + milliseconds / 1000
+    )
+
+
+def parse_subtitle_timestamp_bounds(timestamp_line):
+    """Return (start_seconds, end_seconds) from an SRT/VTT timestamp line."""
+    if not timestamp_line or "-->" not in timestamp_line:
+        return None, None
+
+    start_text, end_text = timestamp_line.split("-->", 1)
+    return parse_subtitle_time_seconds(start_text), parse_subtitle_time_seconds(end_text)
+
+
+def emit_translation_progress(progress_callback, label, current, total, current_time=None, total_time=None, force=False):
+    """Emit throttled translation progress to a callback or stdout."""
+    if total <= 0:
+        return
+
+    current = max(0, min(current, total))
+    percent = int(round((current / total) * 100))
+    step = max(1, total // 20)
+    if not force and current not in (1, total) and current % step != 0:
+        return
+
+    message = f"{label}: {percent}% ({current}/{total})"
+    if current_time is not None and total_time is not None:
+        message += f"，时间 {format_progress_duration(current_time)} / {format_progress_duration(total_time)}"
+    elif current_time is not None:
+        message += f"，当前 {format_progress_duration(current_time)}"
+
+    if progress_callback:
+        try:
+            progress_callback(percent, message)
+        except TypeError:
+            progress_callback(message)
+    else:
+        print(message)
 
 def format_timestamp_vtt(seconds):
     """
@@ -1328,7 +1435,7 @@ def download_youtube_subtitles(youtube_url, output_dir=NATIVE_SUBTITLES_DIR,
         print(f"下载字幕时出错: {str(e)}")
         return []
 
-def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=None, output_dir=None, keep_lang_suffix=True, enable_translation_polish=None):
+def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=None, output_dir=None, keep_lang_suffix=True, enable_translation_polish=None, progress_callback=None):
     """
     翻译字幕文件
     :param subtitle_path: 字幕文件路径
@@ -1381,41 +1488,63 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
         if ext.lower() == '.srt':
             # SRT格式: 序号 -> 时间轴 -> 文本 -> 空行
             blocks = re.split(r'\n\s*\n', content.strip())
+            valid_blocks = [
+                block for block in blocks
+                if block.strip() and len(block.strip().split('\n')) >= 3
+            ]
+            total_blocks = len(valid_blocks)
+            block_end_times = []
+            for block in valid_blocks:
+                timestamp_line = block.strip().split('\n')[1]
+                _start_time, end_time = parse_subtitle_timestamp_bounds(timestamp_line)
+                block_end_times.append(end_time)
+            total_duration = max((t for t in block_end_times if t is not None), default=None)
+
+            emit_translation_progress(
+                progress_callback,
+                "字幕翻译进度",
+                0,
+                max(total_blocks, 1),
+                current_time=0,
+                total_time=total_duration,
+                force=True,
+            )
+
             translated_blocks = []
             # 收集用于生成ASS样式字幕的数据: (timestamp_line, original_text, translated_text)
             ass_segments = []
             subtitle_segments = []
             
-            for i, block in enumerate(blocks):
-                if not block.strip():
-                    continue
-                    
+            for i, block in enumerate(valid_blocks):
                 lines = block.strip().split('\n')
-                if len(lines) >= 3:
-                    # 第一行是序号
-                    seq_num = lines[0]
-                    # 第二行是时间轴
-                    timestamp = lines[1]
-                    # 剩余行是文本（去掉块内的强制换行，合并成一句，避免一大堆很短的行）
-                    subtitle_text = ' '.join(l.strip() for l in lines[2:] if l.strip())
-                    
-                    # 翻译文本
-                    # 日志：详细模式下显示前50个字符；非详细模式下，定期输出进度
-                    if TRANSLATION_VERBOSE:
-                        print(f"翻译字幕 {i+1}/{len(blocks)}: {subtitle_text[:50]}...")
-                    elif i % 50 == 0:
-                        # 每隔约 50 条输出一次简要进度，避免刷屏
-                        print(f"翻译进度: {i+1}/{len(blocks)}")
-                    translated_text = translate_text(subtitle_text, target_language)
-                    # 去掉翻译结果中的换行，避免同一时间段出现多行超短句
-                    translated_text = translated_text.replace('\n', ' ').strip()
+                # 第一行是序号
+                seq_num = lines[0]
+                # 第二行是时间轴
+                timestamp = lines[1]
+                # 剩余行是文本（去掉块内的强制换行，合并成一句，避免一大堆很短的行）
+                subtitle_text = ' '.join(l.strip() for l in lines[2:] if l.strip())
 
-                    subtitle_segments.append({
-                        "seq_num": seq_num,
-                        "timestamp": timestamp,
-                        "source": subtitle_text,
-                        "translation": translated_text,
-                    })
+                # 翻译文本
+                if TRANSLATION_VERBOSE:
+                    print(f"翻译字幕 {i+1}/{total_blocks}: {subtitle_text[:50]}...")
+                translated_text = translate_text(subtitle_text, target_language)
+                # 去掉翻译结果中的换行，避免同一时间段出现多行超短句
+                translated_text = translated_text.replace('\n', ' ').strip()
+
+                subtitle_segments.append({
+                    "seq_num": seq_num,
+                    "timestamp": timestamp,
+                    "source": subtitle_text,
+                    "translation": translated_text,
+                })
+                emit_translation_progress(
+                    progress_callback,
+                    "字幕翻译进度",
+                    i + 1,
+                    total_blocks,
+                    current_time=block_end_times[i],
+                    total_time=total_duration,
+                )
 
             polish_enabled = should_polish_translation(enable_translation_polish, target_language)
             if polish_enabled:
@@ -1438,7 +1567,10 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
                     }
                     for idx, item in enumerate(subtitle_segments)
                 ]
-                polished_payload = polish_subtitle_translations_with_deepseek(polish_payload)
+                polished_payload = polish_subtitle_translations_with_deepseek(
+                    polish_payload,
+                    progress_callback=progress_callback,
+                )
                 if len(polished_payload) == len(subtitle_segments):
                     for item, polished in zip(subtitle_segments, polished_payload):
                         item["translation"] = polished.get("translation", item["translation"])
@@ -1540,9 +1672,11 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
         
         else:
             # 对于其他格式，简单地翻译文本内容
+            emit_translation_progress(progress_callback, "字幕翻译进度", 0, 1, force=True)
             translated_content = translate_text(content, target_language)
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(translated_content)
+            emit_translation_progress(progress_callback, "字幕翻译进度", 1, 1, force=True)
         
         if TRANSLATION_VERBOSE:
             print(f"翻译完成，输出文件: {output_path}")
@@ -2403,16 +2537,39 @@ def transcribe_audio_unified(
             ass_path = os.path.join(subtitle_dir, f"{sanitized_name}.ass")
 
             subtitle_rows = []
-            for i, segment in enumerate(result["segments"]):
+            segments = result["segments"]
+            total_segments = len(segments)
+            total_duration = max((segment.get("end") for segment in segments if segment.get("end") is not None), default=None)
+            should_translate_segments = translate_to_chinese and should_translate_to_target(final_source_language, target_language)
+            if should_translate_segments:
+                emit_translation_progress(
+                    None,
+                    "字幕翻译进度",
+                    0,
+                    max(total_segments, 1),
+                    current_time=0,
+                    total_time=total_duration,
+                    force=True,
+                )
+
+            for i, segment in enumerate(segments):
                 original_text = segment["text"].strip()
                 translated_text = ""
-                if translate_to_chinese and should_translate_to_target(final_source_language, target_language):
+                if should_translate_segments:
                     try:
                         translated_text = translate_text(original_text, target_language=target_language, source_language=final_source_language)
                         if i < 3:
                             print(f"翻译示例: {original_text} -> {translated_text}")
                     except Exception as e:
                         print(f"翻译失败: {str(e)}")
+                    emit_translation_progress(
+                        None,
+                        "字幕翻译进度",
+                        i + 1,
+                        total_segments,
+                        current_time=segment.get("end"),
+                        total_time=total_duration,
+                    )
 
                 subtitle_rows.append({
                     "index": i + 1,
@@ -2709,10 +2866,25 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
         ass_path = os.path.join(output_dir, f"{sanitized_name}_bilingual.ass")
 
         subtitle_rows = []
-        for i, segment in enumerate(result["segments"]):
+        segments = result["segments"]
+        total_segments = len(segments)
+        total_duration = max((segment.get("end") for segment in segments if segment.get("end") is not None), default=None)
+        should_translate_segments = translate_to_chinese and should_translate_to_target(final_source_language, target_language)
+        if should_translate_segments:
+            emit_translation_progress(
+                None,
+                "字幕翻译进度",
+                0,
+                max(total_segments, 1),
+                current_time=0,
+                total_time=total_duration,
+                force=True,
+            )
+
+        for i, segment in enumerate(segments):
             original_text = segment["text"].strip()
             translated_text = ""
-            if translate_to_chinese and should_translate_to_target(final_source_language, target_language):
+            if should_translate_segments:
                 if not hasattr(create_bilingual_subtitles, 'translation_cache'):
                     create_bilingual_subtitles.translation_cache = {}
 
@@ -2722,6 +2894,14 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
                     translated_text = translate_text(original_text, target_language=target_language, source_language=final_source_language)
                     create_bilingual_subtitles.translation_cache[original_text] = translated_text
                     print(f"翻译: {original_text} -> {translated_text}")
+                emit_translation_progress(
+                    None,
+                    "字幕翻译进度",
+                    i + 1,
+                    total_segments,
+                    current_time=segment.get("end"),
+                    total_time=total_duration,
+                )
 
             subtitle_rows.append({
                 "index": i + 1,

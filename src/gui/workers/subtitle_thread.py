@@ -96,10 +96,15 @@ class SubtitleTranslateThread(QThread):
         try:
             from youtube_transcriber import translate_subtitle_file
 
+            def on_translation_progress(percent, message):
+                self.progress_signal.emit(percent, message)
+                self.update_signal.emit(message)
+
             result = translate_subtitle_file(
                 file_path,
                 target_language=target_language,
                 enable_translation_polish=self.params.get("enable_translation_polish", False),
+                progress_callback=on_translation_progress,
             )
             if result:
                 self.update_signal.emit(f"已生成翻译文件: {result}")

@@ -299,6 +299,17 @@ class APIServer:
                 },
                 "title": f"Twitter: {data['title'][:50]}..."
             }
+        elif platform == 'tiktok':
+            task = {
+                "type": "twitter",
+                "params": {
+                    **base_params,
+                    "url": data['url'],
+                    "author": data.get('author', ''),
+                    "text": data.get('title', '')
+                },
+                "title": f"TikTok: {data['title'][:50]}..."
+            }
         elif platform == 'bilibili':
             task = {
                 "type": "bilibili",
@@ -317,14 +328,6 @@ class APIServer:
                     "url": data['url']
                 },
                 "title": f"Instagram: {data['title'][:50]}..."
-            }
-        elif platform == 'koushare':
-            task = {
-                "type": "koushare",
-                "params": {
-                    "url": data['url']
-                },
-                "title": f"寇享: {data['title'][:50]}..."
             }
         else:
             raise ValueError(f"Unsupported platform: {platform}")

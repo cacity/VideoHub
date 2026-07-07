@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "视频下载助手",
   "version": "1.0",
-  "description": "在YouTube、Twitter、Bilibili、Koushare页面添加下载按钮，将视频添加到闲时下载队列",
+  "description": "在YouTube、Twitter/X、TikTok、Bilibili页面添加下载按钮，将视频添加到闲时下载队列",
   
   "permissions": [
     "storage",
@@ -19,11 +19,11 @@
     "https://youtube.com/*",
     "https://twitter.com/*",
     "https://x.com/*",
+    "https://www.tiktok.com/*",
+    "https://tiktok.com/*",
     "https://www.bilibili.com/*",
     "https://m.bilibili.com/*",
     "https://bilibili.com/*",
-    "https://www.koushare.com/*",
-    "https://koushare.com/*",
     "http://127.0.0.1:8765/*",
     "http://localhost:8765/*"
   ],
@@ -54,20 +54,20 @@
     },
     {
       "matches": [
-        "https://www.bilibili.com/*",
-        "https://m.bilibili.com/*",
-        "https://bilibili.com/*"
+        "https://www.tiktok.com/*",
+        "https://tiktok.com/*"
       ],
-      "js": ["content-scripts/bilibili.js"],
+      "js": ["content-scripts/tiktok.js"],
       "css": ["content-scripts/styles.css"],
       "run_at": "document_end"
     },
     {
       "matches": [
-        "https://www.koushare.com/*",
-        "https://koushare.com/*"
+        "https://www.bilibili.com/*",
+        "https://m.bilibili.com/*",
+        "https://bilibili.com/*"
       ],
-      "js": ["content-scripts/koushare.js"],
+      "js": ["content-scripts/bilibili.js"],
       "css": ["content-scripts/styles.css"],
       "run_at": "document_end"
     }

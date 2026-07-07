@@ -292,12 +292,12 @@ body {
     background: #1da1f2;
 }
 
-.platform-badge.bilibili {
-    background: #fb7299;
+.platform-badge.tiktok {
+    background: #111111;
 }
 
-.platform-badge.koushare {
-    background: #7c4dff;
+.platform-badge.bilibili {
+    background: #fb7299;
 }
 
 .queue-item-title {

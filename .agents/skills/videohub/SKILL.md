@@ -1,6 +1,6 @@
 ---
 name: videohub
-description: VideoHub 总入口。用于识别用户要处理的平台或功能，并路由到更具体的 VideoHub skills，如 YouTube、抖音、蔻享、闲时队列、FFmpeg、字幕和直播录制。
+description: VideoHub 总入口。用于识别用户要处理的平台或功能，并路由到更具体的 VideoHub skills，如 YouTube、抖音、闲时队列、FFmpeg、字幕和直播录制。
 ---
 
 # VideoHub Router
@@ -14,7 +14,6 @@ description: VideoHub 总入口。用于识别用户要处理的平台或功能�
 
 ## 路由规则
 - Douyin / 抖音链接 → `videohub-douyin`
-- koushare.com 链接 → `videohub-koushare`
 - YouTube / Twitter(X) / Bilibili / 本地音视频 / 文本转写总结 → `videohub-youtube`
 - 空闲队列 / Chrome 插件 / 本地 API → `videohub-queue`
 - FFmpeg 安装、测试、模式切换 → `videohub-ffmpeg`

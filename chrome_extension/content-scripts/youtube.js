@@ -4,6 +4,7 @@
 
     let downloadButton = null;
     let currentVideoId = null;
+    let injectionRetryTimer = null;
 
     // 初始化函数
     function init() {
@@ -37,26 +38,27 @@
     function checkAndInjectButton() {
         // 检查是否在视频页面
         if (!isVideoPage()) {
+            removeDownloadButton();
+            currentVideoId = null;
             return;
         }
 
         const videoId = getVideoId();
-        if (!videoId || videoId === currentVideoId) {
+        if (!videoId) {
             return;
         }
 
-        currentVideoId = videoId;
-        
-        // 移除旧按钮
-        if (downloadButton) {
-            downloadButton.remove();
-            downloadButton = null;
+        if (downloadButton && downloadButton.isConnected && videoId === currentVideoId) {
+            return;
+        }
+
+        if (videoId !== currentVideoId) {
+            currentVideoId = videoId;
+            removeDownloadButton();
         }
 
         // 等待页面元素加载完成
-        setTimeout(() => {
-            injectDownloadButton();
-        }, 1000);
+        scheduleInjectDownloadButton(0);
     }
 
     // 检查是否在视频页面
@@ -81,14 +83,62 @@
         return window.location.href;
     }
 
+    function removeDownloadButton() {
+        if (injectionRetryTimer) {
+            clearTimeout(injectionRetryTimer);
+            injectionRetryTimer = null;
+        }
+
+        document.querySelectorAll('.videohub-youtube-download-wrapper, .video-downloader-btn[data-videohub-platform="youtube"]').forEach(element => {
+            element.remove();
+        });
+
+        downloadButton = null;
+    }
+
+    function scheduleInjectDownloadButton(attempt) {
+        if (injectionRetryTimer) {
+            return;
+        }
+
+        const delay = attempt === 0 ? 500 : Math.min(1000 * attempt, 3000);
+        injectionRetryTimer = setTimeout(() => {
+            injectionRetryTimer = null;
+            const injected = injectDownloadButton();
+            if (!injected && attempt < 10 && isVideoPage()) {
+                scheduleInjectDownloadButton(attempt + 1);
+            }
+        }, delay);
+    }
+
     // 注入下载按钮
     function injectDownloadButton() {
+        if (!isVideoPage()) {
+            return false;
+        }
+
+        const existingButton = document.querySelector('.video-downloader-btn[data-videohub-platform="youtube"]');
+        if (existingButton) {
+            downloadButton = existingButton;
+            return true;
+        }
+
         // 查找合适的位置注入按钮
         const targetSelectors = [
-            'div#actions ytd-menu-renderer', // 新版YouTube
-            'div#menu-container', // 备选位置1
-            'div#top-level-buttons-computed', // 备选位置2
-            'ytd-video-secondary-info-renderer' // 备选位置3
+            'ytd-watch-metadata #title',
+            'ytd-watch-metadata #top-row',
+            'ytd-watch-metadata #owner',
+            '#above-the-fold #title',
+            '#above-the-fold',
+            'ytd-watch-metadata #actions-inner',
+            'ytd-watch-metadata #actions',
+            '#above-the-fold #actions-inner',
+            '#above-the-fold #actions',
+            '#top-row #actions',
+            'div#menu-container',
+            'div#top-level-buttons-computed',
+            'ytd-video-primary-info-renderer',
+            'ytd-video-secondary-info-renderer'
         ];
 
         let targetElement = null;
@@ -101,14 +151,27 @@
 
         if (!targetElement) {
             console.log('YouTube下载助手: 未找到合适的注入位置');
-            return;
+            return false;
         }
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'videohub-youtube-download-wrapper';
+        wrapper.style.cssText = [
+            'display: flex',
+            'align-items: center',
+            'gap: 8px',
+            'margin: 12px 0',
+            'width: 100%'
+        ].join(';');
 
         // 创建下载按钮
         downloadButton = document.createElement('button');
         downloadButton.className = 'video-downloader-btn';
-        downloadButton.textContent = '添加到下载队列';
+        downloadButton.dataset.videohubPlatform = 'youtube';
+        downloadButton.textContent = '下载视频';
         downloadButton.title = '点击将视频添加到闲时下载队列';
+        downloadButton.style.minWidth = '160px';
+        downloadButton.style.height = '36px';
 
         // 创建提示文本
         const tooltip = document.createElement('div');
@@ -118,17 +181,19 @@
 
         // 添加点击事件
         downloadButton.addEventListener('click', handleDownloadClick);
+        wrapper.appendChild(downloadButton);
 
         // 插入按钮
-        if (targetElement.tagName === 'YTD-MENU-RENDERER') {
-            // 对于新版YouTube，插入到菜单容器前
-            targetElement.parentNode.insertBefore(downloadButton, targetElement);
-        } else {
-            // 对于其他位置，直接添加到容器内
+        if (targetElement.id === 'actions' || targetElement.id === 'actions-inner' || targetElement.id === 'top-level-buttons-computed' || targetElement.id === 'menu-container') {
             targetElement.appendChild(downloadButton);
+        } else if (targetElement.parentNode) {
+            targetElement.parentNode.insertBefore(wrapper, targetElement.nextSibling);
+        } else {
+            targetElement.appendChild(wrapper);
         }
 
         console.log('YouTube下载助手: 按钮已注入');
+        return true;
     }
 
     // 处理下载按钮点击
@@ -150,9 +215,10 @@
             return;
         }
 
-        const resetButtonState = (text = '添加到下载队列', stateClass = '') => {
+        const resetButtonState = (text = '下载视频', stateClass = '') => {
             button.className = stateClass || 'video-downloader-btn';
             button.textContent = text;
+            button.dataset.videohubPlatform = 'youtube';
         };
 
         // 设置按钮为加载状态

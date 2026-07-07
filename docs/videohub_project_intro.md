@@ -59,7 +59,7 @@ flowchart LR
 
 所以 VideoHub 做了闲时队列。白天看到有价值的视频，可以先加入队列；晚上或电脑空闲时，再让它自动依次处理。这个逻辑很适合处理长视频和批量任务。
 
-项目还配了 Chrome/Edge 浏览器扩展。在 YouTube、Twitter/X、Bilibili、Koushare 等页面中，可以通过页面按钮把当前视频加入本地队列。桌面端启动后，会通过本地 API 接收这些任务，并在“闲时队列”里统一管理。
+项目还配了 Chrome/Edge 浏览器扩展。在 YouTube、Twitter/X、TikTok、Bilibili 等页面中，可以通过页面按钮把当前视频加入本地队列。桌面端启动后，会通过本地 API 接收这些任务，并在“闲时队列”里统一管理。
 
 ```mermaid
 sequenceDiagram
