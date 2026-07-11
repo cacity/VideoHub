@@ -58,6 +58,25 @@ from paths_config import (
     LOCAL_YTDLP_DIR,
 )
 
+MINIMAX_VOICE_OPTIONS = [
+    ("默认女声 - 少女", "female-shaonv"),
+    ("中文男声 - 新闻播音", "Chinese (Mandarin)_Male_Announcer"),
+    ("中文男声 - 电台主持", "Chinese (Mandarin)_Radio_Host"),
+    ("中文男声 - 绅士", "Chinese (Mandarin)_Gentleman"),
+    ("中文男声 - 南方青年", "Chinese (Mandarin)_Southern_Young_Man"),
+    ("中文男声 - 直率少年", "Chinese (Mandarin)_Straightforward_Boy"),
+    ("中文男声 - 纯真少年", "Chinese (Mandarin)_Pure-hearted_Boy"),
+    ("中文中性 - 温和青年", "Chinese (Mandarin)_Gentle_Youth"),
+    ("中文成熟 - 可靠高管", "Chinese (Mandarin)_Reliable_Executive"),
+    ("中文女声 - 新闻主播", "Chinese (Mandarin)_News_Anchor"),
+    ("中文女声 - 温暖女孩", "Chinese (Mandarin)_Warm_Girl"),
+    ("中文女声 - 柔和女孩", "Chinese (Mandarin)_Soft_Girl"),
+    ("中文女声 - 知性女声", "Chinese (Mandarin)_IntellectualGirl"),
+    ("中文女声 - 成熟女声", "Chinese (Mandarin)_Mature_Woman"),
+    ("粤语男声 - 专业主持", "Cantonese_ProfessionalHost (M)"),
+    ("粤语男声 - 活泼男声", "Cantonese_PlayfulMan"),
+]
+
 # 导入抖音下载模块
 try:
     from douyin import DouyinDownloader, DouyinConfig, DouyinUtils
@@ -465,7 +484,6 @@ from paths_config import (
     INSTAGRAM_DOWNLOADS_DIR,
     DOUYIN_DOWNLOADS_DIR,
     LIVE_DOWNLOADS_DIR,
-    KOUSHARE_DOWNLOADS_DIR,
     DIRECTORY_MAP,
     DEFAULT_SUMMARY_DIR,
 )
@@ -1567,6 +1585,11 @@ class WorkerThread(QThread):
         cosyvoice_mode = self.params.get("cosyvoice_mode", "sft")
         cosyvoice_speaker = self.params.get("cosyvoice_speaker", "中文女")
         cosyvoice_instruction = self.params.get("cosyvoice_instruction", "")
+        minimax_api_key = self.params.get("minimax_api_key", "")
+        minimax_api_url = self.params.get("minimax_api_url", "https://api.minimaxi.com/v1/t2a_v2")
+        minimax_model = self.params.get("minimax_model", "speech-2.8-turbo")
+        minimax_voice_id = self.params.get("minimax_voice_id", "female-shaonv")
+        minimax_language_boost = self.params.get("minimax_language_boost", "Chinese")
         subtitle_burn_mode = self.params.get("subtitle_burn_mode", "none")
         enable_translation_polish = self.params.get("enable_translation_polish", False)
         enable_transcription = self.params.get("enable_transcription", True)
@@ -1617,13 +1640,19 @@ class WorkerThread(QThread):
                 return
 
         # 检查 TTS 后端是否可用（非音频模式）
-        if tts_backend != "cosyvoice" and not check_kokoro_available():
+        if tts_backend == "kokoro" and not check_kokoro_available():
             self.update_signal.emit("[ERROR] Kokoro TTS 未安装，请先运行: pip install kokoro>=0.9.4 soundfile")
             self.finished_signal.emit("", False)
             return
         if tts_backend == "cosyvoice":
             self.update_signal.emit(f"🔊 使用 CosyVoice TTS: {cosyvoice_mode}, speaker={cosyvoice_speaker}")
             self.update_signal.emit(f"   服务地址: {cosyvoice_url}")
+        if tts_backend == "minimax":
+            if not minimax_api_key:
+                self.update_signal.emit("[ERROR] 未配置 MiniMax API Key，请先在设置中填写并保存")
+                self.finished_signal.emit("", False)
+                return
+            self.update_signal.emit(f"🔊 使用 MiniMax TTS: {minimax_model}, voice_id={minimax_voice_id}")
         if subtitle_burn_mode != "none":
             self.update_signal.emit(f"📝 配音完成后烧录字幕: {subtitle_burn_mode}")
 
@@ -1640,6 +1669,11 @@ class WorkerThread(QThread):
             cosyvoice_mode=cosyvoice_mode,
             cosyvoice_speaker=cosyvoice_speaker,
             cosyvoice_instruction=cosyvoice_instruction,
+            minimax_api_key=minimax_api_key,
+            minimax_api_url=minimax_api_url,
+            minimax_model=minimax_model,
+            minimax_voice_id=minimax_voice_id,
+            minimax_language_boost=minimax_language_boost,
             subtitle_burn_mode=subtitle_burn_mode,
             enable_translation_polish=enable_translation_polish,
             enable_transcription=enable_transcription,
@@ -1735,6 +1769,18 @@ class VoicePreviewThread(QThread):
                     Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(path, cache_path)
                     path = cache_path
+            elif backend == "minimax":
+                from src.minimax_tts_client import MiniMaxTTSClient
+
+                client = MiniMaxTTSClient(
+                    api_key=self.params.get("minimax_api_key", ""),
+                    api_url=self.params.get("minimax_api_url", ""),
+                    model=self.params.get("minimax_model", "speech-2.8-turbo"),
+                    voice_id=self.params.get("minimax_voice_id", "female-shaonv"),
+                    speed=self.params.get("speed", 1.0),
+                    language_boost=self.params.get("minimax_language_boost", "Chinese"),
+                )
+                path = client.synthesize(sample_text, cache_path or None)
             else:
                 from src.chinese_tts import ChineseTTS
 
@@ -4199,18 +4245,25 @@ class MainWindow(QMainWindow):
         tts_layout = tts_group.content_layout
 
         tts_backend_layout = QHBoxLayout()
-        tts_backend_label = QLabel("TTS 引擎版本:")
+        tts_backend_label = QLabel("TTS 类型和引擎:")
         self.tts_backend_combo = QComboBox()
-        self.tts_backend_combo.addItems(["Kokoro（原版，默认）", "CosyVoice SFT", "CosyVoice Instruct"])
+        self.tts_backend_combo.addItems([
+            "本地免费 - Kokoro（默认）",
+            "本地免费 - CosyVoice SFT",
+            "本地免费 - CosyVoice Instruct",
+            "外部付费 - MiniMax API",
+        ])
         self.apply_readable_combo_style(self.tts_backend_combo)
         current_tts_backend = os.getenv("TTS_BACKEND", "kokoro")
         current_cosyvoice_mode = os.getenv("COSYVOICE_TTS_MODE", "sft")
-        if current_tts_backend == "cosyvoice" and current_cosyvoice_mode == "instruct":
-            self.tts_backend_combo.setCurrentText("CosyVoice Instruct")
+        if current_tts_backend == "minimax":
+            self.tts_backend_combo.setCurrentText("外部付费 - MiniMax API")
+        elif current_tts_backend == "cosyvoice" and current_cosyvoice_mode == "instruct":
+            self.tts_backend_combo.setCurrentText("本地免费 - CosyVoice Instruct")
         elif current_tts_backend == "cosyvoice":
-            self.tts_backend_combo.setCurrentText("CosyVoice SFT")
+            self.tts_backend_combo.setCurrentText("本地免费 - CosyVoice SFT")
         else:
-            self.tts_backend_combo.setCurrentText("Kokoro（原版，默认）")
+            self.tts_backend_combo.setCurrentText("本地免费 - Kokoro（默认）")
         tts_backend_layout.addWidget(tts_backend_label)
         tts_backend_layout.addWidget(self.tts_backend_combo)
         tts_layout.addLayout(tts_backend_layout)
@@ -4247,11 +4300,77 @@ class MainWindow(QMainWindow):
         cosyvoice_instruction_layout.addWidget(self.cosyvoice_instruction_input)
         tts_layout.addLayout(cosyvoice_instruction_layout)
 
-        tts_info = QLabel("默认使用原来的 Kokoro；只有手动切换到 CosyVoice 时，AI配音才会调用本地 tts_service.py。")
+        minimax_key_layout = QHBoxLayout()
+        minimax_key_label = QLabel("MiniMax API Key:")
+        self.minimax_api_key_input = QLineEdit()
+        self.minimax_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.minimax_api_key_input.setPlaceholderText("仅保存在本机 .env 文件中")
+        self.minimax_api_key_input.setText(os.getenv("MINIMAX_API_KEY", ""))
+        minimax_key_layout.addWidget(minimax_key_label)
+        minimax_key_layout.addWidget(self.minimax_api_key_input)
+        tts_layout.addLayout(minimax_key_layout)
+
+        minimax_api_url_layout = QHBoxLayout()
+        minimax_api_url_label = QLabel("MiniMax API 地址:")
+        self.minimax_api_url_input = QLineEdit()
+        self.minimax_api_url_input.setPlaceholderText("https://api.minimaxi.com/v1/t2a_v2")
+        self.minimax_api_url_input.setText(os.getenv(
+            "MINIMAX_TTS_API_URL",
+            "https://api.minimaxi.com/v1/t2a_v2",
+        ))
+        minimax_api_url_layout.addWidget(minimax_api_url_label)
+        minimax_api_url_layout.addWidget(self.minimax_api_url_input)
+        tts_layout.addLayout(minimax_api_url_layout)
+
+        minimax_model_layout = QHBoxLayout()
+        minimax_model_label = QLabel("MiniMax 模型:")
+        self.minimax_model_combo = QComboBox()
+        self.minimax_model_combo.addItems(["speech-2.8-turbo", "speech-2.8-hd"])
+        self.apply_readable_combo_style(self.minimax_model_combo)
+        self.minimax_model_combo.setCurrentText(os.getenv(
+            "MINIMAX_TTS_MODEL",
+            "speech-2.8-turbo",
+        ))
+        minimax_model_layout.addWidget(minimax_model_label)
+        minimax_model_layout.addWidget(self.minimax_model_combo)
+        tts_layout.addLayout(minimax_model_layout)
+
+        minimax_voice_layout = QHBoxLayout()
+        minimax_voice_label = QLabel("MiniMax 音色:")
+        self.minimax_voice_combo = QComboBox()
+        self.minimax_voice_combo.setEditable(True)
+        for label, voice_id in MINIMAX_VOICE_OPTIONS:
+            self.minimax_voice_combo.addItem(label, voice_id)
+        self.apply_readable_combo_style(self.minimax_voice_combo)
+        self.set_minimax_voice_combo_value(os.getenv("MINIMAX_TTS_VOICE_ID", "female-shaonv"))
+        minimax_voice_layout.addWidget(minimax_voice_label)
+        minimax_voice_layout.addWidget(self.minimax_voice_combo)
+        tts_layout.addLayout(minimax_voice_layout)
+
+        minimax_language_layout = QHBoxLayout()
+        minimax_language_label = QLabel("MiniMax 语言增强:")
+        self.minimax_language_combo = QComboBox()
+        self.minimax_language_combo.setEditable(True)
+        self.minimax_language_combo.addItems(["Chinese", "auto", "English", "Japanese", "Korean"])
+        self.apply_readable_combo_style(self.minimax_language_combo)
+        self.minimax_language_combo.setCurrentText(os.getenv(
+            "MINIMAX_TTS_LANGUAGE_BOOST",
+            "Chinese",
+        ))
+        minimax_language_layout.addWidget(minimax_language_label)
+        minimax_language_layout.addWidget(self.minimax_language_combo)
+        tts_layout.addLayout(minimax_language_layout)
+
+        tts_info = QLabel(
+            "Kokoro 和 CosyVoice 在本地运行，不按调用收费；MiniMax 使用外部付费 API，"
+            "按生成字符计费。试听和正式配音都会使用当前选择。"
+        )
         tts_info.setStyleSheet("color: #666; font-size: 11px;")
         tts_info.setWordWrap(True)
         tts_layout.addWidget(tts_info)
-        self.tts_backend_combo.currentTextChanged.connect(lambda _text: self.refresh_dubbing_voice_options())
+        self.tts_backend_combo.currentTextChanged.connect(self.on_tts_backend_changed)
+        self.minimax_voice_combo.currentTextChanged.connect(lambda _text: self.refresh_dubbing_voice_options())
+        self.update_tts_settings_availability()
 
         layout.addWidget(tts_group)
 
@@ -5792,14 +5911,91 @@ class MainWindow(QMainWindow):
         combo = getattr(self, "tts_backend_combo", None)
         if combo:
             tts_backend_text = combo.currentText()
-            if tts_backend_text == "CosyVoice Instruct":
+            if "MiniMax" in tts_backend_text:
+                return "minimax", "sft"
+            if "CosyVoice Instruct" in tts_backend_text:
                 return "cosyvoice", "instruct"
-            if tts_backend_text == "CosyVoice SFT":
+            if "CosyVoice SFT" in tts_backend_text:
                 return "cosyvoice", "sft"
 
-        if os.getenv("TTS_BACKEND", "kokoro") == "cosyvoice":
+        configured_backend = os.getenv("TTS_BACKEND", "kokoro")
+        if configured_backend == "minimax":
+            return "minimax", "sft"
+        if configured_backend == "cosyvoice":
             return "cosyvoice", os.getenv("COSYVOICE_TTS_MODE", "sft")
         return "kokoro", "sft"
+
+    def on_tts_backend_changed(self, _text=None):
+        """同步 TTS 设置可用状态和配音页音色。"""
+        self.update_tts_settings_availability()
+        self.refresh_dubbing_voice_options()
+
+    def set_minimax_voice_combo_value(self, voice_id):
+        """按 voice_id 选中 MiniMax 音色；未知 ID 保留为可编辑自定义项。"""
+        combo = getattr(self, "minimax_voice_combo", None)
+        if not combo:
+            return
+
+        voice_id = (voice_id or "female-shaonv").strip()
+        index = combo.findData(voice_id)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+            return
+
+        custom_label = f"自定义: {voice_id}"
+        combo.addItem(custom_label, voice_id)
+        combo.setCurrentIndex(combo.count() - 1)
+
+    def get_minimax_voice_id(self, display_text=None):
+        """返回 MiniMax 当前真实 voice_id，兼容下拉显示名和手填自定义 ID。"""
+        if display_text:
+            for label, voice_id in MINIMAX_VOICE_OPTIONS:
+                if display_text == label:
+                    return voice_id
+            if display_text.startswith("自定义:"):
+                return display_text.split(":", 1)[1].strip() or "female-shaonv"
+
+        combo = getattr(self, "minimax_voice_combo", None)
+        if combo:
+            text = combo.currentText().strip()
+            for label, voice_id in MINIMAX_VOICE_OPTIONS:
+                if text == label:
+                    return voice_id
+            if text.startswith("自定义:"):
+                return text.split(":", 1)[1].strip() or "female-shaonv"
+            if text:
+                return text
+            data = combo.currentData()
+            if data:
+                return str(data).strip()
+            return "female-shaonv"
+
+        return os.getenv("MINIMAX_TTS_VOICE_ID", "female-shaonv")
+
+    def update_tts_settings_availability(self):
+        """仅启用当前 TTS 后端需要的设置。"""
+        backend, mode = self.get_selected_tts_settings()
+        cosyvoice_enabled = backend == "cosyvoice"
+        minimax_enabled = backend == "minimax"
+
+        for name in ("cosyvoice_url_input", "cosyvoice_speaker_combo"):
+            widget = getattr(self, name, None)
+            if widget:
+                widget.setEnabled(cosyvoice_enabled)
+        instruction_input = getattr(self, "cosyvoice_instruction_input", None)
+        if instruction_input:
+            instruction_input.setEnabled(cosyvoice_enabled and mode == "instruct")
+
+        for name in (
+            "minimax_api_key_input",
+            "minimax_api_url_input",
+            "minimax_model_combo",
+            "minimax_voice_combo",
+            "minimax_language_combo",
+        ):
+            widget = getattr(self, name, None)
+            if widget:
+                widget.setEnabled(minimax_enabled)
 
     def apply_readable_combo_style(self, combo):
         """修复部分主题下 QComboBox 选中项白字白底的问题。"""
@@ -5844,6 +6040,17 @@ class MainWindow(QMainWindow):
                 else os.getenv("COSYVOICE_TTS_SPEAKER", "中文女")
             )
             self.dubbing_voice_combo.setCurrentText(saved if saved in voices else "中文女")
+        elif tts_backend == "minimax":
+            for label, voice_id in MINIMAX_VOICE_OPTIONS:
+                self.dubbing_voice_combo.addItem(label, voice_id)
+            selected_voice_id = self.get_minimax_voice_id()
+            index = self.dubbing_voice_combo.findData(selected_voice_id)
+            if index >= 0:
+                self.dubbing_voice_combo.setCurrentIndex(index)
+            else:
+                custom_label = f"自定义: {selected_voice_id}"
+                self.dubbing_voice_combo.addItem(custom_label, selected_voice_id)
+                self.dubbing_voice_combo.setCurrentIndex(self.dubbing_voice_combo.count() - 1)
         else:
             voices = ["晓贝 (女声)", "晓晓 (女声)", "晓艺 (女声)", "云健 (男声)", "云扬 (男声)"]
             self.dubbing_voice_combo.addItems(voices)
@@ -5883,6 +6090,11 @@ class MainWindow(QMainWindow):
                 self.cosyvoice_speaker_combo.currentText() if hasattr(self, "cosyvoice_speaker_combo") else "中文女"
             ),
             "cosyvoice_instruction": self.cosyvoice_instruction_input.text().strip() if hasattr(self, "cosyvoice_instruction_input") else "",
+            "minimax_api_key": self.minimax_api_key_input.text().strip() if hasattr(self, "minimax_api_key_input") else os.getenv("MINIMAX_API_KEY", ""),
+            "minimax_api_url": self.minimax_api_url_input.text().strip() if hasattr(self, "minimax_api_url_input") else os.getenv("MINIMAX_TTS_API_URL", "https://api.minimaxi.com/v1/t2a_v2"),
+            "minimax_model": self.minimax_model_combo.currentText() if hasattr(self, "minimax_model_combo") else os.getenv("MINIMAX_TTS_MODEL", "speech-2.8-turbo"),
+            "minimax_voice_id": self.get_minimax_voice_id(voice_display) if tts_backend == "minimax" else self.get_minimax_voice_id(),
+            "minimax_language_boost": self.minimax_language_combo.currentText().strip() if hasattr(self, "minimax_language_combo") else os.getenv("MINIMAX_TTS_LANGUAGE_BOOST", "Chinese"),
             "sample_text": sample_text,
         }
         cache_identity = "|".join([
@@ -5890,6 +6102,9 @@ class MainWindow(QMainWindow):
             params.get("cosyvoice_mode", ""),
             params.get("voice", ""),
             params.get("cosyvoice_speaker", ""),
+            params.get("minimax_model", ""),
+            params.get("minimax_voice_id", ""),
+            params.get("minimax_language_boost", ""),
             f"{params.get('speed', 1.0):.2f}",
             params.get("cosyvoice_instruction", ""),
             sample_text,
@@ -5902,6 +6117,9 @@ class MainWindow(QMainWindow):
 
         if tts_backend == "cosyvoice" and not params["cosyvoice_url"]:
             QMessageBox.warning(self, "配置错误", "请先填写 CosyVoice 服务地址。")
+            return
+        if tts_backend == "minimax" and not params["minimax_api_key"]:
+            QMessageBox.warning(self, "配置错误", "请先填写 MiniMax API Key。")
             return
 
         if cache_path.exists():
@@ -5953,10 +6171,13 @@ class MainWindow(QMainWindow):
 
         # 保存 TTS 后端设置
         tts_backend_text = self.tts_backend_combo.currentText()
-        if tts_backend_text == "CosyVoice Instruct":
+        if "MiniMax" in tts_backend_text:
+            tts_backend = "minimax"
+            cosyvoice_mode = "sft"
+        elif "CosyVoice Instruct" in tts_backend_text:
             tts_backend = "cosyvoice"
             cosyvoice_mode = "instruct"
-        elif tts_backend_text == "CosyVoice SFT":
+        elif "CosyVoice SFT" in tts_backend_text:
             tts_backend = "cosyvoice"
             cosyvoice_mode = "sft"
         else:
@@ -5967,6 +6188,11 @@ class MainWindow(QMainWindow):
         os.environ["COSYVOICE_TTS_URL"] = self.cosyvoice_url_input.text().strip() or "http://127.0.0.1:8877"
         os.environ["COSYVOICE_TTS_SPEAKER"] = self.cosyvoice_speaker_combo.currentText()
         os.environ["COSYVOICE_TTS_INSTRUCTION"] = self.cosyvoice_instruction_input.text().strip()
+        os.environ["MINIMAX_API_KEY"] = self.minimax_api_key_input.text().strip()
+        os.environ["MINIMAX_TTS_API_URL"] = self.minimax_api_url_input.text().strip() or "https://api.minimaxi.com/v1/t2a_v2"
+        os.environ["MINIMAX_TTS_MODEL"] = self.minimax_model_combo.currentText()
+        os.environ["MINIMAX_TTS_VOICE_ID"] = self.get_minimax_voice_id()
+        os.environ["MINIMAX_TTS_LANGUAGE_BOOST"] = self.minimax_language_combo.currentText().strip() or "Chinese"
 
         # 保存摘要生成设置
         summary_mode = "two_stage" if self.summary_mode_combo.currentText() == "两阶段生成（思考+生成）" else "single"
@@ -6020,6 +6246,11 @@ class MainWindow(QMainWindow):
                 "COSYVOICE_TTS_URL": self.cosyvoice_url_input.text().strip() or "http://127.0.0.1:8877",
                 "COSYVOICE_TTS_SPEAKER": self.cosyvoice_speaker_combo.currentText(),
                 "COSYVOICE_TTS_INSTRUCTION": self.cosyvoice_instruction_input.text().strip(),
+                "MINIMAX_API_KEY": self.minimax_api_key_input.text().strip(),
+                "MINIMAX_TTS_API_URL": self.minimax_api_url_input.text().strip() or "https://api.minimaxi.com/v1/t2a_v2",
+                "MINIMAX_TTS_MODEL": self.minimax_model_combo.currentText(),
+                "MINIMAX_TTS_VOICE_ID": self.get_minimax_voice_id(),
+                "MINIMAX_TTS_LANGUAGE_BOOST": self.minimax_language_combo.currentText().strip() or "Chinese",
                 "SUMMARY_GENERATION_MODE": summary_mode,
                 "THINKING_MODEL": self.thinking_model_combo.currentText(),
                 "OUTPUT_MODEL": self.output_model_combo.currentText(),
@@ -6071,6 +6302,7 @@ class MainWindow(QMainWindow):
                 print(f"   - 配置项数: {saved_lines}")
                 print(f"   - OpenAI API Key: {'已配置' if env_vars.get('OPENAI_API_KEY') else '未配置'}")
                 print(f"   - DeepSeek API Key: {'已配置' if env_vars.get('DEEPSEEK_API_KEY') else '未配置'}")
+                print(f"   - MiniMax API Key: {'已配置' if env_vars.get('MINIMAX_API_KEY') else '未配置'}")
                 print(f"   - OpenAI Base URL: {env_vars.get('OPENAI_BASE_URL', '(默认)')}")
                 print(f"   - DeepSeek Base URL: {env_vars.get('DEEPSEEK_BASE_URL', '(默认)')}")
 
@@ -7943,6 +8175,31 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                     "用自然、清晰、适合视频讲解的语气朗读，句子之间保留适当停顿。"
                 )
             )
+            params['minimax_api_key'] = (
+                self.minimax_api_key_input.text().strip()
+                if hasattr(self, "minimax_api_key_input")
+                else os.getenv("MINIMAX_API_KEY", "")
+            )
+            params['minimax_api_url'] = (
+                self.minimax_api_url_input.text().strip()
+                if hasattr(self, "minimax_api_url_input")
+                else os.getenv("MINIMAX_TTS_API_URL", "https://api.minimaxi.com/v1/t2a_v2")
+            ) or "https://api.minimaxi.com/v1/t2a_v2"
+            params['minimax_model'] = (
+                self.minimax_model_combo.currentText()
+                if hasattr(self, "minimax_model_combo")
+                else os.getenv("MINIMAX_TTS_MODEL", "speech-2.8-turbo")
+            )
+            params['minimax_voice_id'] = (
+                self.get_minimax_voice_id(voice_display)
+                if tts_backend == "minimax"
+                else os.getenv("MINIMAX_TTS_VOICE_ID", "female-shaonv")
+            ) or "female-shaonv"
+            params['minimax_language_boost'] = (
+                self.minimax_language_combo.currentText().strip()
+                if hasattr(self, "minimax_language_combo")
+                else os.getenv("MINIMAX_TTS_LANGUAGE_BOOST", "Chinese")
+            ) or "Chinese"
 
             # 获取步骤选项
             params['enable_transcription'] = self.dubbing_step_transcribe.isChecked()
@@ -7967,8 +8224,16 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 self.dubbing_log_text.append(
                     f"TTS 引擎: CosyVoice {cosyvoice_mode}, speaker={params['cosyvoice_speaker']}"
                 )
+            elif tts_backend == "minimax":
+                if not params['minimax_api_key']:
+                    QMessageBox.warning(self, "配置错误", "请先在设置中填写 MiniMax API Key。")
+                    return
+                self.dubbing_log_text.append(
+                    f"TTS 引擎: MiniMax {params['minimax_model']}, "
+                    f"voice_id={params['minimax_voice_id']}（外部付费）"
+                )
             else:
-                self.dubbing_log_text.append("TTS 引擎: Kokoro（原版）")
+                self.dubbing_log_text.append("TTS 引擎: Kokoro（本地免费）")
 
             # 更新UI状态
             self.dubbing_start_button.setEnabled(False)
@@ -7977,7 +8242,10 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             self.dubbing_progress_bar.setValue(0)
             self.dubbing_step_label.setText("当前步骤: 准备开始")
 
-            print("[DEBUG] 线程参数:", params)
+            safe_params = dict(params)
+            if safe_params.get("minimax_api_key"):
+                safe_params["minimax_api_key"] = "[REDACTED]"
+            print("[DEBUG] 线程参数:", safe_params)
 
             # 创建并启动工作线程
             print("[DEBUG] 创建 WorkerThread...")

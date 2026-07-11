@@ -10,6 +10,25 @@ import numpy as np
 from pathlib import Path
 from typing import List, Dict, Optional, Callable, Tuple
 
+try:
+    from .subtitle_utils import (
+        choose_ass_dialogue_for_tts,
+        clean_ass_text,
+        group_ass_dialogues,
+        parse_ass_dialogues,
+    )
+except ImportError:
+    from subtitle_utils import (
+        choose_ass_dialogue_for_tts,
+        clean_ass_text,
+        group_ass_dialogues,
+        parse_ass_dialogues,
+    )
+
+# Kokoro 使用 PyTorch；禁用 Transformers 的可选 TensorFlow 路径，避免加载无关 DLL。
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+
 # 尝试导入 Kokoro，如果失败则标记不可用
 try:
     from kokoro import KPipeline
@@ -316,42 +335,63 @@ class ChineseTTS:
         return text
 
     def _parse_srt(self, subtitle_path: str) -> List[Dict]:
-        """解析 SRT 字幕文件"""
+        """解析 SRT/VTT/ASS 字幕文件并返回统一时间轴。"""
         segments = []
 
         with open(subtitle_path, 'r', encoding='utf-8') as f:
             content = f.read()
+
+        suffix = Path(subtitle_path).suffix.lower()
+        if suffix in {'.ass', '.ssa'} or ('[Events]' in content and 'Dialogue:' in content):
+            return self._parse_ass(content)
 
         # 按空行分割块
         blocks = re.split(r'\n\s*\n', content.strip())
 
         for block in blocks:
             lines = block.strip().split('\n')
-            if len(lines) >= 3:
-                # 第1行: 序号
-                # 第2行: 时间码
-                # 第3行+: 文本
-                time_line = lines[1]
-                text = '\n'.join(lines[2:])
+            time_index = next((index for index, line in enumerate(lines) if '-->' in line), None)
+            if time_index is None or time_index + 1 >= len(lines):
+                continue
 
-                # 解析时间码 00:00:01,000 --> 00:00:04,000
-                match = re.match(
-                    r'(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})',
-                    time_line
-                )
-                if match:
-                    start_str = match.group(1)
-                    end_str = match.group(2)
-                    start = self._time_to_seconds(start_str)
-                    end = self._time_to_seconds(end_str)
+            time_line = lines[time_index]
+            text = '\n'.join(lines[time_index + 1:]).strip()
+            match = re.match(
+                r'(\d{1,2}:\d{2}:\d{2}[,.]\d{2,3})\s*-->\s*'
+                r'(\d{1,2}:\d{2}:\d{2}[,.]\d{2,3})',
+                time_line,
+            )
+            if not match or not text:
+                continue
 
-                    segments.append({
-                        'text': text.strip(),
-                        'start': start,
-                        'end': end,
-                        'duration': end - start
-                    })
+            start = self._time_to_seconds(match.group(1))
+            end = self._time_to_seconds(match.group(2))
+            segments.append({
+                'text': text,
+                'start': start,
+                'end': end,
+                'duration': end - start,
+            })
 
+        return segments
+
+    def _parse_ass(self, content: str) -> List[Dict]:
+        """解析 ASS/SSA Dialogue，并从双语同时间轴中优先选择中文译文。"""
+        segments = []
+        dialogues = parse_ass_dialogues(content)
+        for group in group_ass_dialogues(dialogues):
+            selected = choose_ass_dialogue_for_tts(group, target_language='zh-CN')
+            if selected is None:
+                continue
+            text = clean_ass_text(selected.text)
+            if not text:
+                continue
+            segments.append({
+                'text': text,
+                'start': selected.start_seconds,
+                'end': selected.end_seconds,
+                'duration': selected.end_seconds - selected.start_seconds,
+            })
         return segments
 
     def _time_to_seconds(self, time_str: str) -> float:

@@ -820,6 +820,11 @@ class WorkerThread(QThread):
         cosyvoice_mode = self.params.get("cosyvoice_mode", "sft")
         cosyvoice_speaker = self.params.get("cosyvoice_speaker", "中文女")
         cosyvoice_instruction = self.params.get("cosyvoice_instruction", "")
+        minimax_api_key = self.params.get("minimax_api_key", "")
+        minimax_api_url = self.params.get("minimax_api_url", "https://api.minimaxi.com/v1/t2a_v2")
+        minimax_model = self.params.get("minimax_model", "speech-2.8-turbo")
+        minimax_voice_id = self.params.get("minimax_voice_id", "female-shaonv")
+        minimax_language_boost = self.params.get("minimax_language_boost", "Chinese")
         subtitle_burn_mode = self.params.get("subtitle_burn_mode", "none")
         enable_translation_polish = self.params.get("enable_translation_polish", False)
         enable_transcription = self.params.get("enable_transcription", True)
@@ -871,13 +876,19 @@ class WorkerThread(QThread):
                 return
 
         # 检查 TTS 后端是否可用（非音频模式）
-        if tts_backend != "cosyvoice" and not check_kokoro_available():
+        if tts_backend == "kokoro" and not check_kokoro_available():
             self.update_signal.emit("[ERROR] Kokoro TTS 未安装，请先运行: pip install kokoro>=0.9.4 soundfile")
             self.finished_signal.emit("", False)
             return
         if tts_backend == "cosyvoice":
             self.update_signal.emit(f"🔊 使用 CosyVoice TTS: {cosyvoice_mode}, speaker={cosyvoice_speaker}")
             self.update_signal.emit(f"   服务地址: {cosyvoice_url}")
+        if tts_backend == "minimax":
+            if not minimax_api_key:
+                self.update_signal.emit("[ERROR] 未配置 MiniMax API Key，请先在设置中填写并保存")
+                self.finished_signal.emit("", False)
+                return
+            self.update_signal.emit(f"🔊 使用 MiniMax TTS: {minimax_model}, voice_id={minimax_voice_id}")
         if subtitle_burn_mode != "none":
             self.update_signal.emit(f"📝 配音完成后烧录字幕: {subtitle_burn_mode}")
 
@@ -894,6 +905,11 @@ class WorkerThread(QThread):
             cosyvoice_mode=cosyvoice_mode,
             cosyvoice_speaker=cosyvoice_speaker,
             cosyvoice_instruction=cosyvoice_instruction,
+            minimax_api_key=minimax_api_key,
+            minimax_api_url=minimax_api_url,
+            minimax_model=minimax_model,
+            minimax_voice_id=minimax_voice_id,
+            minimax_language_boost=minimax_language_boost,
             subtitle_burn_mode=subtitle_burn_mode,
             enable_translation_polish=enable_translation_polish,
             enable_transcription=enable_transcription,

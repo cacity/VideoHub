@@ -46,6 +46,11 @@ class DubbingTask:
         cosyvoice_mode: str = 'sft',
         cosyvoice_speaker: str = '中文女',
         cosyvoice_instruction: str = '',
+        minimax_api_key: str = '',
+        minimax_api_url: str = 'https://api.minimaxi.com/v1/t2a_v2',
+        minimax_model: str = 'speech-2.8-turbo',
+        minimax_voice_id: str = 'female-shaonv',
+        minimax_language_boost: str = 'Chinese',
         subtitle_burn_mode: str = 'none',
         enable_translation_polish: bool = False,
         keep_background_audio: bool = False,
@@ -63,11 +68,16 @@ class DubbingTask:
             output_path: 输出视频路径（可选，默认自动生成）
             voice: 配音音色
             speed: 语速
-            tts_backend: TTS 后端，kokoro/cosyvoice
+            tts_backend: TTS 后端，kokoro/cosyvoice/minimax
             cosyvoice_url: CosyVoice 本地服务地址
             cosyvoice_mode: CosyVoice 模式，sft/instruct
             cosyvoice_speaker: CosyVoice 音色
             cosyvoice_instruction: CosyVoice Instruct 指令
+            minimax_api_key: MiniMax API Key
+            minimax_api_url: MiniMax T2A API 地址
+            minimax_model: MiniMax TTS 模型
+            minimax_voice_id: MiniMax 音色 ID
+            minimax_language_boost: MiniMax 语言增强选项
             subtitle_burn_mode: 字幕烧录模式，none/single/bilingual
             enable_translation_polish: 是否使用 DeepSeek 润色翻译后的中文字幕
             keep_background_audio: 是否保留背景音
@@ -86,6 +96,11 @@ class DubbingTask:
         self.cosyvoice_mode = cosyvoice_mode
         self.cosyvoice_speaker = cosyvoice_speaker
         self.cosyvoice_instruction = cosyvoice_instruction
+        self.minimax_api_key = minimax_api_key
+        self.minimax_api_url = minimax_api_url
+        self.minimax_model = minimax_model
+        self.minimax_voice_id = minimax_voice_id
+        self.minimax_language_boost = minimax_language_boost
         self.subtitle_burn_mode = subtitle_burn_mode
         self.enable_translation_polish = enable_translation_polish
         self.keep_background_audio = keep_background_audio
@@ -199,6 +214,9 @@ class VideoDubbingEngine:
                 task.subtitle_path = task.generated_subtitle
                 task.source_subtitle = task.generated_subtitle
 
+            if task.subtitle_path:
+                self._validate_subtitle_timeline(task.video_path, task.subtitle_path)
+
             # 步骤 3: 翻译字幕（如果需要）
             if task.enable_translation and task.subtitle_path:
                 self._report_step('translate', 2)
@@ -225,6 +243,11 @@ class VideoDubbingEngine:
                 task.cosyvoice_mode,
                 task.cosyvoice_speaker,
                 task.cosyvoice_instruction,
+                task.minimax_api_key,
+                task.minimax_api_url,
+                task.minimax_model,
+                task.minimax_voice_id,
+                task.minimax_language_boost,
             )
 
             # 步骤 5: 合并最终视频
@@ -258,13 +281,17 @@ class VideoDubbingEngine:
 
     def _download_video(self, youtube_url: str) -> str:
         """下载 YouTube 视频"""
-        from .youtube_transcriber import download_youtube_video
+        from .youtube_transcriber import download_youtube_video, extract_youtube_video_id
 
         self._report_progress(0, "开始下载视频...")
 
         # 使用 workspace/dubbing_temp/ 作为临时目录
         temp_dir = self._get_temp_dir()
-        download_dir = os.path.join(temp_dir, f"download_{self._get_timestamp()}")
+        video_id = extract_youtube_video_id(youtube_url)
+        if not video_id:
+            import hashlib
+            video_id = hashlib.sha1(youtube_url.encode("utf-8")).hexdigest()[:12]
+        download_dir = os.path.join(temp_dir, f"download_{video_id}")
         os.makedirs(download_dir, exist_ok=True)
 
         # 下载视频
@@ -272,7 +299,8 @@ class VideoDubbingEngine:
         video_path = download_youtube_video(
             youtube_url,
             output_dir=download_dir,
-            audio_only=False  # 需要视频
+            audio_only=False,
+            max_height=1080,
         )
 
         self._report_progress(100, "视频下载完成")
@@ -299,11 +327,48 @@ class VideoDubbingEngine:
             model_size="small",  # 使用小模型提升速度
             generate_subtitles=True,
             translate_to_chinese=False,  # 仅生成英文字幕
-            source_language="en"
+            source_language="en",
+            output_basename=video_path,
         )
 
         self._report_progress(100, f"转录完成: {subtitle_path}")
         return subtitle_path
+
+    def _validate_subtitle_timeline(self, video_path: str, subtitle_path: str) -> None:
+        """Reject a stale subtitle file whose timeline is substantially longer than the video."""
+        try:
+            from .chinese_tts import ChineseTTS as CTTS
+        except ImportError:
+            from src.chinese_tts import ChineseTTS as CTTS
+
+        parser = CTTS.__new__(CTTS)
+        segments = parser._parse_srt(subtitle_path)
+        if not segments:
+            raise ValueError(
+                f"字幕文件未解析到有效时间轴: {subtitle_path}。"
+                "请确认 SRT/VTT 时间码或 ASS [Events]/Dialogue 结构完整。"
+            )
+
+        video_duration = float(get_video_duration(video_path) or 0)
+        subtitle_duration = max(float(item.get('end', 0) or 0) for item in segments)
+        if video_duration <= 0 or subtitle_duration <= 0:
+            return
+
+        allowed_overrun = max(30.0, video_duration * 0.15)
+        if subtitle_duration <= video_duration + allowed_overrun:
+            return
+
+        def format_duration(seconds: float) -> str:
+            total_seconds = max(0, int(round(seconds)))
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, secs = divmod(remainder, 60)
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+        raise ValueError(
+            "字幕与视频时长明显不匹配，已在翻译/TTS 前停止任务："
+            f"视频 {format_duration(video_duration)}，字幕 {format_duration(subtitle_duration)}。"
+            "请清空配音页的‘已有字幕’输入框以自动转录，或选择与当前视频匹配的字幕。"
+        )
 
     def _translate_subtitle(
         self,
@@ -343,6 +408,11 @@ class VideoDubbingEngine:
         cosyvoice_mode: str = 'sft',
         cosyvoice_speaker: str = '中文女',
         cosyvoice_instruction: str = '',
+        minimax_api_key: str = '',
+        minimax_api_url: str = 'https://api.minimaxi.com/v1/t2a_v2',
+        minimax_model: str = 'speech-2.8-turbo',
+        minimax_voice_id: str = 'female-shaonv',
+        minimax_language_boost: str = 'Chinese',
     ) -> str:
         """合成中文音频"""
         if tts_backend == 'cosyvoice':
@@ -352,6 +422,16 @@ class VideoDubbingEngine:
                 cosyvoice_mode,
                 cosyvoice_speaker,
                 cosyvoice_instruction,
+            )
+        if tts_backend == 'minimax':
+            return self._synthesize_audio_minimax(
+                subtitle_path,
+                speed,
+                minimax_api_key,
+                minimax_api_url,
+                minimax_model,
+                minimax_voice_id,
+                minimax_language_boost,
             )
 
         if not self.kokoro_available:
@@ -379,6 +459,11 @@ class VideoDubbingEngine:
 
         total_segments = len(segments)
         self._log(f"字幕解析完成，共 {total_segments} 段")
+        if total_segments == 0:
+            raise RuntimeError(
+                f"字幕文件未解析到有效时间轴: {subtitle_path}。"
+                "请确认 SRT/VTT 时间码或 ASS [Events]/Dialogue 结构完整。"
+            )
 
         for idx, seg in enumerate(segments):
             if idx < 3:  # 只显示前3段
@@ -438,7 +523,7 @@ class VideoDubbingEngine:
                 if seg_audios:
                     seg_audio = np.concatenate(seg_audios)
                     all_audio.append(seg_audio)
-                    current_time = seg['start'] + len(seg_audio) / sample_rate
+                    current_time = max(current_time, seg['start']) + len(seg_audio) / sample_rate
             except Exception as e:
                 self._log(f"  段落 {idx+1} 合成失败: {e}")
                 continue
@@ -506,7 +591,7 @@ class VideoDubbingEngine:
         temp_audio_path = os.path.join(temp_dir, f"dubbing_audio_cosyvoice_{self._get_timestamp()}.wav")
         parser = CTTS.__new__(CTTS)
         segments = parser._parse_srt(subtitle_path)
-        segments = self._prepare_cosyvoice_segments(segments)
+        segments = self._prepare_tts_segments(segments)
         sample_rate = None
         all_audio = []
         current_time = 0.0
@@ -514,6 +599,11 @@ class VideoDubbingEngine:
         total_segments = len(segments)
         self._log(f"字幕解析完成，共 {total_segments} 段")
         self._log(f"CosyVoice 模式: {mode}, speaker={cosyvoice_speaker}")
+        if total_segments == 0:
+            raise RuntimeError(
+                f"字幕文件未解析到有效时间轴: {subtitle_path}。"
+                "请确认 SRT/VTT 时间码或 ASS [Events]/Dialogue 结构完整。"
+            )
 
         for idx, seg in enumerate(segments):
             progress = int((idx / max(total_segments, 1)) * 100)
@@ -550,8 +640,9 @@ class VideoDubbingEngine:
                         all_audio.append(np.zeros(silence_samples, dtype=np.float32))
                     current_time = seg['start']
 
+                segment_start = max(current_time, seg['start'])
                 all_audio.append(audio)
-                current_time = seg['start'] + len(audio) / sample_rate
+                current_time = segment_start + len(audio) / sample_rate
             except Exception as exc:
                 self._log(f"  段落 {idx + 1} CosyVoice 合成失败: {exc}")
                 continue
@@ -567,8 +658,130 @@ class VideoDubbingEngine:
         self._report_progress(100, "CosyVoice 音频合成完成")
         return temp_audio_path
 
-    def _prepare_cosyvoice_segments(self, segments: list) -> list:
-        """整理字幕片段，让 CosyVoice 正式配音更接近自然朗读。"""
+    def _synthesize_audio_minimax(
+        self,
+        subtitle_path: str,
+        speed: float,
+        api_key: str,
+        api_url: str,
+        model: str,
+        voice_id: str,
+        language_boost: str,
+    ) -> str:
+        """通过 MiniMax T2A API 合成并按字幕时间轴拼接音频。"""
+        self._report_progress(0, "初始化 MiniMax TTS...")
+
+        try:
+            from .chinese_tts import ChineseTTS as CTTS
+            from .minimax_tts_client import MiniMaxTTSClient
+        except ImportError:
+            from src.chinese_tts import ChineseTTS as CTTS
+            from src.minimax_tts_client import MiniMaxTTSClient
+
+        import hashlib
+        import numpy as np
+        import soundfile as sf
+
+        client = MiniMaxTTSClient(
+            api_key=api_key,
+            api_url=api_url,
+            model=model,
+            voice_id=voice_id,
+            speed=speed,
+            language_boost=language_boost,
+        )
+        temp_dir = self._get_temp_dir()
+        segment_dir = Path(temp_dir) / "minimax_segments"
+        segment_dir.mkdir(parents=True, exist_ok=True)
+        temp_audio_path = os.path.join(
+            temp_dir,
+            f"dubbing_audio_minimax_{self._get_timestamp()}.wav",
+        )
+
+        parser = CTTS.__new__(CTTS)
+        segments = self._prepare_tts_segments(parser._parse_srt(subtitle_path))
+        sample_rate = None
+        all_audio = []
+        current_time = 0.0
+        total_segments = len(segments)
+        failed_segments = []
+        cache_hits = 0
+
+        self._log(f"字幕解析完成，共 {total_segments} 段")
+        self._log(f"MiniMax 模型: {model}, voice_id={voice_id}")
+        if total_segments == 0:
+            raise RuntimeError(
+                f"字幕文件未解析到有效时间轴: {subtitle_path}。"
+                "请确认 SRT/VTT 时间码或 ASS [Events]/Dialogue 结构完整。"
+            )
+
+        for idx, seg in enumerate(segments):
+            progress = int((idx / max(total_segments, 1)) * 100)
+            self._report_progress(progress, f"MiniMax 合成第 {idx + 1}/{total_segments} 句...")
+            text = seg.get('text', '').strip()
+            if not text:
+                continue
+
+            cache_identity = f"{model}|{voice_id}|{speed:.3f}|{language_boost}|{text}"
+            cache_key = hashlib.sha1(cache_identity.encode('utf-8')).hexdigest()
+            segment_path = segment_dir / f"{cache_key}.wav"
+
+            try:
+                if segment_path.exists():
+                    cache_hits += 1
+                else:
+                    client.synthesize(text, segment_path)
+                audio, sr = sf.read(segment_path, always_2d=False)
+                if audio.ndim > 1:
+                    audio = audio.mean(axis=1)
+                audio = audio.astype(np.float32)
+                if sample_rate is None:
+                    sample_rate = sr
+                elif sr != sample_rate:
+                    import librosa
+                    audio = librosa.resample(
+                        audio,
+                        orig_sr=sr,
+                        target_sr=sample_rate,
+                    ).astype(np.float32)
+
+                if current_time < seg['start']:
+                    silence_samples = int((seg['start'] - current_time) * sample_rate)
+                    if silence_samples > 0:
+                        all_audio.append(np.zeros(silence_samples, dtype=np.float32))
+                    current_time = seg['start']
+
+                segment_start = max(current_time, seg['start'])
+                all_audio.append(audio)
+                current_time = segment_start + len(audio) / sample_rate
+            except Exception as exc:
+                self._log(f"  段落 {idx + 1} MiniMax 合成失败: {exc}")
+                failed_segments.append(idx + 1)
+
+        if cache_hits:
+            self._log(f"MiniMax 已复用缓存音频: {cache_hits}/{total_segments} 段")
+
+        if failed_segments:
+            preview = ", ".join(str(index) for index in failed_segments[:12])
+            if len(failed_segments) > 12:
+                preview += ", ..."
+            raise RuntimeError(
+                f"MiniMax 有 {len(failed_segments)}/{total_segments} 个分段最终失败"
+                f"（段落: {preview}）。已成功分段保留在缓存中，重新执行会断点续传。"
+            )
+
+        if not all_audio or sample_rate is None:
+            raise RuntimeError("MiniMax 没有生成任何音频数据")
+
+        final_audio = np.concatenate(all_audio)
+        sf.write(temp_audio_path, final_audio, sample_rate)
+        self._log(f"MiniMax 音频已保存到: {temp_audio_path}")
+        self._log(f"最终音频长度: {len(final_audio) / sample_rate:.2f}秒")
+        self._report_progress(100, "MiniMax 音频合成完成")
+        return temp_audio_path
+
+    def _prepare_tts_segments(self, segments: list) -> list:
+        """整理字幕片段，让远程 TTS 更接近自然朗读。"""
         normalized = []
         for seg in segments:
             text = self._normalize_tts_text(seg.get('text', ''))
@@ -578,7 +791,7 @@ class VideoDubbingEngine:
 
         merged = self._merge_short_segments(normalized)
         if len(merged) != len(segments):
-            self._log(f"CosyVoice 字幕片段优化: {len(segments)} -> {len(merged)} 段")
+            self._log(f"远程 TTS 字幕片段优化: {len(segments)} -> {len(merged)} 段")
         return merged
 
     def _normalize_tts_text(self, text: str) -> str:

@@ -12,32 +12,73 @@ import requests
 import html
 import subprocess
 import json
+import re
 import time
 from urllib.parse import urlparse, parse_qs
 
+try:
+    from .subtitle_utils import (
+        ass_text_language_score,
+        clean_ass_text,
+        escape_ass_text,
+        group_ass_dialogues,
+        parse_ass_dialogues,
+        target_style_score,
+    )
+except ImportError:
+    from subtitle_utils import (
+        ass_text_language_score,
+        clean_ass_text,
+        escape_ass_text,
+        group_ass_dialogues,
+        parse_ass_dialogues,
+        target_style_score,
+    )
+
 # 导入 yt-dlp 管理器
 try:
-    from ytdlp_manager import get_ytdlp_manager, get_ytdlp_options
+    from .ytdlp_manager import get_ytdlp_manager, get_ytdlp_options
     YT_DLP_MANAGER_AVAILABLE = True
 except ImportError:
-    YT_DLP_MANAGER_AVAILABLE = False
+    try:
+        from ytdlp_manager import get_ytdlp_manager, get_ytdlp_options
+        YT_DLP_MANAGER_AVAILABLE = True
+    except ImportError:
+        YT_DLP_MANAGER_AVAILABLE = False
 
 # 统一的工作目录和各类子目录（videos/downloads/subtitles/...）
-from paths_config import (
-    WORKSPACE_DIR,
-    VIDEOS_DIR,
-    DOWNLOADS_DIR,
-    SONGS_DIR,
-    SUBTITLES_DIR,
-    TRANSCRIPTS_DIR,
-    SUMMARIES_DIR,
-    VIDEOS_WITH_SUBTITLES_DIR,
-    NATIVE_SUBTITLES_DIR,
-    DIRECTORY_MAP,
-    DEFAULT_SUMMARY_DIR,
-    LOGS_DIR,
-    TEMPLATES_DIR,
-)
+try:
+    from .paths_config import (
+        WORKSPACE_DIR,
+        VIDEOS_DIR,
+        DOWNLOADS_DIR,
+        SONGS_DIR,
+        SUBTITLES_DIR,
+        TRANSCRIPTS_DIR,
+        SUMMARIES_DIR,
+        VIDEOS_WITH_SUBTITLES_DIR,
+        NATIVE_SUBTITLES_DIR,
+        DIRECTORY_MAP,
+        DEFAULT_SUMMARY_DIR,
+        LOGS_DIR,
+        TEMPLATES_DIR,
+    )
+except ImportError:
+    from paths_config import (
+        WORKSPACE_DIR,
+        VIDEOS_DIR,
+        DOWNLOADS_DIR,
+        SONGS_DIR,
+        SUBTITLES_DIR,
+        TRANSCRIPTS_DIR,
+        SUMMARIES_DIR,
+        VIDEOS_WITH_SUBTITLES_DIR,
+        NATIVE_SUBTITLES_DIR,
+        DIRECTORY_MAP,
+        DEFAULT_SUMMARY_DIR,
+        LOGS_DIR,
+        TEMPLATES_DIR,
+    )
 
 # Load environment variables from .env file
 load_dotenv()
@@ -103,7 +144,118 @@ def set_translation_verbose(verbose: bool):
     TRANSLATION_VERBOSE = bool(verbose)
 
 
-def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cookies_file=None, proxy=None):
+def _terminate_process_tree(process):
+    """Terminate a downloader and its ffmpeg child processes."""
+    if process.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        else:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def _run_process_with_live_output(cmd, timeout_seconds):
+    """Run a command while forwarding output and enforcing a tree-safe timeout."""
+    import locale
+    import queue
+    import threading
+
+    creationflags = 0
+    if os.name == "nt" and hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding=locale.getpreferredencoding(False),
+        errors="replace",
+        bufsize=1,
+        creationflags=creationflags,
+    )
+    output_queue = queue.Queue()
+    reader_done = threading.Event()
+    output_lines = []
+
+    def read_output():
+        try:
+            if process.stdout:
+                for line in iter(process.stdout.readline, ""):
+                    output_queue.put(line)
+        finally:
+            reader_done.set()
+
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader.start()
+    deadline = time.monotonic() + timeout_seconds
+    last_download_percent = -1
+
+    while True:
+        try:
+            line = output_queue.get(timeout=0.2)
+            clean_line = line.rstrip("\r\n")
+            if clean_line:
+                output_lines.append(clean_line)
+                if len(output_lines) > 500:
+                    output_lines.pop(0)
+                progress_match = re.search(r"\[download\]\s+(\d+(?:\.\d+)?)%", clean_line)
+                if progress_match:
+                    current_percent = int(float(progress_match.group(1)))
+                    if current_percent > last_download_percent or current_percent >= 100:
+                        print(clean_line)
+                        last_download_percent = current_percent
+                else:
+                    print(clean_line)
+        except queue.Empty:
+            pass
+
+        if time.monotonic() >= deadline and process.poll() is None:
+            _terminate_process_tree(process)
+            reader.join(timeout=5)
+            tail = "\n".join(output_lines[-30:])
+            raise RuntimeError(
+                f"yt-dlp 下载超过 {timeout_seconds} 秒，已终止下载进程。"
+                f"\n最后输出:\n{tail or '(无输出)'}"
+            )
+
+        if process.poll() is not None and reader_done.is_set() and output_queue.empty():
+            break
+
+    reader.join(timeout=5)
+    return subprocess.CompletedProcess(
+        cmd,
+        process.returncode,
+        stdout="\n".join(output_lines),
+        stderr="",
+    )
+
+
+def download_with_exe(
+    youtube_url,
+    exe_path,
+    output_dir,
+    audio_only=False,
+    cookies_file=None,
+    proxy=None,
+    max_height=None,
+):
     """
     使用本地 yt-dlp.exe 下载视频
 
@@ -136,6 +288,12 @@ def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cooki
     # 格式选项 - 使用更广泛的格式匹配
     if audio_only:
         cmd.extend(['-f', 'bestaudio/best'])
+    elif max_height:
+        cmd.extend([
+            '-f',
+            f'bestvideo[height<={int(max_height)}][ext=mp4]+bestaudio[ext=m4a]/'
+            f'best[height<={int(max_height)}][ext=mp4]/best[height<={int(max_height)}]/best',
+        ])
     else:
         # 视频下载：尝试多种格式组合
         cmd.extend(['-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'])
@@ -144,14 +302,16 @@ def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cooki
     safe_template = os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s')
     cmd.extend(['-o', safe_template])
 
-    # 保留原始文件（不删除分片）
-    cmd.append('-k')
-
     # 详细输出模式
     cmd.append('-v')
+    cmd.append('--newline')
 
     # Cookies
-    if cookies_file and os.path.exists(cookies_file):
+    if cookies_file and cookies_file.startswith("browser:"):
+        browser_name = cookies_file.split(":", 1)[1].strip()
+        cmd.extend(['--cookies-from-browser', browser_name])
+        print(f"使用 {browser_name.title()} 浏览器 cookies")
+    elif cookies_file and os.path.exists(cookies_file):
         cmd.extend(['--cookies', cookies_file])
         print(f"使用 cookies 文件: {cookies_file}")
     else:
@@ -165,6 +325,13 @@ def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cooki
     # 添加 --no-check-certificate 避免证书问题
     cmd.append('--no-check-certificate')
     cmd.append('--no-playlist')
+    cmd.extend(['--socket-timeout', '30'])
+    cmd.extend(['--retries', '5'])
+    cmd.extend(['--fragment-retries', '5'])
+    cmd.extend(['--extractor-retries', '3'])
+    cmd.extend(['--concurrent-fragments', '4'])
+    if not audio_only:
+        cmd.extend(['--merge-output-format', 'mp4'])
 
     # 添加视频URL
     cmd.append(youtube_url)
@@ -172,12 +339,8 @@ def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cooki
     print(f"执行命令: {' '.join(cmd)}")
 
     # 执行下载
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=600  # 10分钟超时
-    )
+    timeout_seconds = max(60, int(os.getenv("YTDLP_DOWNLOAD_TIMEOUT_SECONDS", "1800")))
+    result = _run_process_with_live_output(cmd, timeout_seconds)
 
     print(f"命令返回码: {result.returncode}")
 
@@ -185,6 +348,9 @@ def download_with_exe(youtube_url, exe_path, output_dir, audio_only=False, cooki
         error_msg = result.stderr.strip()
         if not error_msg:
             error_msg = result.stdout.strip()
+        error_lines = error_msg.splitlines()
+        if len(error_lines) > 40:
+            error_msg = "\n".join(error_lines[-40:])
 
         print(f"yt-dlp.exe 错误: {error_msg}")
 
@@ -1435,6 +1601,156 @@ def download_youtube_subtitles(youtube_url, output_dir=NATIVE_SUBTITLES_DIR,
         print(f"下载字幕时出错: {str(e)}")
         return []
 
+def _translate_ass_subtitle_content(
+    content,
+    target_language,
+    enable_translation_polish=None,
+    progress_callback=None,
+):
+    """Translate only ASS Dialogue text while preserving headers, styles, and timing."""
+    dialogues = parse_ass_dialogues(content)
+    if not dialogues:
+        raise ValueError("ASS 文件的 [Events] 区域中没有可解析的 Dialogue 行")
+
+    groups = group_ass_dialogues(dialogues)
+    total_groups = len(groups)
+    total_duration = max((item.end_seconds for item in dialogues), default=None)
+    lines = content.splitlines()
+    omitted_lines = set()
+    replacements = {}
+    translated_items = []
+    reused_target_groups = 0
+    source_style_names = {"default", "source", "original", "primary", "原文", "默认"}
+
+    emit_translation_progress(
+        progress_callback,
+        "字幕翻译进度",
+        0,
+        max(total_groups, 1),
+        current_time=0,
+        total_time=total_duration,
+        force=True,
+    )
+
+    for group_index, group in enumerate(groups):
+        usable = [item for item in group if clean_ass_text(item.text)]
+        target_items = [
+            item
+            for item in usable
+            if ass_text_language_score(item.text, target_language) > 0
+        ]
+        styles = {(item.style or "").strip().lower() for item in usable}
+        is_bilingual_group = bool(
+            len(usable) > 1
+            and styles.intersection(source_style_names)
+            and any(target_style_score(style) for style in styles)
+        )
+
+        if target_items:
+            if is_bilingual_group or len(target_items) < len(usable):
+                chosen = max(
+                    target_items,
+                    key=lambda item: (
+                        target_style_score(item.style),
+                        ass_text_language_score(item.text, target_language),
+                        -item.line_index,
+                    ),
+                )
+                for item in usable:
+                    if item.line_index != chosen.line_index:
+                        omitted_lines.add(item.line_index)
+                reused_target_groups += 1
+        else:
+            items_to_translate = usable
+            if is_bilingual_group:
+                chosen_source = min(
+                    usable,
+                    key=lambda item: (
+                        0 if (item.style or "").strip().lower() in source_style_names else 1,
+                        item.line_index,
+                    ),
+                )
+                items_to_translate = [chosen_source]
+                for item in usable:
+                    if item.line_index != chosen_source.line_index:
+                        omitted_lines.add(item.line_index)
+
+            for item in items_to_translate:
+                source_text = clean_ass_text(item.text)
+                if not source_text:
+                    continue
+                if TRANSLATION_VERBOSE:
+                    print(
+                        f"翻译 ASS 字幕 {group_index + 1}/{total_groups}: "
+                        f"{source_text[:50]}..."
+                    )
+                translated_text = translate_text(source_text, target_language).replace("\n", " ").strip()
+                replacements[item.line_index] = item.rebuild(escape_ass_text(translated_text))
+                translated_items.append(
+                    {
+                        "dialogue": item,
+                        "source": source_text,
+                        "translation": translated_text,
+                    }
+                )
+
+        emit_translation_progress(
+            progress_callback,
+            "字幕翻译进度",
+            group_index + 1,
+            total_groups,
+            current_time=max((item.end_seconds for item in group), default=None),
+            total_time=total_duration,
+        )
+
+    if translated_items and should_polish_translation(enable_translation_polish, target_language):
+        polish_payload = [
+            {
+                "index": index + 1,
+                "source": item["source"],
+                "translation": item["translation"],
+            }
+            for index, item in enumerate(translated_items)
+        ]
+        polished_payload = polish_subtitle_translations_with_deepseek(
+            polish_payload,
+            progress_callback=progress_callback,
+        )
+        if len(polished_payload) == len(translated_items):
+            for item, polished in zip(translated_items, polished_payload):
+                translated_text = polished.get("translation", item["translation"])
+                dialogue = item["dialogue"]
+                replacements[dialogue.line_index] = dialogue.rebuild(
+                    escape_ass_text(translated_text)
+                )
+
+    output_lines = []
+    for line_index, line in enumerate(lines):
+        if line_index in omitted_lines:
+            continue
+        output_lines.append(replacements.get(line_index, line))
+
+    if TRANSLATION_VERBOSE and reused_target_groups:
+        print(
+            f"ASS 已包含目标语言字幕，直接复用 {reused_target_groups}/{total_groups} 个时间轴，"
+            "未重复调用翻译接口"
+        )
+
+    translated_content = "\n".join(output_lines)
+    if content.endswith(("\n", "\r")):
+        translated_content += "\n"
+    emit_translation_progress(
+        progress_callback,
+        "字幕翻译进度",
+        total_groups,
+        max(total_groups, 1),
+        current_time=total_duration,
+        total_time=total_duration,
+        force=True,
+    )
+    return translated_content
+
+
 def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=None, output_dir=None, keep_lang_suffix=True, enable_translation_polish=None, progress_callback=None):
     """
     翻译字幕文件
@@ -1670,8 +1986,17 @@ def translate_subtitle_file(subtitle_path, target_language='zh-CN', base_name=No
                                 f"Dialogue: 0,{start_ass},{end_ass},Secondary,,0,0,0,,{escaped_trans}\n"
                             )
         
+        elif ext.lower() in {'.ass', '.ssa'}:
+            translated_content = _translate_ass_subtitle_content(
+                content,
+                target_language,
+                enable_translation_polish=enable_translation_polish,
+                progress_callback=progress_callback,
+            )
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(translated_content)
         else:
-            # 对于其他格式，简单地翻译文本内容
+            # 未知格式保留旧行为；已知字幕格式必须使用结构化解析。
             emit_translation_progress(progress_callback, "字幕翻译进度", 0, 1, force=True)
             translated_content = translate_text(content, target_language)
             with open(output_path, 'w', encoding='utf-8') as f:
@@ -1952,13 +2277,20 @@ def format_video_tooltip(video_info):
     
     return tooltip
 
-def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookies_file=None):
+def download_youtube_video(
+    youtube_url,
+    output_dir=None,
+    audio_only=True,
+    cookies_file=None,
+    max_height=None,
+):
     """
     从YouTube下载视频或音频
     :param youtube_url: YouTube视频链接
     :param output_dir: 输出目录，如果为None，则根据audio_only自动选择目录
     :param audio_only: 是否只下载音频，如果为False则下载视频
     :param cookies_file: cookies文件路径，用于访问需要登录的内容
+    :param max_height: 视频最高分辨率；None 表示保持原来的最佳画质策略
     :return: 下载文件的完整路径
     """
     # 根据下载类型选择默认输出目录（统一挂在 workspace/ 下）
@@ -2069,8 +2401,15 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
         expected_ext = "mp3"
     else:
         # 视频下载选项（最佳画质）
+        if max_height:
+            video_format = (
+                f'bestvideo[height<={int(max_height)}][ext=mp4]+bestaudio[ext=m4a]/'
+                f'best[height<={int(max_height)}][ext=mp4]/best[height<={int(max_height)}]/best'
+            )
+        else:
+            video_format = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',  # 使用更可靠的格式组合
+            'format': video_format,
             'merge_output_format': 'mp4',  # 确保输出为mp4
             'outtmpl': os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s'),
             'quiet': False,  # 显示下载进度和错误信息
@@ -2105,7 +2444,7 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
 
     # 检查可用的 cookies
     available_cookies = None
-    if cookies_file and os.path.exists(cookies_file):
+    if cookies_file and (cookies_file.startswith("browser:") or os.path.exists(cookies_file)):
         available_cookies = cookies_file
 
     try:
@@ -2123,7 +2462,8 @@ def download_youtube_video(youtube_url, output_dir=None, audio_only=True, cookie
                 output_dir,
                 audio_only,
                 available_cookies,
-                proxy
+                proxy,
+                max_height,
             )
 
             # exe模式返回的info包含filepath

@@ -23,6 +23,63 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-07-10：MiniMax 配音增加多音色选择
+
+### 更新范围
+
+- 分支：`main`
+- 主要文件：
+  - `main.py`
+
+### 本次更新内容
+
+本次把 MiniMax TTS 从单一 Voice ID 输入改为“下拉选择 + 可手填自定义 ID”的配置方式。
+
+主要内容包括：
+
+- 设置页 MiniMax 音色改为可编辑下拉框。
+- 预置一组适合中文视频配音的 MiniMax 系统音色，包括男声、女声、主持、播音、青年、成熟声线和粤语男声。
+- AI 配音页在切换到 MiniMax 后，会显示同一组音色列表。
+- 试听和正式配音都会使用当前配音页选择的 MiniMax voice_id。
+- 仍保留手动输入自定义 voice_id 的能力，方便使用 MiniMax 控制台里的自定义音色或后续新增系统音色。
+
+### 设计思路
+
+MiniMax 官方系统音色不只有女声，也有多种中文男声和主持类声线。原来界面只暴露一个 Voice ID 输入框，使用者很难知道有哪些可选项，也容易一直停留在默认女声。
+
+这次没有把选择做死，而是采用“常用音色下拉 + 可编辑自定义 ID”的方式：普通用户可以直接从列表中选一个男声或女声；熟悉 MiniMax 的用户仍然可以粘贴任意 voice_id。
+
+### 实现方式
+
+- `main.py`
+  - 新增 `MINIMAX_VOICE_OPTIONS` 常量，集中维护显示名称和真实 voice_id。
+  - 设置页 `MiniMax Voice ID` 输入框改为可编辑 `QComboBox`。
+  - 新增 `set_minimax_voice_combo_value()` 和 `get_minimax_voice_id()`，统一处理预置音色、自定义音色和历史 `.env` 配置。
+  - `refresh_dubbing_voice_options()` 在 MiniMax 模式下填充完整音色列表。
+  - `preview_dubbing_voice()` 和 AI 配音启动参数改为读取当前选中的真实 voice_id。
+  - 保存设置时写入真实 `MINIMAX_TTS_VOICE_ID`，不是界面显示名称。
+
+### 验证结果
+
+本次实现后需要执行：
+
+```bash
+python -m py_compile main.py
+git diff --check
+```
+
+手动验证建议：
+
+- 在设置页切换到“外部付费 - MiniMax API”，确认 MiniMax 音色下拉框可选择男声和女声。
+- 在 AI 配音页确认音色列表跟随 MiniMax 后端切换。
+- 选择一个男声试听，确认请求日志中的 `voice_id` 是真实 MiniMax voice_id。
+- 手动输入一个自定义 voice_id，保存设置后确认 `.env` 中保存的是该 ID。
+
+### 遗留问题和后续计划
+
+- 当前预置列表只放了常用中文/粤语音色，MiniMax 官方还有更多语言和角色音色，后续可以增加“获取官方音色列表”的接口或导入功能。
+- 不同音色的实际效果仍需要通过试听挑选，不能仅按显示名称判断最终风格。
+
 ## 2026-07-07：浏览器扩展与字幕翻译流程更新
 
 ### 更新范围
