@@ -1,14 +1,24 @@
 # 视频转录工具 (Video Hub)
 
-**当前版本: v0.2.1**
+**当前版本: v0.2.4**
 
 简体中文  | [English](./README_en.md)
 
 这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等多平台视频内容的智能处理。提供媒体导入与处理、语音转录、双语字幕生成、**AI 配音**、内容摘要等完整工作流，并配备闲时调度、批量处理、Claude Code Skills 等高级功能。
 
+## 🆕 最新更新：MiniMax 多音色配音
+
+VideoHub 的 AI 配音现在新增 **MiniMax TTS API** 后端。除了原来的本地 Kokoro 和 CosyVoice，用户也可以在设置中切换到 MiniMax，并从多个系统音色中选择更合适的声音。
+
+- **多音色选择**: 支持中文男声、中文女声、新闻播音、电台主持、青年声线、成熟声线和粤语男声等预置音色
+- **可试听再生成**: AI 配音页可直接试听当前音色，确认效果后再开始正式配音
+- **可自定义 Voice ID**: 除预置音色外，也可以手动填写 MiniMax 控制台中的自定义 `voice_id`
+- **不影响默认流程**: 未切换时仍默认使用本地 Kokoro；CosyVoice 和 MiniMax 都是手动选择的可选后端
+- **适合视频解说**: 男声播音、主持类音色更适合课程、技术分享、访谈、说明类视频的中文配音
+
 ## ✨ 加入讨论群
 
-![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260706093215179.png)
+![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20260713124857253.png)
 
 ## ✨ 核心功能
 
@@ -19,7 +29,7 @@
 - **精准转录**: 基于 OpenAI Whisper 的高质量语音转录技术
 - **多格式字幕**: 生成 .srt、.vtt、.ass 等多种格式的双语字幕文件
 - **字幕嵌入**: 支持将字幕直接嵌入到视频文件中
-- **AI 配音**: 默认使用 Kokoro TTS，也可手动切换到 CosyVoice SFT / Instruct 生成更自然的中文配音版本视频
+- **AI 配音**: 默认使用 Kokoro TTS，也可手动切换到 CosyVoice SFT / Instruct 或 MiniMax API，生成更自然的中文配音版本视频
 - **内容摘要**: 利用 LLM（支持 OpenAI、DeepSeek 等）智能生成文章摘要
 
 ### 🌐 Chrome浏览器扩展
@@ -127,6 +137,7 @@ https://x.com/tanchibu37099/status/2000362448982102119
 
 - **默认后端**: 默认使用原来的 Kokoro TTS，支持晓贝、晓晓、晓艺、云健、云扬等中文音色
 - **CosyVoice 后端**: 可在设置中手动切换到 CosyVoice SFT 或 CosyVoice Instruct，支持中文女、中文男、粤语女、英文女等音色
+- **MiniMax 后端**: 可在设置中手动切换到 MiniMax API，支持中文男声、中文女声、新闻播音、电台主持、青年声线、成熟声线和粤语男声等系统音色
 - **音色试听**: 配音页可直接试听当前音色，试听文件会缓存到 `workspace/dubbing_temp/voice_previews/`，再次试听同一配置时直接播放旧文件
 - **智能转录**: 自动将视频语音转录为字幕
 - **流畅合成**: 保持原始视频节奏，自动填充静音
@@ -152,6 +163,22 @@ python tts_service.py --host 127.0.0.1 --port 8877
 6. 确认音色效果后，选择 YouTube 链接、本地视频或已有字幕，点击 `开始配音`
 
 切换到 CosyVoice 后，AI 配音页的音色列表会自动从 Kokoro 的“晓贝/晓晓/云健”等切换为 CosyVoice 的“中文女/中文男/粤语女”等。未手动切换时，VideoHub 仍保持原来的 Kokoro 配音流程。
+
+#### 使用 MiniMax API 配音
+
+MiniMax 是外部付费 TTS API，适合想快速获得更多中文音色选择、又不想在本地加载大模型的场景。
+
+在 VideoHub 中进入 `设置 -> TTS 配音设置`：
+
+1. `TTS 类型和引擎` 选择 `外部付费 - MiniMax API`
+2. 填写 `MiniMax API Key`
+3. 选择模型，例如 `speech-2.8-turbo` 或 `speech-2.8-hd`
+4. 在 `MiniMax 音色` 中选择男声、女声、播音、主持等预置音色
+5. 如需使用自定义声音，可直接在音色框中填写自己的 `voice_id`
+6. 保存设置后，到 `AI配音` 页面点击音色旁边的 `试听`
+7. 确认音色效果后，选择 YouTube 链接、本地视频或已有字幕，点击 `开始配音`
+
+切换到 MiniMax 后，AI 配音页的音色列表会自动显示 MiniMax 的系统音色。试听和正式配音都会使用当前选中的音色；如果没有配置 MiniMax API Key，不会影响 Kokoro 和 CosyVoice 的本地配音流程。
 
 ### 🤖 项目级 Skills
 

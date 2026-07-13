@@ -23,6 +23,48 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-07-13：README 增加 MiniMax 多音色配音说明
+
+### 更新范围
+
+- 分支：`main`
+- 主要文件：
+  - `README.md`
+
+### 本次更新内容
+
+本次将 MiniMax 多音色配音能力同步到 README 靠前位置，方便用户打开项目后第一时间看到最新功能。
+
+主要内容包括：
+
+- 在 README 顶部简介后新增“最新更新：MiniMax 多音色配音”。
+- 核心功能中的 AI 配音说明补充 MiniMax API。
+- AI 配音章节新增 MiniMax 后端能力说明。
+- 增加 MiniMax API 配音使用步骤，包括 API Key、模型、音色选择、自定义 `voice_id`、试听和正式配音流程。
+
+### 设计思路
+
+MiniMax 多音色配音是当前较新的功能，如果只放在开发日志或较深的 AI 配音章节中，用户不容易发现。因此 README 顶部采用“最新更新”短节介绍核心价值，后面的 AI 配音章节再给出具体使用方式。
+
+### 实现方式
+
+- `README.md`
+  - 新增靠前的最新更新说明。
+  - 更新核心功能列表。
+  - 在 AI 配音章节补充 MiniMax 后端和使用步骤。
+
+### 验证结果
+
+已执行：
+
+```bash
+git diff --check -- README.md
+```
+
+### 遗留问题和后续计划
+
+- 英文 README 暂未同步 MiniMax 多音色说明，后续如需要面向英文用户发布，应同步更新 `README_en.md`。
+
 ## 2026-07-10：MiniMax 配音增加多音色选择
 
 ### 更新范围
