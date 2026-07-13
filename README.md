@@ -15,6 +15,7 @@ VideoHub 的 AI 配音现在新增 **MiniMax TTS API** 后端。除了原来的�
 - **可自定义 Voice ID**: 除预置音色外，也可以手动填写 MiniMax 控制台中的自定义 `voice_id`
 - **不影响默认流程**: 未切换时仍默认使用本地 Kokoro；CosyVoice 和 MiniMax 都是手动选择的可选后端
 - **适合视频解说**: 男声播音、主持类音色更适合课程、技术分享、访谈、说明类视频的中文配音
+- MiniMax配音的演示视频 youtube https://youtu.be/ns-X5yUb4gE
 
 ## ✨ 加入讨论群
 
