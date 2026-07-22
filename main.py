@@ -60,21 +60,41 @@ from paths_config import (
 
 MINIMAX_VOICE_OPTIONS = [
     ("默认女声 - 少女", "female-shaonv"),
+    ("中文女声 - 御姐", "female-yujie"),
+    ("中文女声 - 成熟女性", "female-chengshu"),
+    ("中文女声 - 甜美女性", "female-tianmei"),
     ("中文男声 - 新闻播音", "Chinese (Mandarin)_Male_Announcer"),
     ("中文男声 - 电台主持", "Chinese (Mandarin)_Radio_Host"),
     ("中文男声 - 绅士", "Chinese (Mandarin)_Gentleman"),
+    ("中文男声 - 抒情男声", "Chinese (Mandarin)_Lyrical_Voice"),
+    ("中文男声 - 真诚青年", "Chinese (Mandarin)_Sincere_Adult"),
     ("中文男声 - 南方青年", "Chinese (Mandarin)_Southern_Young_Man"),
     ("中文男声 - 直率少年", "Chinese (Mandarin)_Straightforward_Boy"),
     ("中文男声 - 纯真少年", "Chinese (Mandarin)_Pure-hearted_Boy"),
     ("中文中性 - 温和青年", "Chinese (Mandarin)_Gentle_Youth"),
     ("中文成熟 - 可靠高管", "Chinese (Mandarin)_Reliable_Executive"),
     ("中文女声 - 新闻主播", "Chinese (Mandarin)_News_Anchor"),
+    ("中文女声 - 阅历姐姐", "Chinese (Mandarin)_Wise_Women"),
+    ("中文女声 - 温暖闺蜜", "Chinese (Mandarin)_Warm_Bestie"),
     ("中文女声 - 温暖女孩", "Chinese (Mandarin)_Warm_Girl"),
     ("中文女声 - 柔和女孩", "Chinese (Mandarin)_Soft_Girl"),
     ("中文女声 - 知性女声", "Chinese (Mandarin)_IntellectualGirl"),
     ("中文女声 - 成熟女声", "Chinese (Mandarin)_Mature_Woman"),
     ("粤语男声 - 专业主持", "Cantonese_ProfessionalHost (M)"),
     ("粤语男声 - 活泼男声", "Cantonese_PlayfulMan"),
+]
+
+SMART_PASTE_URL_KEYWORDS = [
+    "youtube",
+    "youtu.be",
+    "twitter.com",
+    "x.com",
+    "bilibili",
+    "instagram.com",
+    "instagr.am",
+    "tiktok.com",
+    "pornhub.com",
+    "cn.pornhub.com",
 ]
 
 # 导入抖音下载模块
@@ -598,7 +618,7 @@ class URLLineEdit(QLineEdit):
             
             # 检查是否是简单的直接URL（排除复杂分享文本）
             clipboard_lines = clipboard_text.strip().split('\n')
-            if len(clipboard_lines) == 1 and any(keyword in clipboard_text.lower() for keyword in ['youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'instagram.com', 'instagr.am', 'tiktok.com']):
+            if len(clipboard_lines) == 1 and any(keyword in clipboard_text.lower() for keyword in SMART_PASTE_URL_KEYWORDS):
                 self.clear()
                 self.setText(clipboard_text.strip())
                 event.accept()
@@ -638,7 +658,7 @@ class URLTextEdit(QTextEdit):
         # 如果剪贴板中有内容，检查是否包含URL
         if clipboard_text:
             # 检查是否看起来像包含URL
-            if any(keyword in clipboard_text.lower() for keyword in ['http', 'youtube', 'youtu.be', 'twitter.com', 'x.com', 'bilibili', 'instagram.com', 'instagr.am', 'tiktok.com', 'www.']):
+            if any(keyword in clipboard_text.lower() for keyword in ['http', 'www.'] + SMART_PASTE_URL_KEYWORDS):
                 # 如果当前文本框为空，直接粘贴
                 if not self.toPlainText().strip():
                     self.clear()
@@ -1943,14 +1963,14 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         
         # 创建输入区域
-        input_group = QGroupBox("视频链接（支持YouTube、Twitter/X、Instagram等平台）")
+        input_group = QGroupBox("视频链接（支持YouTube、Twitter/X、Instagram、Pornhub等平台）")
         input_layout = QVBoxLayout(input_group)
         
         # 添加URL输入框
         url_layout = QHBoxLayout()
         url_label = QLabel("视频URL:")
         self.youtube_url_input = URLLineEdit()
-        self.youtube_url_input.setPlaceholderText("输入YouTube、Twitter/X、Instagram、抖音等视频链接或播放列表（右键可直接粘贴）...")
+        self.youtube_url_input.setPlaceholderText("输入YouTube、Twitter/X、Instagram、Pornhub、抖音等视频链接或播放列表（右键可直接粘贴）...")
         url_layout.addWidget(url_label)
         url_layout.addWidget(self.youtube_url_input)
         input_layout.addLayout(url_layout)
@@ -2426,12 +2446,12 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         
         # 创建输入区域
-        input_group = QGroupBox("批量处理视频（支持YouTube、Twitter/X、Instagram等平台）")
+        input_group = QGroupBox("批量处理视频（支持YouTube、Twitter/X、Instagram、Pornhub等平台）")
         input_layout = QVBoxLayout(input_group)
         
         # 添加URL输入框
         self.batch_urls_text = URLTextEdit()
-        self.batch_urls_text.setPlaceholderText("输入多个视频链接，每行一个，支持YouTube、Twitter/X、Instagram等（右键可直接粘贴）...")
+        self.batch_urls_text.setPlaceholderText("输入多个视频链接，每行一个，支持YouTube、Twitter/X、Instagram、Pornhub等（右键可直接粘贴）...")
         input_layout.addWidget(self.batch_urls_text)
         
         # 添加文件选择
@@ -2929,7 +2949,7 @@ class MainWindow(QMainWindow):
 
         url_label = QLabel("视频链接:")
         self.dubbing_url_input = URLLineEdit()
-        self.dubbing_url_input.setPlaceholderText("粘贴YouTube视频链接...")
+        self.dubbing_url_input.setPlaceholderText("粘贴视频链接，例如 YouTube、Twitter/X、Instagram、Pornhub 等...")
 
         url_layout.addWidget(url_label)
         url_layout.addWidget(self.dubbing_url_input)
@@ -4841,7 +4861,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, 
                 "输入错误", 
-                "请输入视频链接（支持YouTube、Twitter、X、抖音等平台）\n\n提示：如果您已经输入了链接但仍看到此错误，请尝试：\n1. 重新粘贴链接\n2. 手动输入链接\n3. 检查链接是否完整"
+                "请输入视频链接（支持YouTube、Twitter/X、Instagram、Pornhub、抖音等平台）\n\n提示：如果您已经输入了链接但仍看到此错误，请尝试：\n1. 重新粘贴链接\n2. 手动输入链接\n3. 检查链接是否完整"
             )
             # 将焦点设置回输入框
             self.youtube_url_input.setFocus()
@@ -5310,7 +5330,7 @@ class MainWindow(QMainWindow):
         
         # 检查是否有URL
         if not urls:
-            QMessageBox.warning(self, "输入错误", "请输入至少一个YouTube视频链接")
+            QMessageBox.warning(self, "输入错误", "请输入至少一个视频链接")
             return
         
         # 设置代理环境变量
@@ -6708,7 +6728,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             youtube_url = self.youtube_url_input.text().strip()
             
             if not youtube_url:
-                QMessageBox.warning(self, "输入错误", "请输入视频链接（支持YouTube、Twitter、X、抖音等平台）")
+                QMessageBox.warning(self, "输入错误", "请输入视频链接（支持YouTube、Twitter/X、Instagram、Pornhub、抖音等平台）")
                 restore_button_state()
                 return
             
@@ -8121,7 +8141,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             elif is_url:
                 url = self.dubbing_url_input.text().strip()
                 if not url:
-                    QMessageBox.warning(self, "输入错误", "请输入YouTube视频链接")
+                    QMessageBox.warning(self, "输入错误", "请输入视频链接")
                     return
                 params['youtube_url'] = url
             else:

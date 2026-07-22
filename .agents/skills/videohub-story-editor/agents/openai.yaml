@@ -1,0 +1,4 @@
+interface:
+  display_name: "VideoHub 故事剪辑"
+  short_description: "剪辑后重译，输出原声、TTS 或抖音发布包"
+  default_prompt: "使用 $videohub-story-editor 先根据原文字幕和画面证据理解并剪辑这个长视频，再重建最终字幕、后置翻译和润色；按需求输出原声双语版、原声降到 30% 的 MiniMax/豆包 TTS 解说版，或带 50-100 字中文文案的抖音发布包。"

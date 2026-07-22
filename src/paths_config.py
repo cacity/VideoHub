@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-
 BASE_PATH = Path(__file__).resolve().parent.parent
 SRC_PATH = BASE_PATH / "src"
 WORKSPACE_PATH = BASE_PATH / "workspace"
@@ -60,6 +59,8 @@ TEMPLATES_DIR = _ensure_workspace_subdir("templates")
 GLOSSARIES_DIR = _ensure_workspace_subdir("glossaries")
 QA_REPORTS_DIR = _ensure_workspace_subdir("qa_reports")
 REVIEW_PACKS_DIR = _ensure_workspace_subdir("review_packs")
+PUBLISH_PACKAGES_DIR = _ensure_workspace_subdir("publish_packages")
+DOUYIN_PUBLISH_PACKAGES_DIR = _ensure_dir(Path(PUBLISH_PACKAGES_DIR) / "douyin")
 
 
 DIRECTORY_MAP = {
@@ -96,6 +97,8 @@ DIRECTORY_MAP = {
     "glossaries": GLOSSARIES_DIR,
     "qa_reports": QA_REPORTS_DIR,
     "review_packs": REVIEW_PACKS_DIR,
+    "publish_packages": PUBLISH_PACKAGES_DIR,
+    "douyin_publish_packages": DOUYIN_PUBLISH_PACKAGES_DIR,
 }
 
 

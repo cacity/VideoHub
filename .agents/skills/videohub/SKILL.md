@@ -1,6 +1,6 @@
 ---
 name: videohub
-description: VideoHub 总入口。用于识别用户要处理的平台或功能，并路由到更具体的 VideoHub skills，如 YouTube、抖音、闲时队列、FFmpeg、字幕和直播录制。
+description: VideoHub 总入口。用于识别用户要处理的平台或功能，并路由到更具体的 VideoHub skills，如 YouTube、抖音、闲时队列、FFmpeg、字幕、故事剪辑和直播录制。
 ---
 
 # VideoHub Router
@@ -18,12 +18,14 @@ description: VideoHub 总入口。用于识别用户要处理的平台或功能�
 - 空闲队列 / Chrome 插件 / 本地 API → `videohub-queue`
 - FFmpeg 安装、测试、模式切换 → `videohub-ffmpeg`
 - 字幕烧录 / 合成 → `videohub-subtitles`
+- 根据字幕选段、重排并生成故事短片，或整理抖音发布包和文案 → `videohub-story-editor`
+- 电影、电视剧、短剧的第三者旁白解说、关键影视原声、抖音封面、标题和发布物料 → `videohub-film-commentary`
 - 直播录制 / 开播监控 → `videohub-live`
 
 ## 使用原则
 - 优先复用现有脚本和 GUI，而不是新造后端。
 - 只在需要时调用更具体的子 skill。
-- 如果用户目标不明确，先澄清是“下载 / 转写 / 翻译 / 总结 / 队列 / 配置 / 直播”。
+- 如果用户目标不明确，先澄清是“下载 / 转写 / 翻译 / 总结 / 故事剪辑 / 队列 / 配置 / 直播”。
 
 ## 当前后端入口
 - GUI：`python main.py`

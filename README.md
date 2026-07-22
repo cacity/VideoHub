@@ -1,12 +1,39 @@
 # 视频转录工具 (Video Hub)
 
-**当前版本: v0.2.4**
+**当前版本: v0.3.0**
 
 简体中文  | [English](./README_en.md)
 
-这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等多平台视频内容的智能处理。提供媒体导入与处理、语音转录、双语字幕生成、**AI 配音**、内容摘要等完整工作流，并配备闲时调度、批量处理、Claude Code Skills 等高级功能。
+这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等多平台视频内容的智能处理。提供媒体导入与处理、语音转录、双语字幕生成、**AI 配音**、内容摘要等完整工作流，并配备闲时调度、批量处理，以及供 Codex、Claude Code、DeepSeek 等智能助手使用的项目级 Skills。
 
-## 🆕 最新更新：MiniMax 多音色配音
+## 🆕 最新更新：故事剪辑与影视解说 Skills
+
+VideoHub 新增了两项面向智能编码助手的项目级工作流。它们不是简单地按固定时间截取视频，而是让大模型先阅读原文字幕和画面证据，理解人物、主题、事件与因果，再生成可验证的剪辑计划，最后由确定性脚本完成剪辑、翻译、配音、字幕和发布物料。
+
+```mermaid
+flowchart LR
+    A["视频和字幕"] --> B["证据提取层"]
+    B --> C["故事理解层"]
+    C --> D["剪辑规划层"]
+    D --> E["剪辑后翻译与可选 TTS"]
+    E --> F["确定性渲染层"]
+    F --> G["短视频、同步字幕和发布包"]
+```
+
+| Skill | 主要用途 | 可交付版本 |
+| --- | --- | --- |
+| `videohub-story-editor` | 把长视频、播客、访谈、课程或知识内容组织成几分钟、叙事完整的短片 | 保留原声的原文/双语字幕版；原声降至约 30% 的 MiniMax 或豆包 TTS 解说版；带 50-100 字文案的抖音发布包 |
+| `videohub-film-commentary` | 为电影、电视剧和短剧制作第三者旁白主导的剧情解说 | 旁白与关键影视原声混合版；同步字幕；1080x1920 抖音封面、标题候选、文案、话题和完整发布包 |
+
+这两项工作流都遵循“先理解和剪辑，后重新翻译”的顺序。外文视频不会直接拿剪辑前的逐句机翻决定剧情；最终字幕根据成片时间轴重新生成，并可选用 DeepSeek 做轻度整体润色。影视解说还会保留冲突、揭露、告白、反问、笑点和告别等关键原声，让演员表演和环境声不被旁白完全覆盖。
+
+> 这两项能力目前通过 `.agents/skills/` 供支持项目级 Skills 的智能助手调用，并复用仓库内的 Python/FFmpeg 脚本；它们不是桌面 GUI 中的一键自动剪辑按钮。正式处理前请确认拥有素材的下载、剪辑和发布权利。
+
+### 规划中：影视解说可视化时间线
+
+故事剪辑和影视解说目前会生成可校验的 `story_plan.json`、`narration_plan.json`、字幕、分段 TTS 缓存和可复用母版，但还没有内置网页时间线编辑器。后续计划提供面向解说工作流的多轨工作台，用于可视化管理视频片段、原声音轨、TTS 旁白、原声锚点和字幕，并允许人工调整切点后复用未变化的片段与配音缓存。该工作台定位为 AI 初剪后的人工精修入口，最终成片仍由本地 FFmpeg 确定性渲染；当前版本尚不提供这一界面。
+
+## 🔊 近期更新：MiniMax 多音色配音
 
 VideoHub 的 AI 配音现在新增 **MiniMax TTS API** 后端。除了原来的本地 Kokoro 和 CosyVoice，用户也可以在设置中切换到 MiniMax，并从多个系统音色中选择更合适的声音。
 
@@ -31,6 +58,8 @@ VideoHub 的 AI 配音现在新增 **MiniMax TTS API** 后端。除了原来的�
 - **多格式字幕**: 生成 .srt、.vtt、.ass 等多种格式的双语字幕文件
 - **字幕嵌入**: 支持将字幕直接嵌入到视频文件中
 - **AI 配音**: 默认使用 Kokoro TTS，也可手动切换到 CosyVoice SFT / Instruct 或 MiniMax API，生成更自然的中文配音版本视频
+- **故事剪辑**: 基于原文字幕和画面证据理解长视频，完成选段、重排、剪辑后翻译和同步字幕
+- **影视解说**: 第三者 TTS 旁白结合关键影视原声，输出剧情解说成片和抖音封面、标题、文案、话题
 - **内容摘要**: 利用 LLM（支持 OpenAI、DeepSeek 等）智能生成文章摘要
 
 ### 🌐 Chrome浏览器扩展
@@ -193,7 +222,23 @@ MiniMax 是外部付费 TTS API，适合想快速获得更多中文音色选择�
 | `videohub-queue` | 闲时队列、Chrome/Edge 扩展、本地 API 排查 | `src/api_server.py`、`http://127.0.0.1:8765` |
 | `videohub-ffmpeg` | FFmpeg 状态检查、路径配置、模式切换、下载和测试 | `python src/ffmpeg_config_cli.py help` |
 | `videohub-subtitles` | 字幕生成后的烧录、视频合成、独立字幕合成工具说明 | `embed_subtitles_to_video()`、`python src/subtitle_merger.py` |
+| `videohub-story-editor` | 根据原文字幕和画面证据理解、选段、重排长视频，生成原声双语版、TTS 解说版和抖音发布包 | `.agents/skills/videohub-story-editor/scripts/` |
+| `videohub-film-commentary` | 电影、电视剧、短剧的第三者旁白解说、关键原声、同步字幕和抖音封面/标题/文案 | `.agents/skills/videohub-film-commentary/scripts/` |
 | `videohub-live` | 直播录制依赖、配置和运行状态诊断 | `src/live_recorder_adapter.py` |
+
+#### 使用故事剪辑与影视解说 Skills
+
+在支持项目级 Skills 的智能助手中，可以直接描述素材、目标时长和版本。例如：
+
+```text
+使用 videohub-story-editor，把这个 30 分钟英文访谈整理成 3 分钟原声版，
+剪辑完成后重新翻译并烧录双语字幕，同时生成抖音发布文件夹和 50-100 字文案。
+
+使用 videohub-film-commentary，把这集电视剧制作成 10 分钟中文影视解说，
+使用 MiniMax TTS，旁白区原声降到 30%，保留关键角色原声，并生成竖版封面、标题和发布文案。
+```
+
+按照当前项目目录规范，智能助手会为每个任务创建独立的 `workspace/projectNNN_<project_name>/`，并在其中统一保存素材、证据、故事分析、来源映射、剪辑计划、字幕、TTS 缓存、成片、发布物料和 QA 报告。底层脚本仍兼容 `workspace/review_packs/story_editor/`、`workspace/videos_with_subtitles/` 和 `workspace/publish_packages/douyin/` 等默认目录。故事方案和剪辑计划在进入渲染前必须通过数据校验，最终视频还会检查时长、字幕边界和完整解码。
 
 常见同步点：
 
@@ -350,6 +395,10 @@ VideoHub/
 │   │   │   ├── popup.js
 │   │   │   └── popup.css
 │   │   └── icons/                     # 扩展图标
+├── 📁 项目级 AI Skills
+│   └── .agents/skills/
+│       ├── videohub-story-editor/      # 长视频故事理解、剪辑、翻译、TTS 和发布包
+│       └── videohub-film-commentary/   # 影视解说、关键原声、封面和发布物料
 ├── 📁 抖音下载模块
 │   ├── douyin/                        # 抖音视频解析和下载
 │   │   ├── parser.py                  # URL解析
@@ -375,6 +424,9 @@ VideoHub/
 │   ├── transcripts/                   # 转录文本 (.txt)
 │   ├── subtitles/                     # 字幕文件 (.srt/.vtt/.ass)
 │   ├── summaries/                     # 文章摘要 (.md)
+│   ├── review_packs/story_editor/      # 故事证据、分析、剪辑计划和 QA 报告
+│   ├── videos_with_subtitles/          # 故事短片和字幕合成视频
+│   ├── publish_packages/douyin/        # 抖音视频、封面、标题、文案和话题
 │   └── dubbing_temp/                  # AI 配音临时文件
 ├── 📁 配置目录
 │   ├── templates/                     # 自定义文章模板

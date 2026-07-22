@@ -1,0 +1,4 @@
+interface:
+  display_name: "VideoHub 影视剧解说"
+  short_description: "第三者旁白配关键原声，并生成抖音封面、标题、文案和发布包"
+  default_prompt: "使用 $videohub-film-commentary 分析这部影视剧，用第三者旁白压缩剧情，在关键场面保留原声，输出同步字幕和成片，并生成抖音竖版封面、标题候选、发布文案、话题和完整发布包。"

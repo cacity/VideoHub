@@ -23,6 +23,585 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-07-22：README 同步影视解说时间线规划与项目目录规范
+
+### 更新范围
+
+- 分支：`main`（本地检查点提交）
+- 主要文件：
+  - `README.md`
+  - `README_en.md`
+
+### 设计与实现
+
+- 在中英文 README 的故事剪辑与影视解说介绍后增加“可视化时间线”规划说明，明确计划
+  提供视频、原声、TTS 旁白、原声锚点和字幕的多轨管理，以及人工调整切点后复用未变化
+  片段与 TTS 缓存的能力。
+- 明确该界面目前尚未实现，不能作为现有桌面 GUI 功能宣传；其定位是 AI 初剪后的人工
+  精修入口，最终输出仍交给本地 FFmpeg 确定性渲染。
+- 把故事任务的主要目录说明更新为 `workspace/projectNNN_<project_name>/` 独立项目规范，
+  同时保留底层脚本对 `review_packs/story_editor`、`videos_with_subtitles` 和
+  `publish_packages/douyin` 默认目录的兼容说明。
+- 英文 README 版本号同步为 `v0.3.0`，与中文 README 保持一致。
+
+### 验证结果与遗留问题
+
+- `git diff --check -- README.md README_en.md` 通过。
+- 已确认中英文均明确使用 planned/规划中表述，没有把尚未实现的网页时间线写成现有功能。
+- 时间线工作台仍处于方案阶段；后续实现前需要先升级旁白和原声窗口的片段相对锚点，
+  并为 FFmpeg 渲染器增加片段级缓存，避免调整单个切点后重做全部视频。
+
+## 2026-07-20：中英文 README 同步故事剪辑与影视解说 Skills
+
+### 更新范围
+
+- 分支：`main`（本次未提交、未推送）
+- 主要文件：
+  - `README.md`
+  - `README_en.md`
+
+### 设计与实现
+
+- 在中英文 README 顶部新增“故事剪辑与影视解说 Skills”更新区，用统一流程图说明
+  “视频和字幕 -> 证据提取 -> 故事理解 -> 剪辑规划 -> 剪辑后翻译/TTS -> 确定性渲染
+  -> 成片与发布包”的工作方式。
+- 分别说明 `videohub-story-editor` 和 `videohub-film-commentary` 的适用内容、音频策略、
+  字幕方式和交付物。故事剪辑支持原声双语版与 MiniMax/豆包 TTS 版；影视解说使用
+  第三者旁白并保留不与旁白重叠的关键角色原声。
+- 明确外文素材先基于原文字幕和画面证据理解、选段，之后才按最终时间轴重新翻译，避免
+  把剪辑前逐句机翻当成剧情判断依据；最终译文可选用 DeepSeek 做轻度整体润色。
+- 增加可直接交给智能助手的中英文请求示例，以及 `review_packs/story_editor`、
+  `videos_with_subtitles`、`publish_packages/douyin` 的产物说明。
+- 在 Skills 表格、核心功能/Feature Overview、项目目录和英文典型场景中同步两项能力；
+  英文 README 版本号由过期的 `v0.1.1` 对齐到中文 README 的 `v0.2.4`。
+- 明确这些能力当前是项目级智能助手工作流，会编排仓库中的 Python/FFmpeg 脚本，并非
+  PyQt6 桌面界面中的一键剪辑按钮，避免对最终用户造成错误预期。
+
+### 验证结果与遗留问题
+
+- 中英文 README 均包含两个 Skill 的功能定位、流程、调用示例、产物目录和权利边界。
+- 已检查两份文档的 Mermaid 代码块、Markdown 表格、相对链接和目录树结构；中英文功能
+  描述保持一致，英文版本号已同步。
+- 本次仅更新文档，没有重新执行媒体渲染；两个 Skill 的脚本与真实样片验证记录见本日志
+  同日更早条目。
+- 故事剪辑和影视解说目前仍依赖支持项目级 Skills 的智能助手进行分析与计划，未来如加入
+  GUI 一键入口，需要再次更新 README 的使用说明和能力边界。
+
+## 2026-07-20：增加 MiniMax 中文音色批量试听与缓存对比页
+
+### 更新范围
+
+- 分支：`main`（本次未提交、未推送）
+- 主要文件：
+  - `.agents/skills/videohub-film-commentary/SKILL.md`
+  - `.agents/skills/videohub-film-commentary/scripts/generate_minimax_voice_samples.py`
+  - `main.py`
+- 本地试听产物：
+  `workspace/dubbing_temp/voice_previews/minimax_comparison/speech-2_8-turbo/afb935f11c16/`
+
+### 设计与实现
+
+- 使用同一段包含人物、冲突、转折和停顿的影视解说文案，批量比较 12 个普通话系统音色，
+  覆盖播报、电台、温润、沉稳、抒情、生活化男声，以及新闻、成熟、御姐、温暖和甜美女声。
+- 输出独立 WAV、`manifest.json` 和可直接在浏览器打开的 `index.html`。页面并列展示音色名、
+  原生播放控件、适用场景、Voice ID 和实际时长，避免来回进入设置逐个生成和试听。
+- 缓存路径同时包含模型和测试文本 SHA-1。再次运行会验证 WAV 后直接复用；只有文件缺失、
+  损坏或显式传入 `--force` 时才调用 MiniMax，减少等待、限流和重复费用。
+- 单个音色生成失败不会终止整批任务，失败原因会进入页面和 manifest；客户端仍复用项目
+  现有的请求节流、HTTP 重试和 MiniMax `status_code=1002` 退避逻辑。
+- 设置中的 MiniMax 音色列表补充本次已实际调用成功的抒情男声、真诚青年、阅历姐姐、
+  温暖闺蜜、御姐、成熟女性和甜美女性，试听后可直接选择对应音色。
+
+### 验证结果与遗留问题
+
+- `speech-2.8-turbo` 下 12/12 个音色真实生成成功，均为 32000 Hz、单声道有效 WAV，时长
+  12.79-18.68 秒；试听页包含 12 个音频源且全部存在。
+- 第二次运行 12/12 个音色全部命中缓存，没有再次调用语音合成接口。
+- `py_compile` 已通过批量脚本和 `main.py`；CLI `--help` 正常。
+- 短样片适合排除明显不合适的音色，但无法代替长旁白试听。正式影视解说仍应再生成
+  30-60 秒真实文案，检查长句停顿、情绪持续性、专有名词和听觉疲劳。
+
+## 2026-07-20：影视解说 Skill 增加抖音封面、标题和完整发布物料
+
+### 更新范围
+
+- 分支：`main`（本次未提交、未推送）
+- 主要文件：
+  - `.agents/skills/videohub-film-commentary/SKILL.md`
+  - `.agents/skills/videohub-film-commentary/agents/openai.yaml`
+  - `.agents/skills/videohub-film-commentary/references/douyin-publish-plan-schema.md`
+  - `.agents/skills/videohub-film-commentary/scripts/build_film_commentary_publish_package.py`
+  - `.agents/skills/videohub-story-editor/scripts/build_douyin_publish_package.py`
+  - `.agents/skills/videohub/SKILL.md`
+  - `tests/test_film_commentary_publish.py`
+  - `requirements.txt`
+
+### 设计与实现
+
+- 将抖音发布物料从“用户额外要求时可选生成”改为影视解说成片后的默认交付；用户明确
+  不需要时才省略。发布包包含正式视频、1080x1920 竖版封面、3-5 个标题候选、已选标题、
+  50-100 字中文文案、3-8 个话题、发布说明、发布计划和媒体清单。
+- 新增 `publish_plan.json` schema。标题候选必须分别填写角度和剧情证据引用，已选标题必须
+  与一个候选完全一致，从输入层阻止无证据的金额、身份、结局或夸张说法进入发布物料。
+- 封面使用成片或无顶部解说字幕的中间视频真实取帧，不生成与演员、服装或场景不一致的
+  AI 剧照。脚本使用 Pillow 把横版画面按人物焦点裁成 1080x1920，提供顶部/底部两种文字
+  区域，并按像素宽度动态调整中英文混排字号和换行。
+- 封面设计使用白色主标题、黄色副标题、红色短分隔线和半透明深色文字区；主要文字放在
+  抖音中部安全区，标题与人物表情分区。脚本验证 JPEG 尺寸、文件大小和亮度标准差，仍要求
+  执行者实际打开封面检查人物裁切和文字位置。
+- 构建器复用故事剪辑发布包的 H.264/AAC 探测、硬链接/复制、SHA-256、文案校验和 FFmpeg
+  取帧。通用 QA 检查同时接受英文 `Result: PASS` 和中文 `结果：PASS` 标记。
+- `requirements.txt` 增加 Pillow 依赖；影视解说 Skill 的触发描述、默认提示和 VideoHub
+  总入口路由同步加入封面、标题、文案与发布物料能力。
+
+### 真实样片验证
+
+- 使用《Lucky》第一集 10 分钟影视解说成片生成完整发布包：
+  `workspace/publish_packages/douyin/Lucky_2026_S01E01_10分钟影视解说/`。
+- 生成 4 个有事件/主题证据引用的标题候选，选定“丈夫卷走一千万，她被FBI和黑帮同时
+  追杀”；文案为 71 个可见字符，话题为 5 个。
+- 第一版前向测试发现 `focus_x` 被错误实现为裁剪偏移比例，虽然尺寸检查通过，但女主面部
+  被裁出画面。实现已改为真正的“人物焦点坐标”，并新增左右主体焦点单元测试。
+- 第二版封面人物居中，但底部文字区压住眼睛；根据该帧上方留白切换顶部布局并缩短文字区，
+  最终封面完整保留双眼和表情，标题、人物和剧集标签均清晰可读。
+
+### 验证结果与遗留问题
+
+- 新旧发布流程测试共 18 项通过，覆盖计划字段、候选标题、中文 QA、文案/话题、人物焦点
+  裁剪和实际 1080x1920 JPEG 输出。
+- 真实发布包视频通过 H.264/AAC 媒体探测，封面、标题、文案、话题、说明和 manifest 均已
+  生成；符合条件时使用硬链接，避免再次复制 300 MB 以上成片。
+- 自动 QA 只能发现空白、尺寸、字段和编码问题，不能可靠判断是否遮挡眼睛、人物是否选错
+  或标题是否最有传播力；Skill 因此把人工打开封面和抽查发布视频设为强制步骤。
+- 横版成片仍保持原比例，当前只生成竖版封面。需要真正的 9:16 视频时，必须单独设计重构
+  画面并重新 QA，不能直接使用封面裁图逻辑强裁整条视频。
+
+## 2026-07-20：完成《Lucky》第一集 10 分钟混合影视解说样片
+
+### 更新范围
+
+- 分支：`main`（本次仅生成本地样片和验证记录，未提交、未推送）
+- 源视频：47 分 30 秒、1918x802 的英文犯罪剧情片，画面已烧录中英字幕，没有独立字幕流。
+- 正式成片：
+  `workspace/videos_with_subtitles/Lucky_2026_S01E01_10min_film_commentary.mp4`
+- 分析与 QA：
+  `workspace/review_packs/story_editor/lucky_2026_s01e01_10min_film_commentary/`
+
+### 设计与实现
+
+- 使用 `videohub-film-commentary` 的五层流程完成真实长视频验证：先建立字幕、镜头、关键帧
+  证据包，再分析人物、事件和因果，最后由确定性脚本执行剪辑、混音和字幕烧录。
+- Whisper small 生成 703 个转写片段，但歌曲和无对白段出现重复歌词幻觉。正式证据改用与
+  片源硬字幕对齐的 380 条英文字幕，并据此建立 413 个镜头、80 张关键帧和 10 个分析块。
+- 从整集选取 23 个片段组成严格 600 秒时间线。解说采用 32 个第三者旁白块，并保留 8 个
+  冲突、承诺和生存告诫原声锚点，共约 69.7 秒，占成片约 11.6%。旁白区原片声为 30%，
+  进入原声窗口后恢复到 100%。
+- 最终剪辑后重新生成 123 条对白字幕。Google 翻译遇到 HTTP 429 后自动回退 DeepSeek，
+  再做整体润色和少量人工语境校正，同时保留原文、初译和润色版用于对比。
+- MiniMax `speech-2.8-turbo` 的中文男声一次生成 32 个旁白片段；重建精简屏幕字幕时全部
+  命中本地缓存。两段因时长适配发生轻微加速，最高约 1.06 倍。
+- 片源底部已有中英硬字幕，因此没有重复烧录对白字幕。新增解说字幕采用顶部两行布局，
+  原声窗口不显示顶部文字，避免字幕区域重叠并保留演员台词。
+
+### 验证结果
+
+- `story_analysis.json`、`story_plan.json` 和影视解说 `narration_plan.json` 均通过校验，
+  旁白计划为 0 个错误、0 个警告。
+- 正式成片时长 600.016 秒，H.264/AAC，1918x802，48 kHz 双声道，约 308.45 MiB；
+  FFmpeg 完整解码无错误。
+- 在 13 个时间点抽查旁白、原声、追逐、审问、翻车和结尾画面。顶部字幕出现/消失符合
+  计划，底部中英硬字幕保持可读，没有乱码、越界或同区域覆盖。
+- SHA-256：`1413F97E3BF9D09A281147A7FB73E62E8C5B7DB94FE1465EEFE4021B23DF25BC`。
+- 独立 QA 报告：
+  `workspace/review_packs/story_editor/lucky_2026_s01e01_10min_film_commentary/final_commentary_qa.md`。
+
+### 遗留问题
+
+- 片源自带的对白或歌词硬字幕无法无损去除，因此旁白区偶尔会同时看到顶部解说和底部
+  原片文字；当前通过上下分区降低干扰。
+- 与片源匹配的外部英文字幕仍属于参考输入。关键人物、金额、追捕关系和动作结果已结合
+  画面、原声及多处字幕证据复核，但正式发布前仍应由人工观看整条成片。
+- 本次保留 1918x802 宽银幕比例，没有为了名义上的 1080p 拉伸或加黑边。
+- 素材发布、转载和平台传播仍需使用者确认版权、合理使用和平台规则。
+
+## 2026-07-20：新增影视剧第三者旁白与关键原声混合解说 Skill
+
+### 更新范围
+
+- 分支：`main`（本次未提交、未推送）
+- 分析样本：
+  - 《东京出租车》影视解说文案及对应抖音视频。
+  - 《独身女性》影视解说文案及对应抖音视频。
+- 主要文件：
+  - `.agents/skills/videohub-film-commentary/`
+  - `.agents/skills/videohub-story-editor/SKILL.md`
+  - `.agents/skills/videohub-story-editor/references/narration-plan-schema.md`
+  - `.agents/skills/videohub-story-editor/scripts/validate_narration_plan.py`
+  - `.agents/skills/videohub-story-editor/scripts/synthesize_story_narration.py`
+  - `.agents/skills/videohub-story-editor/scripts/render_story.py`
+  - `.agents/skills/videohub/SKILL.md`
+  - `tests/test_story_editor_skill.py`
+
+### 样本分析结论
+
+- 两份现成解说文案都是无时间码的一行式 ASR 文本，存在错字、重复和说话人混杂，不能仅靠
+  文本可靠判断哪些句子来自解说、哪些来自演员原声。因此使用 Whisper small 对对应视频重新
+  建立时间轴，共得到 975 和 612 个语音片段，并结合短窗口语言检测及候选画面人工复核。
+- 样本中的原声候选约占片长 4.2% 和 6.3%。这些片段集中在人物决定、关系揭露、冲突反问、
+  笑点、承诺、和解和告别，而人物背景、时间跨度、行动过程、支线和因果连接主要由第三者
+  旁白承担。
+- 影视解说默认以第三者旁白压缩剧情，只在“声音和表演本身比信息摘要更重要”时恢复影视
+  原声。原声前先提供最低限度背景，原声后保留短暂停顿、表情或环境声，不能用旁白抢答角色。
+
+### 设计与实现
+
+- 新增 `videohub-film-commentary`，复用故事剪辑 Skill 的证据提取、故事理解、剪辑、后置
+  翻译、TTS、字幕和发布包流程，只增加影视剧专用的旁白/原声切换策略。
+- 混合解说计划增加 `audio_strategy=hybrid_source_anchors`、
+  `source_audio_windows`、`original_audio_volume` 和 `source_audio_volume`。旁白块和原声窗口
+  都基于最终成片时间轴并引用字幕、事件、画面或剪辑片段证据。
+- 默认建议原声占成片 5%-12%，单个锚点 2-10 秒、每条约 4-8 个；这只是起始参数，不作为
+  所有题材的固定比例。校验器会拒绝原声与旁白重叠、越界、缺少证据和超过 30 秒的原声段，
+  并对异常比例或过长片段给出警告。
+- 渲染器在旁白区把原片声音保持为 30%，进入原声锚点后恢复为 100%；原声窗口对应的最终
+  原文/译文字幕会与 TTS 旁白字幕合并，外语对白可继续输出中文或双语字幕。
+- 总入口已增加影视解说路由；普通故事重排仍使用 `videohub-story-editor`，影视剧第三者解说
+  与关键原声混剪使用 `videohub-film-commentary`。
+
+### 验证结果
+
+- 新旧两个 Skill 均通过 `quick_validate.py`，新增和修改的 Python 脚本通过 `py_compile`
+  与 Ruff 检查。
+- 独立影视解说计划校验器完成正反验证：合法混合计划通过；原声窗口和旁白重叠时返回失败。
+- 故事剪辑目标测试共 13 项通过，覆盖原声计划校验、重叠拒绝、字幕裁剪合并和动态音量表达式。
+- 使用 4 秒合成素材完成 FFmpeg 动态混音冒烟测试：原声窗口内外 RMS 比值为 3.337，符合
+  0.30 到 1.00 的音量恢复设计，输出完整解码无错误。
+
+### 分析产物与遗留问题
+
+- 样本转写、语言窗口、候选帧和联系表保存在
+  `workspace/review_packs/film_commentary_samples/`，仅作为本地设计依据，不属于 Skill 运行依赖。
+- 短窗口语言检测只能辅助定位演员原声，可能把歌曲、环境声、短语或多人叠音误判；正式任务
+  仍需结合原文字幕、画面、声音和剧情功能复核。
+- 5%-12% 是从当前两个样本和影视解说节奏推导出的默认范围，不是平台规范。悬疑、喜剧、
+  动作、家庭剧等题材应根据对白价值和表演密度调整。
+- Skill 不替代素材授权、合理使用和平台规则判断，发布前仍需用户确认版权与使用边界。
+
+## 2026-07-20：故事剪辑增加抖音发布包和 50-100 字文案
+
+### 更新范围
+
+- 分支：`main`（本次未提交、未推送）
+- 主要文件：
+  - `.agents/skills/videohub-story-editor/SKILL.md`
+  - `.agents/skills/videohub-story-editor/scripts/build_douyin_publish_package.py`
+  - `.agents/skills/videohub-story-editor/agents/openai.yaml`
+  - `.agents/skills/videohub/SKILL.md`
+  - `src/paths_config.py`
+  - `tests/test_story_editor_skill.py`
+
+### 本次更新内容
+
+- 故事成片 QA 通过后，可生成独立抖音发布文件夹，统一放在
+  `workspace/publish_packages/douyin/<package_name>/`。
+- 发布包包含 H.264/AAC MP4、`caption.txt`、`hashtags.txt`、`cover.jpg`、
+  `publish_notes.md` 和 `publish_manifest.json`。
+- 中文正文强制为 50-100 个可见字符，空白不计入长度；正文必须包含中文，话题标签
+  独立保存，不能依靠标签凑长度。
+- 清单记录媒体参数、文案长度、来源链接、QA 报告、传输方式和视频 SHA-256，便于
+  发布前复核与追溯。
+
+### 设计与实现
+
+- 已是 MP4/H.264/AAC 的成片优先创建 NTFS 硬链接，发布文件夹可直接使用，同时不重复
+  占用一份大视频空间；硬链接失败时回退为复制。
+- 输入编码不符合要求或显式使用 `--transcode` 时，通过 FFmpeg 转为 H.264/AAC MP4，
+  并设置 `faststart`。
+- 可通过 `--cover-time` 从最终成片抽取代表画面；封面时间必须位于成片范围内。
+- 传入 QA 报告时必须识别到 `PASS` 才能继续打包；打包后再次使用 FFprobe 检查视频、
+  音频和时长。
+- 横版成片默认保持原构图和 1080P，不自动裁成 9:16，避免人物、字幕和关键物体被裁掉。
+
+### 真实样片验证
+
+- 使用 `03lvf9P3znw` 的 4 分钟 MiniMax TTS 成片生成发布包：
+  `workspace/publish_packages/douyin/2026款丰田RAV4混动通勤实测_油耗与舒适性表现如何/`。
+- 正文为 73 个可见字符，话题为 `#丰田RAV4 #混动SUV #汽车评测 #通勤实测`。
+- 发布视频为 1920x1080、60000/1001 fps、H.264/AAC、48 kHz 双声道，时长
+  240.659 秒；完整 FFmpeg 解码无错误。
+- 发布视频通过硬链接复用成片，SHA-256 为
+  `de9d8f2f2cd2e10934f0be0d37680e352810c6f23ae2ca9a925f9374b4529cfd`。
+- 5 秒位置的封面候选已人工检查，车辆主体和烧录字幕均清晰、未越界。
+
+### 遗留问题
+
+- 9:16 竖版需要根据具体画面重新排版并单独 QA，本次仅生成保留原构图的 1080P 横版发布包。
+- 平台规则、版权授权、最终标题和封面仍需发布前人工复核。
+- Windows 下运行 Skill 校验器时需要 `PYTHONUTF8=1`，否则校验器可能使用 GBK 读取
+  中文 `SKILL.md` 并报 `UnicodeDecodeError`。
+
+## 2026-07-20：完成 RAV4 四分钟 MiniMax TTS 解说样片
+
+### 更新范围
+
+- 分支：`main`（本次未提交、未推送）
+- 输入视频：YouTube `03lvf9P3znw`，原片 38 分 35 秒
+- 主要文件：
+  - `.agents/skills/videohub-story-editor/scripts/synthesize_story_narration.py`
+  - `workspace/review_packs/story_editor/03lvf9P3znw_rav4_4min_tts/`
+  - `workspace/videos_with_subtitles/2026_Toyota_RAV4_Hybrid_03lvf9P3znw_4min_TTS_minimax.mp4`
+
+### 本次更新内容
+
+- 使用故事剪辑 Skill 完成真实长视频样片：基于英文原生字幕和画面证据理解内容，重排为 20 个片段、总计划时长 240 秒。
+- 编写 20 段中文解说，使用 MiniMax `speech-2.8-turbo` 和中文男声 `Chinese (Mandarin)_Male_Announcer` 合成。
+- 将原片声音降到 30%，混入完整中文解说轨，并烧录与实际 TTS 时长对齐的中文字幕。
+- 独立运行解说合成脚本时自动加载项目根目录 `.env`，避免桌面程序外执行时无法读取 MiniMax Key。
+
+### 设计与实现
+
+- 故事理解、剪辑计划、解说计划和确定性渲染继续分层保存，事实与画面选择均可从 `story_analysis.json`、`story_plan.json` 和来源映射中追溯。
+- 20 个片段统一为 12 秒，覆盖车型定位、动力油耗、空间、交互、城市与高速体验、缺点和结论；其中 30% 为视觉主导片段。
+- 每段解说单独生成并缓存，再按输出时间轴归一化和拼接；实际最大语速调整约 1.12 倍，低于 1.25 倍上限。
+- MiniMax `Chinese (Mandarin)_Radio_Host` 在当前账户请求中长时间无响应，最小请求验证后改用可正常生成的 `Male_Announcer`，保留男声解说方向。
+
+### 验证结果
+
+- `story_analysis.json`、`story_plan.json`、`narration_plan.json` 均通过校验，0 个警告。
+- 20 段 TTS 全部生成成功，合成音轨为 240.000 秒，字幕共 20 条。
+- 成片为 H.264/AAC、1920x1080、60000/1001 fps、48 kHz 双声道，实际时长 240.659 秒，大小约 230.5 MiB。
+- 完整 FFmpeg 解码无错误，QA 报告结果为 `PASS`；抽检 5 秒、120 秒和 232 秒画面，画面有效，字幕清晰且未越界。
+
+### 遗留问题
+
+- `Radio_Host` 音色在有效密钥下可能长时间不返回，后续应给单段 TTS 增加可配置的硬超时、音色预检和明确回退提示。
+- 当前字幕按解说块显示，块间保留约 1.8 秒视觉与听觉停顿；更细粒度的逐句字幕可在后续版本中增加。
+- 本次为单个汽车评测样片，叙事节奏和 30% 背景音比例仍需在剧情、播客等类型上继续验证。
+
+## 2026-07-20：故事剪辑增加后置翻译和双版本 TTS 解说流程
+
+### 更新范围
+
+- 分支：`main`
+- 主要文件：
+  - `.agents/skills/videohub-story-editor/`
+  - `src/doubao_tts_client.py`
+  - `tests/test_story_editor_skill.py`
+  - `tests/test_doubao_tts_client.py`
+
+### 本次更新内容
+
+- 外文视频改为先使用原文字幕理解、选段和重排，再对最终成片时间轴重新翻译。
+- 最终字幕可以继续使用 Google 基础翻译，并可选 DeepSeek 全局轻度润色；没有
+  DeepSeek Key 时保留基础翻译，不影响剪辑和原声版。
+- 原声版保留原片声音，可烧录原文、译文或双语字幕。
+- 新增 TTS 解说版：复用同一剪辑计划，把原声音量降到 30%，混入 MiniMax 或豆包
+  中文旁白，并烧录跟随实际语音时长的中文字幕。
+- 解说文案使用独立 `narration_plan.json`，每个叙述块必须引用真实事件、字幕、画面
+  或剪辑片段证据。
+- 分段 TTS 结果按供应商、音色、语速和文本缓存；文案未变化时不重复请求。
+
+### 设计思路
+
+剪辑前的逐句机翻缺少最终叙事顺序的上下文，重排后也容易出现术语、指代和语气不
+连贯。因此故事理解以原文证据为准，剪辑计划确定后先重建最终原文 SRT，再翻译这份
+字幕。DeepSeek 润色只作为可选增强层，不能成为原声版的硬依赖。
+
+原声版和解说版使用同一 `story_plan.json`，保证两种输出的画面来源、先后顺序和
+证据链一致。解说版不把 TTS 文案塞回原片字幕，而是单独校验和合成完整旁白轨，最后
+由 FFmpeg 将原声按 0.30 音量混入。这样 MiniMax、豆包或凭据故障只影响解说版，
+不会破坏已经完成的故事分析、后置翻译和原声成片。
+
+### 实现方式
+
+- `compile_story_plan.py` / `validate_story_plan.py`
+  - 增加 `translation_stage` 和 `translation_polish`。
+  - `post_edit` 模式允许证据包没有预翻译文本，但要求渲染双语版前注入完整译文。
+- `prepare_story_subtitles.py`
+  - 按最终选段、重排和播放速度重建原文 SRT。
+- `translate_story_subtitles.py`
+  - 复用现有字幕翻译和 DeepSeek 润色流程，并生成实际执行状态清单。
+- `render_story.py`
+  - 支持外部后置译文、变体独立字幕前缀和 QA 路径。
+  - 支持将对齐的旁白轨与 30% 原声混合，统一到 48 kHz 并限幅后再烧录解说字幕。
+- `validate_narration_plan.py` / `narration-plan-schema.md`
+  - 校验解说风格、证据引用、时间范围、重叠、文字密度、供应商和音色配置。
+- `synthesize_story_narration.py`
+  - 支持 MiniMax 和豆包，按块缓存、测量真实时长、有限加速、对齐完整音轨和字幕。
+- `src/doubao_tts_client.py`
+  - 封装豆包异步长文本 TTS 的提交、查询、WAV 下载和任务恢复。
+  - Access Token 不写入任务清单或缓存文件。
+
+### 验证结果
+
+已执行：
+
+```bash
+python -m py_compile <全部故事剪辑脚本> src\doubao_tts_client.py
+python -m pytest tests -q
+python -m ruff check .agents\skills\videohub-story-editor\scripts src\doubao_tts_client.py tests\test_story_editor_skill.py tests\test_doubao_tts_client.py
+```
+
+- 项目根 `tests/` 测试：`19 passed`。
+- Skill 结构校验：`Skill is valid!`。
+- FFmpeg 3 秒合成媒体冒烟验证通过：原片 H.264/AAC 与旁白 WAV 混合后仍为
+  H.264/AAC、48 kHz，输出时长为 3.018 秒。
+- 未调用真实 MiniMax 或豆包接口，避免在没有用户确认的情况下消耗配额；HTTP 协议
+  通过模拟提交、查询和下载响应测试。
+
+### 遗留问题和后续计划
+
+- 当前能力先作为 Skill 和命令行流程提供，尚未接入 VideoHub 桌面 GUI 的故事剪辑页。
+- 豆包音色 `voice_type` 需要使用账户已开通的音色；不同账户可用列表可能不同。
+- 解说版当前使用固定原声音量，尚未按对白区间自动闪避或动态压低背景声。
+- 解说文案仍由执行 Skill 的模型生成，正式发布前应人工检查事实、版权和叙事语气。
+- 从仓库根执行不限定目录的 `pytest -q` 时，现有网页版测试
+  `website/backend/tests/test_subtitle_service.py` 因直接导入 `subtitle_service` 而在
+  收集阶段失败；本次未修改该独立测试入口。
+
+## 2026-07-20：实现基于证据的长视频故事剪辑 Skill
+
+### 更新范围
+
+- 分支：`main`
+- 主要文件：
+  - `.agents/skills/videohub-story-editor/`
+  - `.agents/skills/videohub/SKILL.md`
+  - `tests/test_story_editor_skill.py`
+
+### 本次更新内容
+
+本次把原来的故事剪辑规则扩展为可执行的四层流水线：
+
+```text
+视频和字幕
+  -> 证据提取层
+  -> 故事理解层
+  -> 剪辑规划层
+  -> 确定性渲染层
+  -> 短视频和同步字幕
+```
+
+新增能力包括：
+
+- 从现有 SRT、VTT、ASS/SSA 字幕和源视频生成 `evidence_pack.json`。
+- 提取媒体信息、标准化原文与译文字幕、场景边界、字幕空档视觉候选、关键帧和长视频分析分块。
+- 定义模型无关的 `story_analysis.json`，供 Codex、Claude Code、DeepSeek 等模型使用同一套证据引用和输出结构。
+- 校验内容分类、分块覆盖、人物或说话人、事件、因果关系、视觉发现、连续性约束和故事方案。
+- 把模型生成的 `story_plan.draft.json` 编译为正式 `story_plan.json`，由脚本计算输出时间轴、字幕文本、场景引用和输出路径。
+- 对剪辑计划执行跨文件校验，检查字幕、场景、分析节点、来源指纹和时间范围。
+- 根据计划确定性裁剪和重排原视频，并重建原文 SRT、译文 SRT 和双语 ASS。
+- 支持选择不烧录、原文、译文或双语字幕；成片后执行时长、字幕边界和完整解码检查。
+
+### 设计思路
+
+本功能不引入 WhisperX，也不替换 VideoHub 现有 Whisper、平台字幕、翻译、配音和
+GUI 流程。缺少字幕时仍调用项目已有的字幕生成能力；故事剪辑 Skill 只消费带时间码
+字幕和视频。
+
+大模型负责理解完整内容、提出叙事方案和选择原片范围，但不负责计算输出时间码或
+拼写 FFmpeg 命令。所有模型判断都必须引用 `sub-*`、`scene-*`、`frame-*`、
+`visual-*` 或 `chunk-*` 证据；时间轴编译、来源检查、渲染、字幕换算和 QA 由
+确定性脚本完成。这样可以替换分析模型，同时保持剪辑结果可追溯和可复核。
+
+### 实现方式
+
+- `build_evidence_pack.py`
+  - 读取视频和 SRT/VTT/ASS/SSA。
+  - 使用 FFprobe 获取媒体参数。
+  - 使用 FFmpeg 场景检测和关键帧抽取。
+  - 生成标准化字幕、视觉候选和约 300 秒一个的分析分块。
+- `validate_story_analysis.py`
+  - 校验模型输出是否覆盖全部分块并引用真实证据。
+  - 检查事件、因果、主题、视觉发现、连续性约束和故事方案。
+- `compile_story_plan.py`
+  - 根据证据交集补全字幕和场景引用。
+  - 计算连续输出时间轴，生成 `story_outline.md` 和
+    `story_source_map.csv`。
+- `validate_story_plan.py`
+  - 增加证据包与故事分析的跨文件校验。
+- `render_story.py`
+  - 逐段重新编码、按顺序拼接、重建字幕时间轴、可选烧录字幕并生成
+    `qa_report.md`。
+- `story_pipeline_common.py`
+  - 提供字幕解析、翻译时间配对、字幕输出、FFmpeg/FFprobe 发现、媒体探测和
+    JSON 公共函数。
+
+### 验证结果
+
+- 新增脚本通过 `py_compile`。
+- `ruff check` 通过。
+- Skill 结构校验通过：`Skill is valid!`。
+- `tests/test_story_editor_skill.py`：`3 passed`。
+- 全部项目测试：`15 passed`。
+- 使用 12 秒 H.264/AAC 合成视频完成端到端验证：
+  - 识别 4 条字幕、1 个场景、1 个视觉候选、3 张关键帧和 3 个分析分块。
+  - 故事分析与剪辑计划校验均为 0 个错误、0 个警告。
+  - 将 3 个原片片段重排为计划时长 9.000 秒的双语字幕成片。
+  - 实际成片时长 9.120 秒，字幕时间轴检查通过，完整 FFmpeg 解码无错误。
+
+### 遗留问题和后续计划
+
+- 当前 Skill 提供模型无关的数据契约，但未在 VideoHub GUI 中增加 DeepSeek 等
+  外部模型的一键调用入口；现阶段由执行 Skill 的 Agent 生成分析文件。
+- 确定性 v1 渲染器只执行硬切，`fade` 和 `crossfade` 暂不渲染。
+- 未使用说话人分离模型；只有字幕自身包含说话人标签时才能自动保留姓名。
+- 场景检测需要解码源视频，超长视频可先跳过或降低抽帧数量。
+- 影视剧情类的无字幕动作、表情和空间关系仍需要多模态模型或人工检查关键帧。
+
+## 2026-07-15：右键智能粘贴支持 Pornhub 链接
+
+### 更新范围
+
+- 分支：`main`
+- 主要文件：
+  - `main.py`
+
+### 本次更新内容
+
+本次扩展在线视频输入框和批量输入框的右键智能粘贴识别范围，新增对 `pornhub.com` 和 `cn.pornhub.com` 链接的支持。
+
+主要内容包括：
+
+- 单链接输入框右键时，如果剪贴板是 Pornhub 视频链接，会直接清空旧内容并粘贴当前链接。
+- 批量链接输入框右键时，会把 Pornhub 链接按普通视频链接处理，支持直接粘贴或追加到新行。
+- 在线视频、批量处理和 AI 配音页的输入提示同步加入 Pornhub。
+- 将智能粘贴平台关键词抽成 `SMART_PASTE_URL_KEYWORDS`，后续新增平台时只需要维护一处。
+
+### 设计思路
+
+Pornhub 这类站点本身可由 yt-dlp 通用处理链路尝试下载和转写，主要缺口在 GUI 输入层：原来的右键智能粘贴只识别 YouTube、Twitter/X、Bilibili、Instagram、TikTok 等关键词，导致剪贴板中是 Pornhub 链接时不会直接自动粘贴。
+
+这次只扩展输入识别和界面提示，不新建独立下载器，也不改变现有处理流程。这样可以继续复用 yt-dlp 的通用平台能力，避免为单个平台重复实现下载逻辑。
+
+### 实现方式
+
+- `main.py`
+  - 新增 `SMART_PASTE_URL_KEYWORDS`。
+  - `URLLineEdit.contextMenuEvent()` 使用统一关键词判断单行链接。
+  - `URLTextEdit.contextMenuEvent()` 使用统一关键词判断批量链接文本。
+  - 更新在线视频、批量处理、AI 配音相关输入提示和错误提示。
+
+### 验证结果
+
+本次实现后需要执行：
+
+```bash
+python -m py_compile main.py
+git diff --check
+```
+
+手动验证建议：
+
+- 复制 `https://cn.pornhub.com/...` 链接后，在在线视频输入框右键，确认可以直接自动粘贴。
+- 在批量处理输入框中右键，确认可以追加或清空后粘贴 Pornhub 链接。
+- 如需实际下载，请确认 yt-dlp 版本和网络环境支持该链接。
+
+### 遗留问题和后续计划
+
+- 当前只是加入智能粘贴和通用 yt-dlp 处理入口，没有针对 Pornhub 增加独立下载状态、目录或专用错误提示。
+- 成人站点内容使用前仍需遵守当地法律、平台条款和内容授权边界。
+
 ## 2026-07-13：README 增加 MiniMax 多音色配音说明
 
 ### 更新范围

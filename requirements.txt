@@ -52,6 +52,7 @@ psutil>=5.9.0,<7.0.0
 
 # Additional Utilities
 packaging>=21.0
+Pillow>=10.0.0,<13.0.0
 typing-extensions>=4.0.0;python_version<"3.8"
 
 # Live Stream Recording Dependencies (from DouyinLiveRecorder)

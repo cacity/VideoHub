@@ -1,12 +1,39 @@
 # VideoHub
 
-**Current Version: v0.1.1**
+**Current Version: v0.3.0**
 
 English | [简体中文](./README.md)
 
-VideoHub is a desktop video workflow application built with **PyQt6**. It combines **multi-platform media processing**, **speech transcription**, **bilingual subtitle generation**, **AI dubbing**, **LLM summaries**, **idle-time queue scheduling**, **browser extension integration**, and **live recording utilities** in a single tool.
+VideoHub is a desktop video workflow application built with **PyQt6**. It combines **multi-platform media processing**, **speech transcription**, **bilingual subtitle generation**, **AI dubbing**, **LLM summaries**, **idle-time queue scheduling**, **browser extension integration**, and project-level skills for coding agents such as Codex, Claude Code, and DeepSeek.
 
 It is designed for users who want to turn online or local media into reusable assets: local video/audio files, transcripts, subtitles, and structured markdown summaries.
+
+## What's New: Story Editing and Film Commentary Skills
+
+VideoHub now includes two project-level workflows for AI coding agents. Instead of cutting a video at fixed intervals, the agent first reads source-language subtitles and visual evidence, builds an evidence-backed understanding of the people, topics, events, and causal structure, then produces a validated edit plan. Deterministic Python and FFmpeg scripts handle the final edit, translation, dubbing, subtitles, and publishing assets.
+
+```mermaid
+flowchart LR
+    A["Video and subtitles"] --> B["Evidence extraction"]
+    B --> C["Story understanding"]
+    C --> D["Edit planning"]
+    D --> E["Post-edit translation and optional TTS"]
+    E --> F["Deterministic rendering"]
+    F --> G["Short video, synced subtitles, and publish package"]
+```
+
+| Skill | Main use | Deliverables |
+| --- | --- | --- |
+| `videohub-story-editor` | Turn long videos, podcasts, interviews, courses, or knowledge content into a coherent short-form story | Source-audio version with original or bilingual subtitles; MiniMax or Doubao TTS commentary with source audio around 30%; Douyin package with a 50-100 Chinese-character caption |
+| `videohub-film-commentary` | Produce third-person commentary for films, TV episodes, and short dramas | Mixed narration and selected source-audio anchors; synced subtitles; 1080x1920 Douyin cover, title candidates, caption, hashtags, and a complete publish package |
+
+Both workflows follow an “understand and edit first, translate afterward” rule. For foreign-language media, machine translation made before editing is not used as the sole basis for plot decisions. Subtitles are rebuilt against the final timeline and can optionally receive light DeepSeek polishing. Film commentary can preserve decisive lines, reveals, confessions, reactions, jokes, and farewells so narration does not erase the original performance.
+
+> These workflows are currently exposed through `.agents/skills/` to coding agents that support project-level skills. They orchestrate the repository's Python and FFmpeg tools; they are not one-click editing buttons in the desktop GUI. Only process media you are authorized to download, edit, and publish.
+
+### Planned: Visual Timeline for Film Commentary
+
+Story editing and film commentary already produce validated `story_plan.json` and `narration_plan.json` files, subtitles, segmented TTS caches, and reusable clean masters, but the current release does not include a built-in web timeline editor. A future commentary workbench is planned to visualize video clips, source audio, TTS narration, source-audio anchors, and subtitle tracks. It will allow manual trim-point adjustments while reusing unchanged clip and TTS caches. The workbench is intended as a human refinement layer after the AI-assisted rough cut; final media will continue to use deterministic local FFmpeg rendering. This interface is not available in the current version.
 
 ## Feature Overview
 
@@ -18,6 +45,8 @@ It is designed for users who want to turn online or local media into reusable as
 | Bilingual subtitles | Generate `.srt`, `.vtt`, and `.ass` subtitles, with optional translation. |
 | Subtitle burn-in | Embed subtitles into video files when the workflow requires it. |
 | AI dubbing | Generate Chinese voice-over for videos using speech synthesis technology. |
+| Story editing | Understand long-form media from source subtitles and visual evidence, then select, reorder, translate, subtitle, and render a coherent short video. |
+| Film commentary | Combine third-person TTS narration with selected original dialogue and generate Douyin publishing assets. |
 | LLM summaries | Generate markdown summaries/articles from transcripts with customizable templates. |
 | Batch processing | Process multiple URLs or local files in one run. |
 | Idle queue scheduling | Queue tasks during the day and let VideoHub execute them in a configured idle window. |
@@ -199,7 +228,7 @@ VideoHub supports AI-powered Chinese voice dubbing for videos. This feature tran
 - Audio normalization and silence padding for smooth transitions
 - GPU acceleration supported when available
 
-## Claude Code Skills
+## Project-level AI Agent Skills
 
 This repository includes project-level skills under `.agents/skills/`. They are intended for Codex, Claude Code, and similar coding agents. They are not runtime dependencies for VideoHub; they document the current project entry points, routing rules, and implementation boundaries so agents can reuse existing GUI/CLI code instead of inventing parallel workflows.
 
@@ -213,11 +242,27 @@ This repository includes project-level skills under `.agents/skills/`. They are 
 | `videohub-queue` | Idle queue, Chrome/Edge extension, and local API troubleshooting | `src/api_server.py`, `http://127.0.0.1:8765` |
 | `videohub-ffmpeg` | FFmpeg status, path, mode, download, and test workflows | `python src/ffmpeg_config_cli.py help` |
 | `videohub-subtitles` | Subtitle burn-in and standalone subtitle merge tool guidance | `embed_subtitles_to_video()`, `python src/subtitle_merger.py` |
+| `videohub-story-editor` | Evidence-backed long-video understanding, selection, reordering, post-edit translation, source-audio/TTS versions, and Douyin packages | `.agents/skills/videohub-story-editor/scripts/` |
+| `videohub-film-commentary` | Third-person film/TV commentary, selected source-audio anchors, synced subtitles, covers, titles, captions, and hashtags | `.agents/skills/videohub-film-commentary/scripts/` |
 | `videohub-live` | Live recorder dependency, configuration, and runtime diagnostics | `src/live_recorder_adapter.py` |
 
 ### Using skills
 
 Skills are automatically available to supported coding agents when working in this project. Use the router skill first for ambiguous requests, then the feature-specific skill for implementation or troubleshooting.
+
+Example requests:
+
+```text
+Use videohub-story-editor to turn this 30-minute English interview into a
+3-minute source-audio version. Translate after editing, burn bilingual subtitles,
+and create a Douyin folder with a 50-100 Chinese-character caption.
+
+Use videohub-film-commentary to make a 10-minute Chinese commentary version of
+this TV episode. Use MiniMax TTS, lower source audio to 30% under narration,
+preserve key original dialogue, and generate a vertical cover, titles, and caption.
+```
+
+Under the current project-folder convention, the agent creates an independent `workspace/projectNNN_<project_name>/` for each job and keeps source assets, evidence, story analysis, source maps, edit plans, subtitles, TTS caches, rendered media, publishing assets, and QA reports together. The lower-level scripts remain compatible with the default `workspace/review_packs/story_editor/`, `workspace/videos_with_subtitles/`, and `workspace/publish_packages/douyin/` locations. Story analysis and edit plans must pass schema validation before rendering; final media is checked for duration, subtitle boundaries, and complete decoding.
 
 Current synchronization notes:
 
@@ -298,6 +343,9 @@ workspace/
   twitter_downloads/
   bilibili_downloads/
   live_downloads/
+  review_packs/story_editor/  # evidence, analysis, edit plans, and QA reports
+  videos_with_subtitles/      # rendered story and commentary videos
+  publish_packages/douyin/    # video, cover, titles, caption, and hashtags
   dubbing_temp/          # AI dubbing temporary audio files
 ```
 
@@ -314,6 +362,9 @@ VideoHub/
 │   ├── live_recorder_adapter.py
 │   └── subtitle_merger.py
 ├── chrome_extension/
+├── .agents/skills/
+│   ├── videohub-story-editor/
+│   └── videohub-film-commentary/
 ├── workspace/
 ├── templates/
 ├── logs/
@@ -356,6 +407,20 @@ VideoHub/
 - Run `python src/youtube_transcriber.py --video "path/to/file.mp4"`
 - Configure API keys if you want LLM summary generation
 - Review transcript, subtitles, and summary in `workspace/`
+
+### Scenario 5: Turn a long interview into a short bilingual story
+
+- Ask a supported coding agent to use `videohub-story-editor`
+- Review the evidence-backed story outline and source map before rendering
+- Produce either a source-audio bilingual version or a TTS commentary version
+- Review the final video, subtitles, QA report, and optional Douyin package
+
+### Scenario 6: Produce film or TV commentary with selected original dialogue
+
+- Ask the agent to use `videohub-film-commentary` and specify the target duration
+- Let third-person narration compress setup, transitions, and repeated dialogue
+- Preserve selected original lines and performances as non-overlapping audio anchors
+- Generate the final commentary video plus a vertical cover, title candidates, caption, and hashtags
 
 ## Testing
 
