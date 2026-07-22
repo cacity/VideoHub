@@ -19,8 +19,11 @@ from build_douyin_publish_package import (  # noqa: E402
 from render_story import (  # noqa: E402
     apply_external_translation,
     build_source_volume_expression,
+    build_volume_keyframe_expression,
     combine_commentary_subtitles,
+    final_subtitle_timeline,
     rebuild_subtitle_timeline,
+    restore_or_render_segment,
     select_subtitle_cues_for_windows,
 )
 from story_pipeline_common import (  # noqa: E402
@@ -150,6 +153,80 @@ def test_post_edit_translation_is_attached_to_final_timeline(tmp_path):
         "剪辑后的第一句",
         "剪辑后的第二句",
     ]
+
+
+def test_final_subtitle_timeline_uses_exact_authored_text(tmp_path):
+    subtitle = tmp_path / "timeline.srt"
+    subtitle.write_text(
+        "1\n00:00:01,000 --> 00:00:02,500\n编辑后的字幕\n",
+        encoding="utf-8",
+    )
+
+    cues = final_subtitle_timeline(subtitle)
+
+    assert len(cues) == 1
+    assert cues[0]["start_sec"] == 1.0
+    assert cues[0]["end_sec"] == 2.5
+    assert cues[0]["source_text"] == "编辑后的字幕"
+    assert cues[0]["target_text"] == "编辑后的字幕"
+
+
+def test_segment_cache_reuses_unchanged_render(tmp_path, monkeypatch):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    output = tmp_path / "output.mp4"
+    cache_dir = tmp_path / "cache"
+    segment = {
+        "source_start_sec": 1.0,
+        "source_end_sec": 3.0,
+        "output_start_sec": 0.0,
+        "output_end_sec": 2.0,
+        "playback_rate": 1.0,
+        "audio_mode": "source",
+    }
+    calls = []
+
+    def fake_render_segment(**kwargs):
+        calls.append(kwargs["segment"]["source_end_sec"])
+        kwargs["output_path"].write_bytes(b"rendered")
+
+    monkeypatch.setattr("render_story.render_segment", fake_render_segment)
+
+    assert not restore_or_render_segment(
+        ffmpeg="ffmpeg",
+        source_video=source,
+        segment=segment,
+        output_path=output,
+        source_has_audio=True,
+        cache_dir=cache_dir,
+    )
+    output.unlink()
+    assert restore_or_render_segment(
+        ffmpeg="ffmpeg",
+        source_video=source,
+        segment=segment,
+        output_path=output,
+        source_has_audio=True,
+        cache_dir=cache_dir,
+    )
+
+    assert calls == [3.0]
+    assert output.read_bytes() == b"rendered"
+
+
+def test_volume_keyframe_expression_interpolates_between_points():
+    expression = build_volume_keyframe_expression(
+        [
+            {"time_sec": 0.0, "volume": 0.2},
+            {"time_sec": 5.0, "volume": 1.0},
+        ],
+        duration=10.0,
+        base_volume=0.5,
+    )
+
+    assert "between(t,0.000000,5.000000)" in expression
+    assert "0.100000" in expression
+    assert "0.500000" in expression
 
 
 def test_narration_plan_accepts_default_background_volume():

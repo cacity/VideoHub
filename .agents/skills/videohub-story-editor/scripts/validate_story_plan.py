@@ -265,6 +265,10 @@ def validate_plan(
 
         source_start = segment.get("source_start_sec")
         source_end = segment.get("source_end_sec")
+        external_source = bool(str(segment.get("source_video_path", "")).strip())
+        segment_source_duration = (
+            segment.get("source_duration_sec") if external_source else source_duration
+        )
         output_start = segment.get("output_start_sec")
         output_end = segment.get("output_end_sec")
         playback_rate = segment.get("playback_rate", 1.0)
@@ -275,7 +279,11 @@ def validate_plan(
         if not _number(source_end) or source_end <= source_start:
             errors.append(f"{label}.source_end_sec must be greater than source_start_sec")
             source_end = source_start
-        elif source_duration and source_end > source_duration + 0.001:
+        elif (
+            _number(segment_source_duration)
+            and segment_source_duration
+            and source_end > segment_source_duration + 0.001
+        ):
             errors.append(f"{label}.source_end_sec exceeds source.duration_sec")
 
         if not _number(output_start) or output_start < 0:
@@ -287,11 +295,18 @@ def validate_plan(
 
         if index == 1 and abs(output_start) > 0.05:
             errors.append(f"{label}.output_start_sec must start at 0")
-        elif index > 1 and abs(output_start - previous_output_end) > 0.25:
-            warnings.append(
-                f"{label} output timeline differs from previous end by more than 0.25s; "
-                "confirm transition overlap or gap"
+        elif index > 1:
+            transition_overlap = (
+                float(segment.get("transition_duration_sec", 0.5))
+                if segment.get("transition") == "crossfade"
+                else 0.0
             )
+            expected_start = previous_output_end - transition_overlap
+            if abs(output_start - expected_start) > 0.25:
+                warnings.append(
+                    f"{label} output timeline differs from the expected transition "
+                    "overlap or cut position by more than 0.25s"
+                )
         previous_output_end = output_end
 
         if not _number(playback_rate) or not 0.5 <= playback_rate <= 2.0:
@@ -318,7 +333,7 @@ def validate_plan(
             errors.append(f"{label}.source_subtitle_ids must be an array")
             subtitle_ids = []
 
-        if kind == "dialogue":
+        if kind == "dialogue" and not external_source:
             if not subtitle_ids:
                 errors.append(f"{label} dialogue segment must reference source subtitles")
             if not str(segment.get("source_text", "")).strip():
@@ -332,7 +347,7 @@ def validate_plan(
         if not isinstance(scene_ids, list):
             errors.append(f"{label}.source_scene_ids must be an array")
             scene_ids = []
-        if kind == "visual" and not scene_ids:
+        if kind == "visual" and not scene_ids and not external_source:
             errors.append(f"{label} visual segment must reference at least one source scene")
 
         analysis_refs = segment.get("analysis_refs")
@@ -445,11 +460,6 @@ def validate_plan(
             errors.append(f"{label}.story_reason must not be empty")
         if segment.get("transition") not in TRANSITIONS:
             errors.append(f"{label}.transition must be one of {sorted(TRANSITIONS)}")
-        elif segment.get("transition") != "cut":
-            warnings.append(
-                f"{label} uses {segment.get('transition')}; the deterministic v1 renderer "
-                "currently supports cut transitions only"
-            )
 
     output_duration = previous_output_end
     if target_duration and output_duration:

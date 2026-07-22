@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import shutil
 import sys
 from datetime import datetime
@@ -27,12 +29,53 @@ from validate_narration_plan import validate_narration_plan
 from validate_story_plan import validate_plan
 
 BURN_MODES = {"none", "source", "translated", "bilingual"}
+SEGMENT_CACHE_SCHEMA = "2"
 
 
 def _atempo_filter(rate: float) -> str:
     if not 0.5 <= rate <= 2.0:
         raise ValueError(f"Unsupported audio playback rate: {rate}")
     return f"atempo={rate:.8f}"
+
+
+def build_volume_keyframe_expression(
+    keyframes: list[dict[str, Any]],
+    duration: float,
+    base_volume: float,
+) -> str:
+    points = sorted(
+        (
+            max(0.0, min(duration, float(item.get("time_sec", 0.0)))),
+            max(0.0, min(2.0, float(item.get("volume", 1.0)))) * base_volume,
+        )
+        for item in keyframes
+        if isinstance(item, dict)
+    )
+    if not points:
+        return f"{base_volume:.6f}"
+    deduplicated: list[tuple[float, float]] = []
+    for point in points:
+        if deduplicated and abs(deduplicated[-1][0] - point[0]) < 0.001:
+            deduplicated[-1] = point
+        else:
+            deduplicated.append(point)
+    if deduplicated[0][0] > 0:
+        deduplicated.insert(0, (0.0, deduplicated[0][1]))
+    if deduplicated[-1][0] < duration:
+        deduplicated.append((duration, deduplicated[-1][1]))
+    expression = f"{deduplicated[-1][1]:.6f}"
+    for (start, start_volume), (end, end_volume) in reversed(
+        list(zip(deduplicated, deduplicated[1:]))
+    ):
+        span = max(0.001, end - start)
+        interpolated = (
+            f"{start_volume:.6f}+({end_volume - start_volume:.6f})"
+            f"*(t-{start:.6f})/{span:.6f}"
+        )
+        expression = (
+            f"if(between(t,{start:.6f},{end:.6f}),{interpolated},{expression})"
+        )
+    return expression
 
 
 def _concat_quote(path: Path) -> str:
@@ -106,29 +149,68 @@ def render_segment(
             ]
         )
 
-    video_filter = f"setpts=(PTS-STARTPTS)/{playback_rate:.8f},format=yuv420p"
+    target_width = int(segment.get("output_width", 0) or 0)
+    target_height = int(segment.get("output_height", 0) or 0)
+    target_fps = float(segment.get("output_fps", 0) or 0)
+    video_filters = [f"setpts=(PTS-STARTPTS)/{playback_rate:.8f}"]
+    if target_width > 0 and target_height > 0:
+        video_filters.extend(
+            [
+                (
+                    f"scale={target_width}:{target_height}:"
+                    "force_original_aspect_ratio=decrease"
+                ),
+                f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:black",
+                "setsar=1",
+            ]
+        )
+    if target_fps > 0:
+        video_filters.append(f"fps={target_fps:.6f}")
+    fade_in = min(max(0.0, float(segment.get("fade_in_sec", 0.0))), output_duration / 2)
+    fade_out = min(max(0.0, float(segment.get("fade_out_sec", 0.0))), output_duration / 2)
+    if fade_in > 0:
+        video_filters.append(f"fade=t=in:st=0:d={fade_in:.6f}")
+    if fade_out > 0:
+        video_filters.append(
+            f"fade=t=out:st={max(0.0, output_duration - fade_out):.6f}:d={fade_out:.6f}"
+        )
+    video_filters.append("format=yuv420p")
+    video_filter = ",".join(video_filters)
     command.extend(["-map", "0:v:0"])
     if narration_path:
         command.extend(["-map", "1:a:0"])
-        audio_filter = (
+        audio_filters = [
             f"atrim=duration={output_duration:.6f},"
             "asetpts=PTS-STARTPTS,"
             f"apad=pad_dur={output_duration:.6f},"
             f"atrim=duration={output_duration:.6f}"
-        )
+        ]
+        audio_filter = "".join(audio_filters)
     elif source_has_audio:
         command.extend(["-map", "0:a:0"])
         volume = {"source": 1.0, "mute": 0.0, "duck": 0.25}.get(audio_mode)
         if volume is None:
             raise ValueError(f"Unsupported audio mode for {segment['id']}: {audio_mode}")
+        volume_expression = build_volume_keyframe_expression(
+            list(segment.get("volume_keyframes", [])),
+            output_duration,
+            volume,
+        )
         audio_filter = (
             "asetpts=PTS-STARTPTS,"
             f"{_atempo_filter(playback_rate)},"
-            f"volume={volume:.3f}"
+            f"volume='{volume_expression}':eval=frame"
         )
     else:
         command.extend(["-map", "1:a:0"])
         audio_filter = "asetpts=PTS-STARTPTS"
+
+    if fade_in > 0:
+        audio_filter += f",afade=t=in:st=0:d={fade_in:.6f}"
+    if fade_out > 0:
+        audio_filter += (
+            f",afade=t=out:st={max(0.0, output_duration - fade_out):.6f}:d={fade_out:.6f}"
+        )
 
     command.extend(
         [
@@ -167,6 +249,61 @@ def render_segment(
         raise RuntimeError(f"Rendered segment is missing or empty: {output_path}")
 
 
+def segment_cache_key(source_video: Path, segment: dict[str, Any]) -> str:
+    source_stat = source_video.stat()
+    identity = {
+        "schema": SEGMENT_CACHE_SCHEMA,
+        "source": str(source_video.resolve()),
+        "source_size": source_stat.st_size,
+        "source_mtime_ns": source_stat.st_mtime_ns,
+        "source_start_sec": round(float(segment["source_start_sec"]), 6),
+        "source_end_sec": round(float(segment["source_end_sec"]), 6),
+        "playback_rate": round(float(segment.get("playback_rate", 1.0)), 8),
+        "audio_mode": str(segment.get("audio_mode", "source")),
+        "narration_audio_path": str(segment.get("narration_audio_path", "")),
+        "fade_in_sec": round(float(segment.get("fade_in_sec", 0.0)), 6),
+        "fade_out_sec": round(float(segment.get("fade_out_sec", 0.0)), 6),
+        "volume_keyframes": segment.get("volume_keyframes", []),
+        "output_width": int(segment.get("output_width", 0) or 0),
+        "output_height": int(segment.get("output_height", 0) or 0),
+        "output_fps": round(float(segment.get("output_fps", 0.0) or 0.0), 6),
+    }
+    payload = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def restore_or_render_segment(
+    *,
+    ffmpeg: str,
+    source_video: Path,
+    segment: dict[str, Any],
+    output_path: Path,
+    source_has_audio: bool,
+    cache_dir: Path | None,
+) -> bool:
+    cache_path = (
+        cache_dir / f"{segment_cache_key(source_video, segment)}.mp4"
+        if cache_dir
+        else None
+    )
+    if cache_path and cache_path.is_file() and cache_path.stat().st_size > 0:
+        shutil.copy2(cache_path, output_path)
+        return True
+    render_segment(
+        ffmpeg=ffmpeg,
+        source_video=source_video,
+        segment=segment,
+        output_path=output_path,
+        source_has_audio=source_has_audio,
+    )
+    if cache_path:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache_path.with_suffix(".tmp.mp4")
+        shutil.copy2(output_path, temporary)
+        temporary.replace(cache_path)
+    return False
+
+
 def concat_segments(ffmpeg: str, segment_paths: list[Path], output_path: Path) -> None:
     concat_path = output_path.parent / "segments.concat.txt"
     concat_path.write_text(
@@ -195,6 +332,95 @@ def concat_segments(ffmpeg: str, segment_paths: list[Path], output_path: Path) -
     )
     if not output_path.is_file() or output_path.stat().st_size == 0:
         raise RuntimeError(f"Concatenated video is missing or empty: {output_path}")
+
+
+def concat_segments_with_transitions(
+    ffmpeg: str,
+    segment_paths: list[Path],
+    segments: list[dict[str, Any]],
+    output_path: Path,
+) -> None:
+    if not any(str(item.get("transition", "cut")) == "crossfade" for item in segments[1:]):
+        concat_segments(ffmpeg, segment_paths, output_path)
+        return
+    command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
+    for path in segment_paths:
+        command.extend(["-i", str(path)])
+    filters: list[str] = [
+        "[0:v]settb=AVTB,setpts=PTS-STARTPTS[v0]",
+        "[0:a]aresample=48000,asetpts=PTS-STARTPTS[a0]",
+    ]
+    video_label = "v0"
+    audio_label = "a0"
+    current_duration = float(segments[0]["output_end_sec"]) - float(
+        segments[0]["output_start_sec"]
+    )
+    previous_duration = current_duration
+    for index in range(1, len(segments)):
+        segment = segments[index]
+        next_duration = float(segment["output_end_sec"]) - float(
+            segment["output_start_sec"]
+        )
+        filters.extend(
+            [
+                f"[{index}:v]settb=AVTB,setpts=PTS-STARTPTS[vin{index}]",
+                f"[{index}:a]aresample=48000,asetpts=PTS-STARTPTS[ain{index}]",
+            ]
+        )
+        next_video = f"v{index}"
+        next_audio = f"a{index}"
+        if str(segment.get("transition", "cut")) == "crossfade":
+            requested = max(0.0, float(segment.get("transition_duration_sec", 0.5)))
+            duration = min(requested, previous_duration / 2, next_duration / 2)
+            offset = max(0.0, current_duration - duration)
+            filters.append(
+                f"[{video_label}][vin{index}]xfade=transition=fade:"
+                f"duration={duration:.6f}:offset={offset:.6f}[{next_video}]"
+            )
+            filters.append(
+                f"[{audio_label}][ain{index}]acrossfade=d={duration:.6f}:"
+                f"c1=tri:c2=tri[{next_audio}]"
+            )
+            current_duration += next_duration - duration
+        else:
+            filters.append(
+                f"[{video_label}][vin{index}]concat=n=2:v=1:a=0[{next_video}]"
+            )
+            filters.append(
+                f"[{audio_label}][ain{index}]concat=n=2:v=0:a=1[{next_audio}]"
+            )
+            current_duration += next_duration
+        video_label = next_video
+        audio_label = next_audio
+        previous_duration = next_duration
+    command.extend(
+        [
+            "-filter_complex",
+            ";".join(filters),
+            "-map",
+            f"[{video_label}]",
+            "-map",
+            f"[{audio_label}]",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "20",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ]
+    )
+    run_command(command)
+    if not output_path.is_file() or output_path.stat().st_size == 0:
+        raise RuntimeError(f"Transition output is missing or empty: {output_path}")
 
 
 def rebuild_subtitle_timeline(
@@ -288,6 +514,23 @@ def narration_subtitle_timeline(path: Path) -> list[dict[str, Any]]:
             "target_text": normalize_text(cue.text),
         }
         for cue in parse_subtitle(path)
+    ]
+
+
+def final_subtitle_timeline(path: Path) -> list[dict[str, Any]]:
+    """Load the exact subtitle track authored in the visual editor."""
+    cues = parse_subtitle(path)
+    return [
+        {
+            "segment_id": "timeline",
+            "source_subtitle_id": f"timeline-{index:05d}",
+            "start_sec": cue.start_sec,
+            "end_sec": cue.end_sec,
+            "speaker": cue.speaker,
+            "source_text": cue.text,
+            "target_text": cue.text,
+        }
+        for index, cue in enumerate(cues, start=1)
     ]
 
 
@@ -628,6 +871,11 @@ def parse_args() -> argparse.Namespace:
         help="Validated narration plan with optional source-audio anchor windows",
     )
     parser.add_argument(
+        "--final-subtitle",
+        type=Path,
+        help="Exact final subtitle timeline authored by the visual editor",
+    )
+    parser.add_argument(
         "--background-volume",
         type=float,
         default=None,
@@ -652,6 +900,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ffmpeg", help="Path to ffmpeg executable")
     parser.add_argument("--ffprobe", help="Path to ffprobe executable")
     parser.add_argument("--keep-segments", action="store_true")
+    parser.add_argument(
+        "--segment-cache-dir",
+        type=Path,
+        help="Reuse unchanged rendered segments from this persistent cache",
+    )
     parser.add_argument("--skip-decode-check", action="store_true")
     return parser.parse_args()
 
@@ -668,10 +921,16 @@ def main() -> int:
             print(f"WARNING: {warning}")
         if errors:
             raise ValueError("story plan is invalid: " + "; ".join(errors[:10]))
-        if any(segment.get("transition") != "cut" for segment in plan["segments"]):
+        unsupported_transitions = sorted(
+            {
+                str(segment.get("transition", "cut"))
+                for segment in plan["segments"]
+                if str(segment.get("transition", "cut")) not in {"cut", "crossfade"}
+            }
+        )
+        if unsupported_transitions:
             raise ValueError(
-                "The deterministic v1 renderer supports cut transitions only. "
-                "Change fade/crossfade segments to cut before rendering."
+                "Unsupported transitions: " + ", ".join(unsupported_transitions)
             )
 
         narration_plan: dict[str, Any] | None = None
@@ -735,6 +994,10 @@ def main() -> int:
                 narration_cues,
                 source_audio_cues,
             )
+        if args.final_subtitle:
+            subtitle_cues = final_subtitle_timeline(
+                args.final_subtitle.expanduser().resolve()
+            )
 
         default_output = Path(plan["output"]["video_path"]).expanduser().resolve()
         output_video = args.output.expanduser().resolve() if args.output else default_output
@@ -770,8 +1033,9 @@ def main() -> int:
         source_video = Path(plan["source"]["video_path"]).expanduser().resolve()
         if not source_video.is_file():
             raise FileNotFoundError(f"Source video not found: {source_video}")
-        source_media = probe_media(source_video, ffprobe)
-        source_has_audio = bool(source_media.get("audio", {}).get("present"))
+        source_media_cache: dict[Path, dict[str, Any]] = {
+            source_video: probe_media(source_video, ffprobe)
+        }
 
         work_dir = (
             plan_path.parent
@@ -780,24 +1044,53 @@ def main() -> int:
         work_dir.mkdir(parents=True, exist_ok=True)
 
         segment_paths: list[Path] = []
+        segment_cache_dir = (
+            args.segment_cache_dir.expanduser().resolve()
+            if args.segment_cache_dir
+            else None
+        )
         for index, segment in enumerate(plan["segments"], start=1):
             segment_path = work_dir / f"segment-{index:04d}.mp4"
-            print(
-                f"Rendering {index}/{len(plan['segments'])}: "
-                f"{segment['source_start_sec']:.3f}s-"
-                f"{segment['source_end_sec']:.3f}s"
+            raw_segment_source = str(segment.get("source_video_path", "")).strip()
+            segment_source = (
+                Path(raw_segment_source).expanduser().resolve()
+                if raw_segment_source
+                else source_video
             )
-            render_segment(
+            if not segment_source.is_file():
+                raise FileNotFoundError(
+                    f"Source video not found for {segment['id']}: {segment_source}"
+                )
+            if segment_source not in source_media_cache:
+                source_media_cache[segment_source] = probe_media(
+                    segment_source, ffprobe
+                )
+            source_has_audio = bool(
+                source_media_cache[segment_source].get("audio", {}).get("present")
+            )
+            cache_hit = restore_or_render_segment(
                 ffmpeg=ffmpeg,
-                source_video=source_video,
+                source_video=segment_source,
                 segment=segment,
                 output_path=segment_path,
                 source_has_audio=source_has_audio,
+                cache_dir=segment_cache_dir,
+            )
+            action = "Cache hit" if cache_hit else "Rendering"
+            print(
+                f"{action} {index}/{len(plan['segments'])}: "
+                f"{segment['source_start_sec']:.3f}s-"
+                f"{segment['source_end_sec']:.3f}s"
             )
             segment_paths.append(segment_path)
 
         unsubtitled_video = work_dir / "story_unsubtitled.mp4"
-        concat_segments(ffmpeg, segment_paths, unsubtitled_video)
+        concat_segments_with_transitions(
+            ffmpeg,
+            segment_paths,
+            list(plan["segments"]),
+            unsubtitled_video,
+        )
         render_source = unsubtitled_video
         if args.narration_audio:
             mixed_video = work_dir / "story_narration_mixed.mp4"

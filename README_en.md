@@ -31,9 +31,22 @@ Both workflows follow an “understand and edit first, translate afterward” ru
 
 > These workflows are currently exposed through `.agents/skills/` to coding agents that support project-level skills. They orchestrate the repository's Python and FFmpeg tools; they are not one-click editing buttons in the desktop GUI. Only process media you are authorized to download, edit, and publish.
 
-### Planned: Visual Timeline for Film Commentary
+### New: Visual Timeline for Film Commentary
 
-Story editing and film commentary already produce validated `story_plan.json` and `narration_plan.json` files, subtitles, segmented TTS caches, and reusable clean masters, but the current release does not include a built-in web timeline editor. A future commentary workbench is planned to visualize video clips, source audio, TTS narration, source-audio anchors, and subtitle tracks. It will allow manual trim-point adjustments while reusing unchanged clip and TTS caches. The workbench is intended as a human refinement layer after the AI-assisted rough cut; final media will continue to use deterministic local FFmpeg rendering. This interface is not available in the current version.
+After the AI-assisted rough cut, an existing `workspace/projectNNN_*` commentary project can be refined in a local web workbench. It provides video preview and five tracks for video clips, source audio, TTS narration, source-audio anchors, and subtitles. Trim points and source-audio windows can be dragged; clips can be split, deleted, reordered, undone, and redone; subtitles can be adjusted. Every save creates a separate `revisions/rev-*` without overwriting source media or the original plan.
+
+Unchanged video segments reuse the `.story_editor_cache/segments` cache, and an edited narration block can be regenerated independently with MiniMax. The same workbench also supports volume keyframes, per-clip fades, crossfades, multiple local video sources, and optional local DeepSeek rewriting. Final media is still rendered deterministically with local FFmpeg.
+
+```powershell
+cd F:\work\VideoHub\frontend
+npm install
+npm run build
+
+cd F:\work\VideoHub
+python src/story_timeline_server.py
+```
+
+Open `http://127.0.0.1:8766/story-editor`. MiniMax block regeneration and DeepSeek rewriting require their respective local API keys; timeline editing, revision saving, and rendering remain available without them.
 
 ## Feature Overview
 
@@ -47,6 +60,7 @@ Story editing and film commentary already produce validated `story_plan.json` an
 | AI dubbing | Generate Chinese voice-over for videos using speech synthesis technology. |
 | Story editing | Understand long-form media from source subtitles and visual evidence, then select, reorder, translate, subtitle, and render a coherent short video. |
 | Film commentary | Combine third-person TTS narration with selected original dialogue and generate Douyin publishing assets. |
+| Visual timeline refinement | Refine clips, narration, source-audio windows, subtitles, volume, fades, and crossfades in a five-track local workbench, then render a saved revision. |
 | LLM summaries | Generate markdown summaries/articles from transcripts with customizable templates. |
 | Batch processing | Process multiple URLs or local files in one run. |
 | Idle queue scheduling | Queue tasks during the day and let VideoHub execute them in a configured idle window. |

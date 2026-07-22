@@ -29,9 +29,22 @@ flowchart LR
 
 > 这两项能力目前通过 `.agents/skills/` 供支持项目级 Skills 的智能助手调用，并复用仓库内的 Python/FFmpeg 脚本；它们不是桌面 GUI 中的一键自动剪辑按钮。正式处理前请确认拥有素材的下载、剪辑和发布权利。
 
-### 规划中：影视解说可视化时间线
+### 新增：影视解说可视化时间线
 
-故事剪辑和影视解说目前会生成可校验的 `story_plan.json`、`narration_plan.json`、字幕、分段 TTS 缓存和可复用母版，但还没有内置网页时间线编辑器。后续计划提供面向解说工作流的多轨工作台，用于可视化管理视频片段、原声音轨、TTS 旁白、原声锚点和字幕，并允许人工调整切点后复用未变化的片段与配音缓存。该工作台定位为 AI 初剪后的人工精修入口，最终成片仍由本地 FFmpeg 确定性渲染；当前版本尚不提供这一界面。
+AI 完成初剪后，可以在本地网页工作台中继续精修。编辑器会直接打开已有的 `workspace/projectNNN_*` 解说项目，提供视频预览，以及视频、原声、TTS 旁白、原声锚点和字幕五条轨道。可以拖动切点和原声窗口、拆分、删除、重排片段、调整字幕、撤销或重做，并把每次保存写入独立的 `revisions/rev-*`，不会覆盖原始计划和素材。
+
+第二阶段能力也已接入：未变化的视频片段会复用 `.story_editor_cache/segments` 缓存；修改旁白后可以只重新生成对应的 MiniMax 语音块。音量关键帧、片段淡入淡出、交叉转场、多个本地视频源和 DeepSeek 局部改写也可以在同一工作台中设置。最终输出仍由本地 FFmpeg 按保存的时间线确定性渲染。
+
+```powershell
+cd F:\work\VideoHub\frontend
+npm install
+npm run build
+
+cd F:\work\VideoHub
+python src/story_timeline_server.py
+```
+
+然后访问 `http://127.0.0.1:8766/story-editor`。MiniMax 单段重生成和 DeepSeek 改写是可选功能，只有本地配置了对应 API Key 才会调用；没有密钥不影响时间线编辑、保存和渲染。
 
 ## 🔊 近期更新：MiniMax 多音色配音
 
@@ -60,6 +73,7 @@ VideoHub 的 AI 配音现在新增 **MiniMax TTS API** 后端。除了原来的�
 - **AI 配音**: 默认使用 Kokoro TTS，也可手动切换到 CosyVoice SFT / Instruct 或 MiniMax API，生成更自然的中文配音版本视频
 - **故事剪辑**: 基于原文字幕和画面证据理解长视频，完成选段、重排、剪辑后翻译和同步字幕
 - **影视解说**: 第三者 TTS 旁白结合关键影视原声，输出剧情解说成片和抖音封面、标题、文案、话题
+- **可视化精修**: 在五轨网页时间线上调整切点、旁白、原声窗口、字幕、音量、淡入淡出和交叉转场，并按修订版本渲染
 - **内容摘要**: 利用 LLM（支持 OpenAI、DeepSeek 等）智能生成文章摘要
 
 ### 🌐 Chrome浏览器扩展

@@ -132,6 +132,10 @@ python .agents/skills/videohub-story-editor/scripts/render_story.py `
 中文原片可省略 `--translated-subtitle`。外语原声烧录中文或双语字幕时必须提供覆盖
 最终原文时间轴的译文。完整解码、字幕边界和时长 QA 通过后才能交付。
 
+AI 初剪和首次渲染完成后，如需人工调整片段切点、旁白块、原声锚点或字幕，使用
+`videohub-story-editor` 的本地五轨时间线工作台。所有调整保存为项目内独立修订，并复用
+未变化片段和旁白缓存；不要直接覆盖本 Skill 生成的原始故事计划与 TTS 资产。
+
 ## 6. 生成抖音封面和发布物料
 
 成片 QA 通过后，读取

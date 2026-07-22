@@ -52,7 +52,17 @@ live/
 .gstack/
 .claude/
 website/
-frontend/
+# 公共网站原型仍保持本地；仅提交影视解说时间线编辑器的最小前端源码。
+frontend/*
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.app.json
+!frontend/vite.config.ts
+!frontend/story-editor.html
+!frontend/src/
+frontend/src/*
+!frontend/src/story-editor.tsx
+!frontend/src/story-editor.css
 downloads/
 .claude/
 CLAUDE.md

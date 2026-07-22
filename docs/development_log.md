@@ -23,6 +23,53 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-07-22：完成影视解说五轨可视化时间线编辑器
+
+### 更新范围
+
+- 分支：`main`（本地功能检查点）
+- 后端与渲染：`src/story_timeline_server.py`、`render_story.py`、
+  `validate_story_plan.py`
+- 前端：`frontend/story-editor.html`、`frontend/src/story-editor.tsx`、
+  `frontend/src/story-editor.css` 及最小构建配置
+- 测试与文档：`tests/test_story_timeline_server.py`、`tests/test_story_editor_skill.py`、
+  中英文 README 和故事剪辑/影视解说 Skill
+
+### 设计与实现
+
+- 新增本地 FastAPI 时间线服务，自动发现 `workspace/projectNNN_*` 下已有解说项目，并把
+  `story_plan.json`、`narration_plan.json`、字幕和证据数据转换为片段相对的五轨时间线。
+- 第一阶段实现视频预览、五轨显示、切点拖动、片段拆分/删除/重排、撤销/重做、修订保存
+  和完整 FFmpeg 重渲染。每次保存写入 `revisions/rev-*`，不改动原始计划和媒体。
+- 第二阶段为视频片段增加内容寻址缓存，只重编码变化片段；旁白文本修改后会标记语音过期，
+  可以仅调用 MiniMax 重生成当前块。原声窗口和字幕均可拖动、缩放，字幕文本可直接修正。
+- 第三阶段增加音量关键帧、视频和音频淡入淡出、交叉转场、多视频源注册与规格归一化，
+  以及使用 DeepSeek 的保守局部旁白改写。可选 API 没有密钥时会明确返回错误，不影响基本
+  编辑、保存和本地渲染。
+- `.gitignore` 继续排除公共网站原型，只放行时间线编辑器所需的最小前端源码和构建配置，
+  避免重新上传此前要求保留在本地的网页内容。
+
+### 验证结果
+
+- 前端执行 `npm run build` 通过；真实浏览器中验证了视频画面、五轨布局、切点拖动、拆分、
+  删除、重排、撤销、旁白修改、MiniMax 单段生成、原声窗口与字幕调整，以及第三阶段控件。
+- 使用真实解说项目完成 5 秒、10 秒和双片段交叉转场渲染；0.5 秒交叉转场成片时长约
+  9.57 秒，符合两个 5 秒片段减去重叠时长并计入编码尾差的预期。
+- 验证同一片段第二次渲染命中缓存；验证主素材与第二个本地 MP4 可在同一成片中使用。
+- DeepSeek 局部改写成功返回并更新选中旁白；MiniMax 返回无效短音频时会拒绝缓存。
+- 版本控制范围内的 `tests/` 全量测试为 `44 passed`；Ruff、Python 语法编译、前端生产
+  构建和 `git diff --check` 均通过。
+
+### 遗留问题
+
+- 工作台目前是仅供本机使用的精修工具，未加入 PyQt6 主窗口，也不应暴露到公网。
+- 浏览器预览能显示片段和交叉转场重叠位置，但最终混合效果以 FFmpeg 渲染结果为准。
+- MiniMax 和 DeepSeek 功能依赖用户本地的 API Key、余额和服务可用性。
+- 长项目的片段缓存会占用磁盘，后续可在桌面清理工具中增加按项目清理入口。
+- 测试环境仍有 `pytest-asyncio` 默认 fixture scope 的第三方弃用警告，不影响本次功能。
+- 直接从仓库根目录运行无范围的 `pytest` 会收集本地且被忽略的 `website/backend/tests`，
+  该目录依赖自己的模块路径；本次提交使用 `python -m pytest -q tests` 审计版本控制范围。
+
 ## 2026-07-22：README 同步影视解说时间线规划与项目目录规范
 
 ### 更新范围
