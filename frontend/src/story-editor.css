@@ -5,6 +5,7 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --toolbar-height: 52px;
+  --splitter-height: 9px;
   --track-label-width: 148px;
   --border: #343a40;
   --panel: #1a1e22;
@@ -20,7 +21,7 @@
 
 body {
   margin: 0;
-  min-width: 1024px;
+  min-width: 900px;
   min-height: 100vh;
   overflow: hidden;
 }
@@ -37,8 +38,9 @@ button {
 }
 
 .editor-app {
+  --preview-row-height: clamp(210px, 34vh, 360px);
   display: grid;
-  grid-template-rows: var(--toolbar-height) minmax(250px, 43vh) minmax(320px, 1fr) 28px;
+  grid-template-rows: var(--toolbar-height) var(--preview-row-height) var(--splitter-height) minmax(0, 1fr) 28px;
   width: 100vw;
   max-width: 100vw;
   height: 100vh;
@@ -149,7 +151,7 @@ button {
 
 .preview-area {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 318px;
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 318px);
   min-height: 0;
   min-width: 0;
   width: 100%;
@@ -161,14 +163,18 @@ button {
   display: grid;
   min-width: 0;
   min-height: 0;
+  padding: 8px;
   place-items: center;
   overflow: hidden;
   background: #090b0d;
 }
 
 .preview-stage video {
+  display: block;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   object-fit: contain;
   background: #050607;
 }
@@ -176,15 +182,41 @@ button {
 .subtitle-overlay {
   position: absolute;
   right: 8%;
-  bottom: 7%;
   left: 8%;
+  z-index: 2;
+  transform: translateY(-100%);
   text-align: center;
   font-size: clamp(17px, 2.1vh, 27px);
   font-weight: 700;
   line-height: 1.45;
   color: #fff;
   text-shadow: 0 2px 3px #000, 0 0 7px #000;
-  pointer-events: none;
+  cursor: ns-resize;
+  user-select: none;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.subtitle-overlay::before {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 42px;
+  height: 3px;
+  content: "";
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: transparent;
+}
+
+.subtitle-overlay:hover::before,
+.subtitle-overlay:focus-visible::before {
+  background: var(--accent);
+}
+
+.subtitle-overlay:focus-visible {
+  outline: 1px dashed var(--accent);
+  outline-offset: 5px;
 }
 
 .empty-preview {
@@ -213,6 +245,56 @@ button {
   display: grid;
   gap: 12px;
   padding: 13px;
+}
+
+.preview-splitter {
+  position: relative;
+  z-index: 4;
+  width: 100%;
+  height: var(--splitter-height);
+  padding: 0;
+  cursor: row-resize;
+  touch-action: none;
+  border-top: 1px solid #2d3339;
+  border-bottom: 1px solid #111417;
+  outline: none;
+  background: #1c2024;
+}
+
+.preview-splitter::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 48px;
+  height: 3px;
+  content: "";
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: #59636c;
+}
+
+.preview-splitter:hover,
+.preview-splitter:focus-visible {
+  background: #23292e;
+}
+
+.preview-splitter:hover::after,
+.preview-splitter:focus-visible::after {
+  background: var(--accent);
+}
+
+body.preview-resizing {
+  cursor: row-resize;
+  user-select: none;
+}
+
+body.preview-resizing video {
+  pointer-events: none;
+}
+
+body.subtitle-position-resizing {
+  cursor: ns-resize;
+  user-select: none;
 }
 
 .field {
@@ -653,6 +735,6 @@ button {
 
 @media (max-height: 760px) {
   .editor-app {
-    grid-template-rows: var(--toolbar-height) 285px minmax(300px, 1fr) 28px;
+    --preview-row-height: clamp(180px, 30vh, 240px);
   }
 }

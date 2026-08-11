@@ -599,6 +599,7 @@ class WorkerThread(QThread):
         generate_article = self.params.get("generate_article", True)
         source_language = self.params.get("source_language", None)
         enable_translation_polish = self.params.get("enable_translation_polish", False)
+        series_project = self.params.get("series_project", False)
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
 
         # 重定向print输出
@@ -617,7 +618,8 @@ class WorkerThread(QThread):
                 input_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, source_language, enable_translation_polish, target_language
+                enable_transcription, generate_article, source_language, enable_translation_polish, target_language,
+                series_project=series_project,
             )
 
             if results:

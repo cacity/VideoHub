@@ -1,6 +1,6 @@
 ---
 name: videohub
-description: VideoHub 总入口。用于识别用户要处理的平台或功能，并路由到更具体的 VideoHub skills，如 YouTube、抖音、闲时队列、FFmpeg、字幕、故事剪辑和直播录制。
+description: VideoHub 总入口。用于识别用户要处理的平台或功能，并路由到更具体的 VideoHub skills，如 YouTube、抖音、闲时队列、FFmpeg、字幕、故事剪辑、影视封面、音乐卡点剪辑和直播录制。
 ---
 
 # VideoHub Router
@@ -20,6 +20,8 @@ description: VideoHub 总入口。用于识别用户要处理的平台或功能�
 - 字幕烧录 / 合成 → `videohub-subtitles`
 - 根据字幕选段、重排并生成故事短片，或整理抖音发布包和文案 → `videohub-story-editor`
 - 电影、电视剧、短剧的第三者旁白解说、关键影视原声、抖音封面、标题和发布物料 → `videohub-film-commentary`
+- 单独制作或修改影视剧、连续剧、电影、卡点视频的横竖版封面与主页缩略图 → `videohub-cover-designer`
+- 根据音频节拍从单个长视频或素材目录选择镜头，批量制作多画幅卡点视频 → `videohub-beat-editor`
 - 直播录制 / 开播监控 → `videohub-live`
 
 ## 使用原则
@@ -36,6 +38,8 @@ description: VideoHub 总入口。用于识别用户要处理的平台或功能�
 - 本地队列 API：GUI 启动后由 `src/api_server.py` 在 `127.0.0.1:8765` 提供
 
 ## 近期同步点
+- 本地视频目录批处理支持“剧集项目模式”：生成文件保存在视频目录内，并写入可移植的
+  `videohub_project.json`，后续故事剪辑与影视解说可只接收一个目录。
 - 字幕翻译支持 `--target-language {zh-CN,zh-TW,en,ja,ko,ru,fr,de,es,it,pt,ar}`，默认 `zh-CN`。
 - 字幕翻译默认 Google；Google 失败时会尝试 DeepSeek/OpenAI 备用翻译。
 - 字幕嵌入/烧录主函数是 `src/youtube_transcriber.py` 中的 `embed_subtitles_to_video()`，独立 GUI 工具是 `src/subtitle_merger.py`。

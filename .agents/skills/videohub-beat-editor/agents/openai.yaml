@@ -1,0 +1,4 @@
+interface:
+  display_name: "VideoHub 卡点剪辑"
+  short_description: "根据音乐节拍批量选择镜头并生成多画幅卡点视频与发布包"
+  default_prompt: "使用 $videohub-beat-editor 根据这段音频和素材目录批量制作卡点视频。"

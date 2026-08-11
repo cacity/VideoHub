@@ -6,6 +6,8 @@ import os
 import re
 import time
 import uuid
+import io
+import wave
 from pathlib import Path
 
 import requests
@@ -123,6 +125,14 @@ class MiniMaxTTSClient:
                 f"(status_code={status_code}, trace_id={trace_id})"
             )
 
+        task_status = (data.get("data") or {}).get("status")
+        if task_status is not None and task_status != 2:
+            trace_id = data.get("trace_id") or "unknown"
+            raise RuntimeError(
+                f"MiniMax TTS task did not finish successfully "
+                f"(status={task_status}, trace_id={trace_id})"
+            )
+
         audio_hex = (data.get("data") or {}).get("audio")
         if not audio_hex:
             trace_id = data.get("trace_id") or "unknown"
@@ -135,6 +145,30 @@ class MiniMaxTTSClient:
 
         if len(audio_bytes) < 44 or not audio_bytes.startswith(b"RIFF"):
             raise RuntimeError("MiniMax TTS 返回的 WAV 文件无效")
+
+        extra_info = data.get("extra_info") or {}
+        reported_duration_ms = extra_info.get("audio_length")
+        if reported_duration_ms is not None and float(reported_duration_ms) < 50:
+            trace_id = data.get("trace_id") or "unknown"
+            raise RuntimeError(
+                f"MiniMax TTS returned empty audio "
+                f"(audio_length={reported_duration_ms}ms, trace_id={trace_id})"
+            )
+
+        try:
+            with wave.open(io.BytesIO(audio_bytes), "rb") as wav_file:
+                frame_rate = wav_file.getframerate()
+                duration_seconds = (
+                    wav_file.getnframes() / frame_rate if frame_rate else 0.0
+                )
+        except (EOFError, wave.Error) as exc:
+            raise RuntimeError("MiniMax TTS returned an unreadable WAV file") from exc
+        if duration_seconds < 0.05:
+            trace_id = data.get("trace_id") or "unknown"
+            raise RuntimeError(
+                f"MiniMax TTS returned empty audio "
+                f"(duration={duration_seconds:.6f}s, trace_id={trace_id})"
+            )
 
         target = Path(output_path) if output_path else self._default_output_path()
         target.parent.mkdir(parents=True, exist_ok=True)

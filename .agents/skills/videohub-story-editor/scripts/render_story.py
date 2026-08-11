@@ -103,6 +103,7 @@ def render_segment(
     segment: dict[str, Any],
     output_path: Path,
     source_has_audio: bool,
+    source_audio_stream: int,
 ) -> None:
     start_sec = float(segment["source_start_sec"])
     source_duration = float(segment["source_end_sec"]) - start_sec
@@ -187,7 +188,7 @@ def render_segment(
         ]
         audio_filter = "".join(audio_filters)
     elif source_has_audio:
-        command.extend(["-map", "0:a:0"])
+        command.extend(["-map", f"0:a:{source_audio_stream}"])
         volume = {"source": 1.0, "mute": 0.0, "duck": 0.25}.get(audio_mode)
         if volume is None:
             raise ValueError(f"Unsupported audio mode for {segment['id']}: {audio_mode}")
@@ -249,13 +250,18 @@ def render_segment(
         raise RuntimeError(f"Rendered segment is missing or empty: {output_path}")
 
 
-def segment_cache_key(source_video: Path, segment: dict[str, Any]) -> str:
+def segment_cache_key(
+    source_video: Path,
+    segment: dict[str, Any],
+    source_audio_stream: int,
+) -> str:
     source_stat = source_video.stat()
     identity = {
         "schema": SEGMENT_CACHE_SCHEMA,
         "source": str(source_video.resolve()),
         "source_size": source_stat.st_size,
         "source_mtime_ns": source_stat.st_mtime_ns,
+        "source_audio_stream": source_audio_stream,
         "source_start_sec": round(float(segment["source_start_sec"]), 6),
         "source_end_sec": round(float(segment["source_end_sec"]), 6),
         "playback_rate": round(float(segment.get("playback_rate", 1.0)), 8),
@@ -279,10 +285,12 @@ def restore_or_render_segment(
     segment: dict[str, Any],
     output_path: Path,
     source_has_audio: bool,
+    source_audio_stream: int,
     cache_dir: Path | None,
 ) -> bool:
     cache_path = (
-        cache_dir / f"{segment_cache_key(source_video, segment)}.mp4"
+        cache_dir
+        / f"{segment_cache_key(source_video, segment, source_audio_stream)}.mp4"
         if cache_dir
         else None
     )
@@ -295,6 +303,7 @@ def restore_or_render_segment(
         segment=segment,
         output_path=output_path,
         source_has_audio=source_has_audio,
+        source_audio_stream=source_audio_stream,
     )
     if cache_path:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -426,26 +435,36 @@ def concat_segments_with_transitions(
 def rebuild_subtitle_timeline(
     plan: dict[str, Any],
     evidence: dict[str, Any],
+    subtitle_policy: str = "explicit",
 ) -> list[dict[str, Any]]:
+    if subtitle_policy not in {"explicit", "all-intersecting"}:
+        raise ValueError(f"Unsupported source subtitle policy: {subtitle_policy}")
     subtitle_by_id = {
         str(item["id"]): item
         for item in evidence.get("subtitles", [])
         if isinstance(item, dict) and item.get("id")
     }
+    all_subtitles = list(subtitle_by_id.values())
     rebuilt: list[dict[str, Any]] = []
 
     for segment in plan["segments"]:
-        if segment.get("kind") != "dialogue":
+        if subtitle_policy == "explicit" and segment.get("kind") != "dialogue":
             continue
         source_start = float(segment["source_start_sec"])
         source_end = float(segment["source_end_sec"])
         output_start = float(segment["output_start_sec"])
         output_end = float(segment["output_end_sec"])
         rate = float(segment.get("playback_rate", 1.0))
-        for subtitle_id in segment.get("source_subtitle_ids", []):
-            cue = subtitle_by_id.get(str(subtitle_id))
-            if not cue:
-                continue
+        if subtitle_policy == "all-intersecting":
+            candidate_cues = all_subtitles
+        else:
+            candidate_cues = [
+                subtitle_by_id[str(subtitle_id)]
+                for subtitle_id in segment.get("source_subtitle_ids", [])
+                if str(subtitle_id) in subtitle_by_id
+            ]
+        for cue in candidate_cues:
+            subtitle_id = str(cue["id"])
             clipped_start = max(source_start, float(cue["start_sec"]))
             clipped_end = min(source_end, float(cue["end_sec"]))
             if clipped_end - clipped_start < 0.04:
@@ -624,12 +643,24 @@ def write_subtitle_outputs(
         }
     paths["source_ass"] = paths["source_srt"].with_suffix(".ass")
     paths["translated_ass"] = paths["translated_srt"].with_suffix(".ass")
+    raw_position = plan.get("settings", {}).get("subtitle_position_percent")
+    subtitle_position = float(raw_position) if raw_position is not None else None
 
     write_srt(paths["source_srt"], cues, "source_text")
     write_srt(paths["translated_srt"], cues, "target_text")
-    write_ass(paths["source_ass"], cues, "source")
-    write_ass(paths["translated_ass"], cues, "translated")
-    write_ass(paths["bilingual_ass"], cues, "bilingual")
+    write_ass(paths["source_ass"], cues, "source", position_percent=subtitle_position)
+    write_ass(
+        paths["translated_ass"],
+        cues,
+        "translated",
+        position_percent=subtitle_position,
+    )
+    write_ass(
+        paths["bilingual_ass"],
+        cues,
+        "bilingual",
+        position_percent=subtitle_position,
+    )
     return paths
 
 
@@ -876,6 +907,15 @@ def parse_args() -> argparse.Namespace:
         help="Exact final subtitle timeline authored by the visual editor",
     )
     parser.add_argument(
+        "--source-subtitle-policy",
+        choices=("explicit", "all-intersecting"),
+        default="explicit",
+        help=(
+            "Use explicit evidence IDs or every subtitle cue intersecting each "
+            "selected source segment"
+        ),
+    )
+    parser.add_argument(
         "--background-volume",
         type=float,
         default=None,
@@ -899,6 +939,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--ffmpeg", help="Path to ffmpeg executable")
     parser.add_argument("--ffprobe", help="Path to ffprobe executable")
+    parser.add_argument(
+        "--source-audio-stream",
+        type=int,
+        default=0,
+        help="Zero-based audio stream index within the source video (default: 0)",
+    )
     parser.add_argument("--keep-segments", action="store_true")
     parser.add_argument(
         "--segment-cache-dir",
@@ -913,6 +959,8 @@ def main() -> int:
     args = parse_args()
     plan_path = args.plan.expanduser().resolve()
     try:
+        if args.source_audio_stream < 0:
+            raise ValueError("--source-audio-stream must be zero or greater")
         plan = read_json(plan_path)
         evidence = read_json(args.evidence.expanduser().resolve())
         analysis = read_json(args.analysis.expanduser().resolve())
@@ -963,7 +1011,11 @@ def main() -> int:
                     narration_settings.get("original_audio_volume", 0.3)
                 )
 
-        source_subtitle_cues = rebuild_subtitle_timeline(plan, evidence)
+        source_subtitle_cues = rebuild_subtitle_timeline(
+            plan,
+            evidence,
+            subtitle_policy=args.source_subtitle_policy,
+        )
         if args.translated_subtitle:
             source_subtitle_cues = apply_external_translation(
                 source_subtitle_cues,
@@ -1074,6 +1126,7 @@ def main() -> int:
                 segment=segment,
                 output_path=segment_path,
                 source_has_audio=source_has_audio,
+                source_audio_stream=args.source_audio_stream,
                 cache_dir=segment_cache_dir,
             )
             action = "Cache hit" if cache_hit else "Rendering"

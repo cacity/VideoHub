@@ -11,6 +11,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -36,6 +37,8 @@ RENDER_SCRIPT = (
     / "render_story.py"
 )
 MIN_CLIP_DURATION_SEC = 0.25
+MIN_SUBTITLE_POSITION_PERCENT = 12.0
+MAX_SUBTITLE_POSITION_PERCENT = 94.0
 SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
@@ -642,6 +645,15 @@ class StoryTimelineService:
             "settings": {
                 "snap_sec": 0.1,
                 "burn_subtitles": "none",
+                "subtitle_position_percent": as_float(
+                    plan.get("settings", {}).get(
+                        "subtitle_position_percent",
+                        narration.get("settings", {}).get(
+                            "subtitle_position_percent", 90.0
+                        ),
+                    ),
+                    90.0,
+                ),
                 "original_audio_volume": as_float(
                     narration.get("settings", {}).get("original_audio_volume"),
                     0.3,
@@ -668,6 +680,20 @@ class StoryTimelineService:
     @staticmethod
     def _validate_timeline(timeline: dict[str, Any], source_duration: float) -> list[str]:
         errors: list[str] = []
+        subtitle_position = as_float(
+            timeline.get("settings", {}).get("subtitle_position_percent"),
+            90.0,
+        )
+        if not math.isfinite(subtitle_position) or not (
+            MIN_SUBTITLE_POSITION_PERCENT
+            <= subtitle_position
+            <= MAX_SUBTITLE_POSITION_PERCENT
+        ):
+            errors.append(
+                "Subtitle position must be between "
+                f"{MIN_SUBTITLE_POSITION_PERCENT:g}% and "
+                f"{MAX_SUBTITLE_POSITION_PERCENT:g}%"
+            )
         clips = timeline.get("clips")
         if not isinstance(clips, list) or not clips:
             return ["Timeline must contain at least one video clip"]
@@ -866,6 +892,10 @@ class StoryTimelineService:
         story_plan["segments"] = segments
         story_plan.setdefault("settings", {})["target_duration_sec"] = round(total_duration, 3)
         story_plan["settings"]["duration_tolerance_ratio"] = 0.005
+        story_plan["settings"]["subtitle_position_percent"] = as_float(
+            timeline.get("settings", {}).get("subtitle_position_percent"),
+            90.0,
+        )
         story_plan.setdefault("output", {})["video_path"] = str(
             (revision_dir / "render" / "story_revision.mp4").resolve()
         )

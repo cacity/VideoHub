@@ -56,6 +56,16 @@ def _spoken_character_count(text: str) -> int:
     return len(re.sub(r"[\s，。！？；：、,.!?;:'\"“”‘’（）()\-—…]", "", text or ""))
 
 
+def _latin_word_count(text: str) -> int:
+    return len(re.findall(r"[A-Za-z]+(?:['’-][A-Za-z]+)*|\d+(?:[.,]\d+)*", text or ""))
+
+
+def _uses_latin_word_rate(text: str) -> bool:
+    latin = len(re.findall(r"[A-Za-z]", text or ""))
+    cjk = len(re.findall(r"[\u3400-\u9fff]", text or ""))
+    return latin > 0 and latin >= cjk * 2
+
+
 def validate_narration_plan(
     narration: Any,
     story_plan: Any,
@@ -167,15 +177,30 @@ def validate_narration_plan(
             errors.append(f"{label}.text must not be empty")
         else:
             duration = end - start
-            chars_per_second = _spoken_character_count(text) / duration
-            if chars_per_second > 6.5:
-                errors.append(
-                    f"{label} narration is too dense at {chars_per_second:.2f} chars/s"
-                )
-            elif chars_per_second > 5.0:
-                warnings.append(
-                    f"{label} narration may sound rushed at {chars_per_second:.2f} chars/s"
-                )
+            if _uses_latin_word_rate(text):
+                words_per_second = _latin_word_count(text) / duration
+                if words_per_second > 3.4:
+                    errors.append(
+                        f"{label} narration is too dense at "
+                        f"{words_per_second:.2f} words/s"
+                    )
+                elif words_per_second > 2.8:
+                    warnings.append(
+                        f"{label} narration may sound rushed at "
+                        f"{words_per_second:.2f} words/s"
+                    )
+            else:
+                chars_per_second = _spoken_character_count(text) / duration
+                if chars_per_second > 6.5:
+                    errors.append(
+                        f"{label} narration is too dense at "
+                        f"{chars_per_second:.2f} chars/s"
+                    )
+                elif chars_per_second > 5.0:
+                    warnings.append(
+                        f"{label} narration may sound rushed at "
+                        f"{chars_per_second:.2f} chars/s"
+                    )
 
         refs = block.get("evidence_refs")
         if not isinstance(refs, list) or not [ref for ref in refs if str(ref).strip()]:

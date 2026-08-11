@@ -129,6 +129,13 @@ def validate_plan(
     translation_polish = settings.get("translation_polish", False)
     if not isinstance(translation_polish, bool):
         errors.append("settings.translation_polish must be a boolean")
+    subtitle_position = settings.get("subtitle_position_percent")
+    if subtitle_position is not None and (
+        not _number(subtitle_position) or not 12 <= subtitle_position <= 94
+    ):
+        errors.append(
+            "settings.subtitle_position_percent must be between 12 and 94"
+        )
 
     allow_speed_change = settings.get("allow_speed_change", False)
     if not isinstance(allow_speed_change, bool):

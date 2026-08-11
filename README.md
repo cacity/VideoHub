@@ -1,14 +1,69 @@
 # 视频转录工具 (Video Hub)
 
-**当前版本: v0.3.0**
+**当前版本: v0.4.0**
 
 简体中文  | [English](./README_en.md)
 
-这是一个功能强大的桌面应用程序，使用 PyQt6 构建现代化图形界面，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等多平台视频内容的智能处理。提供媒体导入与处理、语音转录、双语字幕生成、**AI 配音**、内容摘要等完整工作流，并配备闲时调度、批量处理，以及供 Codex、Claude Code、DeepSeek 等智能助手使用的项目级 Skills。
+VideoHub 是一个基于 PyQt6 的本地视频处理与智能剪辑工作台，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等平台及本地媒体。除了视频下载、音频提取、Whisper 转录、双语字幕、字幕翻译、**AI 配音**和内容摘要，它还通过供 Codex、Claude Code、DeepSeek 等智能助手调用的项目级 Skills，提供基于字幕与画面证据的故事剪辑、影视解说、连续剧批量自动剪辑、音乐卡点、多画幅封面和完整发布包。桌面端同时支持批量处理、闲时队列和剧集目录项目化管理，让多集视频可以按统一配置分阶段处理、复用中间资源并持续调整。
 
-## 🆕 最新更新：故事剪辑与影视解说 Skills
+## 在 Codex / Claude Code 中安装和使用
 
-VideoHub 新增了两项面向智能编码助手的项目级工作流。它们不是简单地按固定时间截取视频，而是让大模型先阅读原文字幕和画面证据，理解人物、主题、事件与因果，再生成可验证的剪辑计划，最后由确定性脚本完成剪辑、翻译、配音、字幕和发布物料。
+项目地址：[https://github.com/cacity/VideoHub](https://github.com/cacity/VideoHub)
+
+最简单的使用方式，是把项目地址直接发给运行在本机的 Codex、Claude Code 或其他能够读取文件、执行命令的智能助手，让它完成克隆、依赖检查和本机配置。例如：
+
+```text
+请安装并配置这个项目：https://github.com/cacity/VideoHub
+把它放到独立项目目录，检查 Python、FFmpeg 和 requirements.txt，安装缺少的依赖，
+验证桌面程序和 .agents/skills 下的 VideoHub Skills 是否可用。
+需要 API Key 的可选功能先告诉我如何配置，不要把密钥写入代码或提交到 Git。
+```
+
+安装完成后，在 VideoHub 项目目录中继续对话，直接提供视频链接、本地文件或剧集目录，再说明成片时长、语言、声音、字幕、画幅和发布平台即可。项目级 Skills 会根据任务自动选择下载、字幕、故事剪辑、影视解说、卡点剪辑或封面流程；如果当前客户端没有自动发现 Skills，可明确要求助手先读取 `.agents/skills/videohub/SKILL.md`。
+
+```text
+# YouTube 故事剪辑
+使用 VideoHub 处理 https://www.youtube.com/watch?v=VIDEO_ID，先获取原文字幕并理解内容，
+剪成 5 分钟的视频，保留原声，生成中英双语字幕，同时给出标题、文案和封面。
+
+# YouTube TTS 解说
+把 https://www.youtube.com/watch?v=VIDEO_ID 剪成 8 分钟中文解说版，使用 MiniMax 1.2x，
+原声降低到 0.2，关键对话保留原声，输出 1080p 成片和完整发布包。
+
+# 抖音视频
+下载并处理 https://v.douyin.com/xxxx/，使用原视频音乐剪成 30 秒卡点视频，
+从我提供的素材目录选择镜头，不烧录字幕，生成 3:4、4:3 封面和发布文案。
+
+# 本地电影或连续剧
+使用 VideoHub 处理 D:/videos/example.mp4，剪成 10 分钟影视解说；先根据字幕和画面理解剧情，
+旁白主导并保留少量关键原声。或者处理 D:/series/example/ 目录下全部剧集，
+每集剪成 6 分钟，沿用统一音色、封面和发布包规格，支持断点继续。
+```
+
+基础下载、转录、字幕和本地编辑不依赖付费大模型。MiniMax、豆包 TTS、DeepSeek 润色等可选能力需要在本地环境变量或未提交的 `.env` 中配置相应凭据。请只处理自己拥有下载、剪辑和发布权利的素材。
+
+## 智能剪辑与系列生产
+
+最近新增的能力已经从“单次剪一条视频”扩展到可复用的系列生产：
+
+- **连续剧配置驱动批量制作**：`videohub-film-commentary` 新增统一系列执行器。系列级 TTS、音量、画幅、封面和输出路径写入 `series_spec.json`，每集剧情、旁白、选段和发布文案写入 `episode_specs.json`，不再为每个项目复制一份 `build_episode_series.py`。
+- **分阶段执行与断点复用**：支持 `preflight`、`prepare`、`render`、`package`、`audit` 和 `all`。修改单集文案后可复用未变化的证据包、视频片段、TTS 分块缓存和发布资产；预检与计划阶段不会调用付费 TTS。
+- **剧集目录项目模式**：批量处理本地剧集时，字幕、翻译、转录稿和摘要保存在原视频目录，并生成可移动的 `videohub_project.json`。后续只需给出剧集目录，Skill 会自动定位视频和最佳字幕。
+- **五轨时间线精修**：本地网页工作台支持调整视频切点、原声、TTS 旁白、原声窗口和字幕；预览自适应窗口，预览区与时间线可上下拖动调整，解说字幕位置也可手动移动。
+
+连续剧项目可先执行不产生 API 费用的预检：
+
+```powershell
+python .agents/skills/videohub-film-commentary/scripts/run_series_commentary.py `
+  "workspace/projectNNN_series" --episodes 1-12 --stage preflight
+```
+
+配置结构和完整命令见
+[series-job-schema.md](./.agents/skills/videohub-film-commentary/references/series-job-schema.md)。
+
+### 工作原理和主要 Skills
+
+VideoHub 的智能剪辑不是简单地按固定时间截取视频，而是让大模型先阅读原文字幕和画面证据，理解人物、主题、事件与因果，再生成可验证的剪辑计划，最后由确定性脚本完成剪辑、翻译、配音、字幕和发布物料。
 
 ```mermaid
 flowchart LR
@@ -24,23 +79,25 @@ flowchart LR
 | --- | --- | --- |
 | `videohub-story-editor` | 把长视频、播客、访谈、课程或知识内容组织成几分钟、叙事完整的短片 | 保留原声的原文/双语字幕版；原声降至约 30% 的 MiniMax 或豆包 TTS 解说版；带 50-100 字文案的抖音发布包 |
 | `videohub-film-commentary` | 为电影、电视剧和短剧制作第三者旁白主导的剧情解说 | 旁白与关键影视原声混合版；同步字幕；1080x1920 抖音封面、标题候选、文案、话题和完整发布包 |
+| `videohub-beat-editor` | 检测音乐强拍，从长视频或素材目录选择镜头并批量制作卡点视频 | 多画幅成片、歌词字幕、封面、标题、文案和话题 |
+| `videohub-cover-designer` | 为单条视频或连续剧建立统一封面体系 | 9:16、3:4、4:3、16:9 封面和小缩略图可读性预览 |
 
-这两项工作流都遵循“先理解和剪辑，后重新翻译”的顺序。外文视频不会直接拿剪辑前的逐句机翻决定剧情；最终字幕根据成片时间轴重新生成，并可选用 DeepSeek 做轻度整体润色。影视解说还会保留冲突、揭露、告白、反问、笑点和告别等关键原声，让演员表演和环境声不被旁白完全覆盖。
+这些剪辑工作流遵循“先理解和剪辑，后重新翻译”的顺序。外文视频不会直接拿剪辑前的逐句机翻决定剧情；最终字幕根据成片时间轴重新生成，并可选用 DeepSeek 做轻度整体润色。影视解说还会保留冲突、揭露、告白、反问、笑点和告别等关键原声，让演员表演和环境声不被旁白完全覆盖。
 
-> 这两项能力目前通过 `.agents/skills/` 供支持项目级 Skills 的智能助手调用，并复用仓库内的 Python/FFmpeg 脚本；它们不是桌面 GUI 中的一键自动剪辑按钮。正式处理前请确认拥有素材的下载、剪辑和发布权利。
+> 智能剪辑能力通过 `.agents/skills/` 供支持项目级 Skills 的智能助手调用，并复用仓库内的 Python/FFmpeg 脚本；它们不是桌面 GUI 中的一键自动剪辑按钮。
 
-### 新增：影视解说可视化时间线
+### 可视化时间线精修
 
 AI 完成初剪后，可以在本地网页工作台中继续精修。编辑器会直接打开已有的 `workspace/projectNNN_*` 解说项目，提供视频预览，以及视频、原声、TTS 旁白、原声锚点和字幕五条轨道。可以拖动切点和原声窗口、拆分、删除、重排片段、调整字幕、撤销或重做，并把每次保存写入独立的 `revisions/rev-*`，不会覆盖原始计划和素材。
 
 第二阶段能力也已接入：未变化的视频片段会复用 `.story_editor_cache/segments` 缓存；修改旁白后可以只重新生成对应的 MiniMax 语音块。音量关键帧、片段淡入淡出、交叉转场、多个本地视频源和 DeepSeek 局部改写也可以在同一工作台中设置。最终输出仍由本地 FFmpeg 按保存的时间线确定性渲染。
 
 ```powershell
-cd F:\work\VideoHub\frontend
+cd frontend
 npm install
 npm run build
 
-cd F:\work\VideoHub
+cd ..
 python src/story_timeline_server.py
 ```
 
@@ -130,7 +187,17 @@ https://www.youtube.com/playlist?list=PLoROMvodv4rOmsNzYBMe0gJY2XS8AQg16
 
 ### 2.批量翻译字幕
 
-在软件中选中本地视频，勾选批量处理，选中要处理的目录，把要处理的项勾选上，让它自己处理就可以了，这个列表共有18个视频，翻译花了好长时间。仅供参考。
+在软件中选中本地视频，勾选“批量处理（目录）”。如果目录是一部连续剧或一组相关视频，
+保留“剧集项目模式”开关，生成的原文字幕、Google 初译和 DeepSeek 润色版都会写入视频目录
+下的 `subtitles/`，转录稿和摘要分别写入 `transcripts/`、`summaries/`。目录中还会生成
+`videohub_project.json`，使用故事剪辑或影视解说 Skills 时只需提供这个剧集目录，不必再单独
+查找和填写字幕路径。普通单文件处理仍使用全局 `workspace/` 目录，不受影响。
+
+也可以从命令行直接处理一个剧集目录：
+
+```bash
+python src/youtube_transcriber.py --video "D:/videos/my_series" --generate-subtitles
+```
 
 ![](https://raw.githubusercontent.com/cacityfauh-ui/MyPic/master/pic/20251215162505994.png)
 
@@ -238,19 +305,14 @@ MiniMax 是外部付费 TTS API，适合想快速获得更多中文音色选择�
 | `videohub-subtitles` | 字幕生成后的烧录、视频合成、独立字幕合成工具说明 | `embed_subtitles_to_video()`、`python src/subtitle_merger.py` |
 | `videohub-story-editor` | 根据原文字幕和画面证据理解、选段、重排长视频，生成原声双语版、TTS 解说版和抖音发布包 | `.agents/skills/videohub-story-editor/scripts/` |
 | `videohub-film-commentary` | 电影、电视剧、短剧的第三者旁白解说、关键原声、同步字幕和抖音封面/标题/文案 | `.agents/skills/videohub-film-commentary/scripts/` |
+| `videohub-beat-editor` | 音乐强拍检测、镜头候选选择、歌词字幕和多画幅卡点视频 | `.agents/skills/videohub-beat-editor/scripts/` |
+| `videohub-cover-designer` | 影视、连续剧和卡点视频的统一封面及缩略图可读性检查 | `.agents/skills/videohub-cover-designer/scripts/` |
 | `videohub-live` | 直播录制依赖、配置和运行状态诊断 | `src/live_recorder_adapter.py` |
 
 #### 使用故事剪辑与影视解说 Skills
 
-在支持项目级 Skills 的智能助手中，可以直接描述素材、目标时长和版本。例如：
-
-```text
-使用 videohub-story-editor，把这个 30 分钟英文访谈整理成 3 分钟原声版，
-剪辑完成后重新翻译并烧录双语字幕，同时生成抖音发布文件夹和 50-100 字文案。
-
-使用 videohub-film-commentary，把这集电视剧制作成 10 分钟中文影视解说，
-使用 MiniMax TTS，旁白区原声降到 30%，保留关键角色原声，并生成竖版封面、标题和发布文案。
-```
+安装提示和 YouTube、抖音、本地电影、连续剧批量剪辑示例见本文顶部的
+[在 Codex / Claude Code 中安装和使用](#在-codex--claude-code-中安装和使用)。在支持项目级 Skills 的智能助手中，直接描述素材、目标时长、版本、字幕、音色、画幅和发布平台即可。
 
 按照当前项目目录规范，智能助手会为每个任务创建独立的 `workspace/projectNNN_<project_name>/`，并在其中统一保存素材、证据、故事分析、来源映射、剪辑计划、字幕、TTS 缓存、成片、发布物料和 QA 报告。底层脚本仍兼容 `workspace/review_packs/story_editor/`、`workspace/videos_with_subtitles/` 和 `workspace/publish_packages/douyin/` 等默认目录。故事方案和剪辑计划在进入渲染前必须通过数据校验，最终视频还会检查时长、字幕边界和完整解码。
 

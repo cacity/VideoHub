@@ -100,6 +100,7 @@ type Timeline = {
   settings: {
     snap_sec: number;
     burn_subtitles: 'none' | 'source' | 'translated' | 'bilingual';
+    subtitle_position_percent: number;
     original_audio_volume: number;
     source_audio_volume: number;
   };
@@ -128,6 +129,30 @@ type SelectedTrackItem = { track: EditableTrackName; id: string } | null;
 
 const LABEL_WIDTH = 148;
 const MIN_CLIP_DURATION = 0.25;
+const PREVIEW_HEIGHT_STORAGE_KEY = 'videohub.story-editor.preview-height';
+const MIN_PREVIEW_HEIGHT = 140;
+const MIN_TIMELINE_HEIGHT = 180;
+const FIXED_VERTICAL_HEIGHT = 52 + 9 + 28;
+const DEFAULT_SUBTITLE_POSITION = 90;
+const MIN_SUBTITLE_POSITION = 12;
+const MAX_SUBTITLE_POSITION = 94;
+
+function previewHeightBounds() {
+  const max = Math.max(
+    MIN_PREVIEW_HEIGHT,
+    window.innerHeight - FIXED_VERTICAL_HEIGHT - MIN_TIMELINE_HEIGHT,
+  );
+  return { min: MIN_PREVIEW_HEIGHT, max };
+}
+
+function clampPreviewHeight(value: number): number {
+  const { min, max } = previewHeightBounds();
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function clampSubtitlePosition(value: number): number {
+  return Math.min(MAX_SUBTITLE_POSITION, Math.max(MIN_SUBTITLE_POSITION, Number(value.toFixed(1))));
+}
 
 function cloneTimeline(value: Timeline): Timeline {
   return structuredClone(value);
@@ -219,6 +244,10 @@ function App() {
   const [sourcePath, setSourcePath] = useState('');
   const [addingSource, setAddingSource] = useState(false);
   const [previewSourceId, setPreviewSourceId] = useState('source-main');
+  const [previewHeight, setPreviewHeight] = useState<number | null>(() => {
+    const stored = Number(window.localStorage.getItem(PREVIEW_HEIGHT_STORAGE_KEY));
+    return Number.isFinite(stored) && stored > 0 ? clampPreviewHeight(stored) : null;
+  });
   const undoStack = useRef<Timeline[]>([]);
   const redoStack = useRef<Timeline[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -233,6 +262,17 @@ function App() {
   const selectedTrackItem = selectedItem && timeline
     ? timeline.tracks[selectedItem.track].find((item) => item.id === selectedItem.id) ?? null
     : null;
+  const subtitlePosition = clampSubtitlePosition(
+    timeline?.settings.subtitle_position_percent ?? DEFAULT_SUBTITLE_POSITION,
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setPreviewHeight((current) => current === null ? null : clampPreviewHeight(current));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!selectedTrackItem) {
@@ -245,6 +285,62 @@ function App() {
   const setMessage = (message: string, kind: 'normal' | 'error' | 'success' = 'normal') => {
     setStatus(message);
     setStatusKind(kind);
+  };
+
+  const applyPreviewHeight = (value: number) => {
+    const bounded = clampPreviewHeight(value);
+    setPreviewHeight(bounded);
+    window.localStorage.setItem(PREVIEW_HEIGHT_STORAGE_KEY, String(bounded));
+  };
+
+  const resetPreviewHeight = () => {
+    setPreviewHeight(null);
+    window.localStorage.removeItem(PREVIEW_HEIGHT_STORAGE_KEY);
+  };
+
+  const beginPreviewResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const preview = document.querySelector<HTMLElement>('.preview-area');
+    if (!preview) return;
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = preview.getBoundingClientRect().height;
+    let latestHeight = startHeight;
+    let finished = false;
+    document.body.classList.add('preview-resizing');
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      document.body.classList.remove('preview-resizing');
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      applyPreviewHeight(latestHeight);
+    };
+    const move = (moveEvent: PointerEvent) => {
+      latestHeight = clampPreviewHeight(startHeight + moveEvent.clientY - startY);
+      setPreviewHeight(latestHeight);
+    };
+
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+  };
+
+  const resizePreviewWithKeyboard = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const preview = document.querySelector<HTMLElement>('.preview-area');
+    const current = previewHeight ?? preview?.getBoundingClientRect().height ?? MIN_PREVIEW_HEIGHT;
+    const step = event.shiftKey ? 40 : 16;
+    const { min, max } = previewHeightBounds();
+    let next: number | null = null;
+    if (event.key === 'ArrowUp') next = current - step;
+    if (event.key === 'ArrowDown') next = current + step;
+    if (event.key === 'Home') next = min;
+    if (event.key === 'End') next = max;
+    if (next === null) return;
+    event.preventDefault();
+    applyPreviewHeight(next);
   };
 
   useEffect(() => {
@@ -304,6 +400,75 @@ function App() {
     const next = redoStack.current.pop()!;
     setTimeline(next);
     setMessage('已恢复下一步');
+  };
+
+  const timelineWithSubtitlePosition = (source: Timeline, value: number) => {
+    const next = cloneTimeline(source);
+    next.settings.subtitle_position_percent = clampSubtitlePosition(value);
+    return next;
+  };
+
+  const commitSubtitlePosition = (value: number) => {
+    if (!timeline) return;
+    const bounded = clampSubtitlePosition(value);
+    if (Math.abs(bounded - subtitlePosition) < 0.05) return;
+    commit(
+      timelineWithSubtitlePosition(timeline, bounded),
+      `字幕垂直位置已调整到 ${bounded.toFixed(1)}%`,
+    );
+  };
+
+  const beginSubtitlePositionDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!timeline || event.button !== 0) return;
+    const stage = document.querySelector<HTMLElement>('.preview-stage');
+    if (!stage) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startY = event.clientY;
+    const stageHeight = Math.max(1, stage.getBoundingClientRect().height);
+    const initialTimeline = timeline;
+    const initialPosition = subtitlePosition;
+    let finalPosition = initialPosition;
+    let finished = false;
+    document.body.classList.add('subtitle-position-resizing');
+
+    const move = (moveEvent: PointerEvent) => {
+      finalPosition = clampSubtitlePosition(
+        initialPosition + ((moveEvent.clientY - startY) / stageHeight) * 100,
+      );
+      setTimeline(timelineWithSubtitlePosition(initialTimeline, finalPosition));
+    };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      document.body.classList.remove('subtitle-position-resizing');
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      if (Math.abs(finalPosition - initialPosition) >= 0.05) {
+        commit(
+          timelineWithSubtitlePosition(initialTimeline, finalPosition),
+          `字幕垂直位置已调整到 ${finalPosition.toFixed(1)}%`,
+        );
+      }
+    };
+
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+  };
+
+  const adjustSubtitlePositionWithKeyboard = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    let next: number | null = null;
+    const step = event.shiftKey ? 5 : 2;
+    if (event.key === 'ArrowUp') next = subtitlePosition - step;
+    if (event.key === 'ArrowDown') next = subtitlePosition + step;
+    if (event.key === 'Home') next = MIN_SUBTITLE_POSITION;
+    if (event.key === 'End') next = MAX_SUBTITLE_POSITION;
+    if (next === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    commitSubtitlePosition(next);
   };
 
   const seekComposition = (time: number, shouldPlay = playing) => {
@@ -961,7 +1126,10 @@ function App() {
   });
 
   return (
-    <main className="editor-app">
+    <main
+      className="editor-app"
+      style={previewHeight === null ? undefined : ({ '--preview-row-height': `${previewHeight}px` } as React.CSSProperties)}
+    >
       <header className="toolbar">
         <div className="brand"><span className="brand-mark"><Film size={17} /></span>故事时间线</div>
         <FolderOpen size={16} aria-hidden="true" />
@@ -1003,7 +1171,24 @@ function App() {
               narrationRef.current.pause();
             }}
           />
-          {activeSubtitle?.text && <div className="subtitle-overlay">{String(activeSubtitle.text)}</div>}
+          {activeSubtitle?.text && (
+            <div
+              className="subtitle-overlay"
+              style={{ top: `${subtitlePosition}%` }}
+              role="slider"
+              aria-label="解说字幕垂直位置"
+              aria-valuemin={MIN_SUBTITLE_POSITION}
+              aria-valuemax={MAX_SUBTITLE_POSITION}
+              aria-valuenow={subtitlePosition}
+              tabIndex={0}
+              title="上下拖动调整解说字幕位置，双击恢复默认"
+              onPointerDown={beginSubtitlePositionDrag}
+              onDoubleClick={() => commitSubtitlePosition(DEFAULT_SUBTITLE_POSITION)}
+              onKeyDown={adjustSubtitlePositionWithKeyboard}
+            >
+              {String(activeSubtitle.text)}
+            </div>
+          )}
         </div>
         <aside className="inspector">
           <div className="inspector-title">{selectedTrackItem ? '轨道块参数' : '片段参数'}</div>
@@ -1170,6 +1355,21 @@ function App() {
           </div>
         </aside>
       </section>
+
+      <div
+        className="preview-splitter"
+        role="separator"
+        aria-label="调整视频预览区与时间线的高度"
+        aria-orientation="horizontal"
+        aria-valuemin={previewHeightBounds().min}
+        aria-valuemax={previewHeightBounds().max}
+        aria-valuenow={previewHeight ?? undefined}
+        tabIndex={0}
+        title="上下拖动调整高度，双击恢复自动大小"
+        onPointerDown={beginPreviewResize}
+        onDoubleClick={resetPreviewHeight}
+        onKeyDown={resizePreviewWithKeyboard}
+      />
 
       <section className="timeline-panel">
         <div className="timeline-tools">

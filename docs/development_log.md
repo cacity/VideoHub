@@ -23,6 +23,96 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-08-11：连续剧解说配置化生产与 README 更新
+
+### 更新内容
+
+- 为影视解说 Skill 新增统一的连续剧执行器，支持 `preflight`、`prepare`、`render`、
+  `package`、`audit` 和 `all` 六个阶段，并可按单集或集数范围运行。
+- 把系列级 TTS、音量、画幅、封面与路径参数和逐集剧情、旁白、选段、发布文案分开管理，
+  后续项目不再复制项目专用 `build_episode_series.py`。
+- 修复系列审计脚本硬编码 `1920x1080` 和封面必须位于发布包根目录的问题；审计现可接收
+  目标分辨率、所需封面格式和嵌套 `cover_assets/`。
+- 中英文 README 在顶部补充系列批量生产、剧集目录模式、影视封面、音乐卡点剪辑和五轨
+  时间线精修等近期能力。
+- 中英文 README 新增 Codex / Claude Code 快速安装与自然语言使用入口，提供仓库地址、
+  安全配置要求，以及 YouTube、抖音、本地电影和连续剧批量剪辑示例；同时合并顶部重复的
+  “最新功能”段落，按安装使用、系列生产、工作原理和时间线精修组织内容。
+- 发布前将时间线工作台的启动命令改为仓库相对路径，避免 README 依赖开发机上的
+  `F:\work\VideoHub` 绝对目录。
+
+### 设计与实现
+
+- 新增 `series_commentary_common.py` 作为配置、路径、素材探测、集数选择和生产签名公共层；
+  `run_series_commentary.py` 只负责稳定、可验证的机械流程，剧情理解和旁白内容仍由逐集配置
+  和本地证据决定。
+- 新增 `series-job-schema.md`，规定 `series_spec.json` 与 `episode_specs.json` 的边界、
+  安全要求、恢复规则和执行命令。旧项目脚本暂不删除，保留为回归基线。
+- 将 project078 加入新配置格式并对 13 集真实素材执行无付费 API 的预检，验证视频、字幕、
+  流信息、时长和选段边界均可被统一入口读取。
+- 新增系列配置与执行器单元测试，并同步旧片段缓存测试所需的 `source_audio_stream` 参数。
+
+### 验证结果
+
+- 系列执行器、剧集目录、MiniMax、故事时间线、影视发布包和豆包客户端核心回归：
+  `python -m pytest -q tests` 共 60 项通过；其中新增计划集成测试确认执行器生成的剧情分析、故事计划和旁白计划均通过
+  现有严格校验器。
+- `frontend` 执行 `npm run build` 通过，TypeScript 检查和 Vite 生产构建均成功。
+- project078 第 1-13 集 `--stage preflight`：全部通过，未调用 MiniMax、未重新渲染成片。
+- 网页后端测试在设置 `PYTHONPATH=website/backend` 后 8 项通过。直接从仓库根目录运行
+  `pytest -q` 仍会在收集网页后端测试时因其历史绝对导入 `subtitle_service` 失败；这是现有
+  测试入口限制，不是本次功能回归失败。
+- 三个相关 Skills 的 `quick_validate.py` 校验通过；新增 Python 文件 Ruff 检查和
+  `git diff --check` 通过。
+- 提交前再次扫描非忽略文件：未发现真实 API Key、口令、媒体、模型、压缩包或可执行文件；
+  `.env`、`AGENTS.md`、`workspace/`、`pretrained_models/`、`website/` 和生成目录继续由
+  `.gitignore` 排除。
+
+### 遗留问题
+
+- 通用执行器不会把任意源画面隐式拉伸为配置中的分辨率；画幅不一致时仍需在剪辑计划中
+  明确裁切或填充策略。
+- 旧项目中的三份批量脚本继续保留，待至少两个新项目稳定使用统一执行器后再考虑归档，
+  避免一次性删除历史生产依据。
+
+## 2026-08-05：本地剧集目录项目化处理
+
+### 更新内容
+
+- 本地视频“批量处理（目录）”新增默认开启的“剧集项目模式”。
+- 原文字幕、Google 初译、DeepSeek 润色字幕统一保存到视频目录下的 `subtitles/`；音频、
+  转录稿、摘要和带字幕视频分别保存到同目录的分类子目录。
+- 生成只包含相对路径的 `videohub_project.json`，后续故事剪辑和影视解说 Skill 只需接收
+  剧集目录，即可按集数找到视频及最佳字幕版本。
+- CLI 的 `--video` 支持目录输入；单文件可用 `--series-project` 写入父目录项目。
+
+### 设计与实现
+
+- 新增 `src/series_project.py`，集中负责项目目录创建、自然集数排序、视频与字幕名称归一化、
+  字幕版本分类和清单原子更新，避免 GUI 与 Skills 分别维护文件匹配规则。
+- 视频与字幕匹配忽略空格、下划线和连字符差异，并识别 `_google`、`_polished` 及语言后缀；
+  清单保存相对路径，整个剧集目录移动后仍可使用。
+- `process_local_video()` 增加可选 `project_root`，普通单文件流程仍沿用全局 `workspace/`；
+  `process_local_videos_batch()` 仅在开关启用时切换到目录内输出，保持兼容。
+- 主 GUI、闲时队列和模块化 worker 均透传 `series_project`，中英文 README 与三个相关
+  VideoHub Skills 同步更新目录入口和字幕选择优先级。
+
+### 验证结果
+
+- `python -m py_compile src/series_project.py src/youtube_transcriber.py src/gui/workers/worker_thread.py main.py`
+- `python -m pytest -q tests/test_series_project.py`：4 项通过。
+- `python -m ruff check src/series_project.py tests/test_series_project.py`：通过。
+- `git diff --check`：通过。
+
+### 遗留问题
+
+- 当前目录扫描与原有本地批处理一致，只处理项目根目录下的视频，不递归扫描子目录。
+- 本次未执行真实 Whisper 长视频转录，以免产生较长运行时间和额外翻译调用；文件落盘与
+  清单发现规则已通过隔离测试验证。
+- 仓库完整 `tests` 测试结果为 52 通过、1 失败；失败来自当前未提交的 story editor 改动中
+  `restore_or_render_segment()` 新增 `source_audio_stream` 必填参数后，旧测试调用尚未同步，
+  与本次剧集目录功能无关。
+
 ## 2026-07-22：完成影视解说五轨可视化时间线编辑器
 
 ### 更新范围
@@ -1359,3 +1449,54 @@ git diff --check -- README.md README_en.md .agents/skills
 - DeepSeek/OpenAI 备用翻译依赖对应 API key；未配置时仍会保留原文并输出日志。
 - 非中文目标语言暂不执行 DeepSeek 润色。
 - `docs/videohub_promotion_article.md` 当前仍是未跟踪文件，本次提交不纳入。
+## 2026-08-08：《妻子变成小学生》全 10 集 50 分钟纯解说合集
+
+### 更新内容
+
+- 新建 `workspace/project076_wife_elementary_school_s01_complete_50min_commentary` 独立项目。
+- 将已完成的 10 集素材重新组织为每集 5 分钟、总长 50 分钟的连续合集。
+- 全程使用 MiniMax `speech-2.8-turbo`、`Chinese (Mandarin)_Male_Announcer`、1.2x 旁白，不映射原视频音轨。
+- 讲解字幕统一置顶，避开源视频底部硬字幕。
+- 生成 9:16、3:4、4:3、16:9 系列封面、章节、发布文案和发布包。
+
+### 设计与实现
+
+- 每集拆为 5 个一分钟叙事章节，每章使用 4 个约 15 秒的剧情证据画面，避免简单按比例抽帧造成画面与旁白错位。
+- TTS 按章节缓存；每章保留约 0.4 秒起始呼吸，语音填充约 58.8 秒，后续修改可只重做对应章节。
+- 最终视频通过硬链接进入发布包，避免在磁盘空间紧张时复制 1.3 GB 成片。
+- 封面复用单集系列底图，以独立红色徽标突出“全10集”，保证主页小缩略图可辨认。
+
+### 验证结果
+
+- 最终时长 3000.021 秒，视频流 1、音频流 1。
+- `silencedetect=noise=-42dB:d=3.0` 未发现 3 秒及以上静音。
+- 11 个跨集时间点抽帧检查通过：顶部讲解字幕、底部源片字幕未重叠，无黑屏或文字越界。
+- 发布包视频与主成片 SHA-256 一致：`c3c01d55cd4296e62089babf810ad2843d23f3f2a7df122e79e44c8a4045ab21`。
+
+### 已知边界
+
+- 源片包含底部硬字幕，无法从画面中移除；本合集通过把讲解字幕置顶来分层。
+- 当前为 1080p 横版合集，未额外渲染竖版视频；发布包已提供多画幅封面。
+
+## 2026-08-09：油画解说画框垂直居中与批量重渲染
+
+### 更新内容
+
+- 修复 `workspace/project071_oil_painting_commentary_series` 中油画主体整体偏上的问题。
+- 将 Remotion 画作舞台从固定 `top: 190px` 改为根据 1920px 画布和 1188px 舞台高度自动计算，舞台顶部为 366px、中心为 960px。
+- 进度条和动态字幕位置改为从画作舞台底部推导，避免分别维护多个无关的硬编码偏移。
+- 重渲染第 3 至第 12 期；第 2 期《宫娥》已发布成片保持不变。
+- 批量渲染脚本新增期数范围、强制覆盖、并发和原子临时文件参数，失败时不会覆盖已存在的正式成片。
+
+### 设计与实现
+
+- 居中在 Remotion 组合层完成，不使用 FFmpeg 对最终成片做二次位移，确保预览、渲染和后续模板复用保持一致。
+- 每期原有旁白、音轨、字幕、时间轴、局部缩放和焦点参数不变，只调整公共画面布局。
+- 已存在的 `clean_raw`、`clean_final` 别名同步为新成片的硬链接，防止旧别名继续指向未居中的版本。
+
+### 验证结果
+
+- `python -m py_compile scripts/render_series.py` 与 `npx tsc --noEmit` 通过。
+- `python scripts/qa_series.py` 为 11/11 PASS：完整解码、1080x1920 H.264、AAC、持续黑场和封面尺寸检查均通过。
+- 第 3 至第 12 期逐期抽取中段画面进行视觉检查，画作长方形上下边界一致，中心均为 960px，未与进度条、字幕或底栏重叠。
+- 居中参数和视觉证据记录在项目 `docs/qa_recenter/recenter_qa.md`。

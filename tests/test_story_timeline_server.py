@@ -194,6 +194,8 @@ def test_saves_reordered_split_revision_without_touching_original(story_workspac
     service = StoryTimelineService(workspace)
     project_id = service.list_projects()[0]["id"]
     timeline = service.load_timeline(project_id)
+    assert timeline["settings"]["subtitle_position_percent"] == 90.0
+    timeline["settings"]["subtitle_position_percent"] = 68.0
 
     first, second = timeline["clips"]
     first_left = {**first, "id": "seg-001-a", "source_end_sec": 5.0}
@@ -234,6 +236,7 @@ def test_saves_reordered_split_revision_without_touching_original(story_workspac
     assert narration["blocks"][0]["start_sec"] == 2.0
     assert narration["blocks"][1]["start_sec"] == 11.0
     assert narration["settings"]["audio_strategy"] == "hybrid_source_anchors"
+    assert compiled["settings"]["subtitle_position_percent"] == 68.0
     subtitle_text = (revision_dir / "timeline_subtitles.srt").read_text(
         encoding="utf-8"
     )
@@ -247,6 +250,17 @@ def test_saves_reordered_split_revision_without_touching_original(story_workspac
     ):
         assert revision_dir.resolve() in Path(compiled["output"][key]).resolve().parents
     assert original_plan_path.read_text(encoding="utf-8") == original_text
+
+
+def test_rejects_subtitle_position_outside_safe_frame(story_workspace):
+    workspace, _ = story_workspace
+    service = StoryTimelineService(workspace)
+    project_id = service.list_projects()[0]["id"]
+    timeline = service.load_timeline(project_id)
+    timeline["settings"]["subtitle_position_percent"] = 98
+
+    with pytest.raises(ValueError, match="Subtitle position"):
+        service.save_revision(project_id, timeline)
 
 
 def test_crossfade_layout_and_audio_controls_are_compiled(story_workspace):

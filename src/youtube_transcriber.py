@@ -35,6 +35,19 @@ except ImportError:
         target_style_score,
     )
 
+try:
+    from .series_project import (
+        ensure_series_project,
+        list_series_videos,
+        refresh_series_project_manifest,
+    )
+except ImportError:
+    from series_project import (
+        ensure_series_project,
+        list_series_videos,
+        refresh_series_project_manifest,
+    )
+
 # 导入 yt-dlp 管理器
 try:
     from .ytdlp_manager import get_ytdlp_manager, get_ytdlp_options
@@ -3807,7 +3820,7 @@ def process_local_audio(audio_path, model=None, api_key=None, base_url=None, whi
         print(f"处理过程中出现错误: {str(e)}")
         return None
 
-def process_local_video(video_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None, target_language="zh-CN"):
+def process_local_video(video_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None, target_language="zh-CN", project_root=None):
     """
     处理本地视频文件的主函数
     :param video_path: 本地视频文件路径
@@ -3825,24 +3838,41 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
     :param enable_transcription: 是否执行转录，默认为True
     :param generate_article: 是否生成文章，默认为True
     :param source_language: 指定源语言（可选），如果为None则自动检测
+    :param project_root: 剧集项目目录；提供后所有生成文件写入该目录下的分类子目录
     :return: 总结文件的路径或字幕文件路径（如果不生成摘要）
     """
+    project_layout = None
     try:
+        audio_output_dir = DOWNLOADS_DIR
+        transcript_output_dir = TRANSCRIPTS_DIR
+        subtitle_output_dir = SUBTITLES_DIR
+        embedded_video_output_dir = VIDEOS_WITH_SUBTITLES_DIR
+
+        if project_root:
+            project_layout = ensure_series_project(project_root)
+            audio_output_dir = str(project_layout.audio_dir)
+            transcript_output_dir = str(project_layout.transcripts_dir)
+            subtitle_output_dir = str(project_layout.subtitles_dir)
+            summary_dir = str(project_layout.summaries_dir)
+            embedded_video_output_dir = str(project_layout.videos_with_subtitles_dir)
+            print(f"剧集项目目录: {project_layout.root}")
+            print(f"字幕输出目录: {project_layout.subtitles_dir}")
+
         # 如果不需要转录，直接跳过
         if not enable_transcription:
             print("跳过转录步骤（用户未勾选执行转录）")
             return "SKIPPED"
             
         print("1. 从视频中提取音频...")
-        audio_path = extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR)
+        audio_path = extract_audio_from_video(video_path, output_dir=audio_output_dir)
         print(f"音频已提取到: {audio_path}")
         
         print("2. 开始转录音频...")
         # 使用统一转录函数，一次性完成转录和字幕生成
         text_path, subtitle_path = transcribe_audio_unified(
             audio_path,
-            output_dir=TRANSCRIPTS_DIR,
-            subtitle_dir=SUBTITLES_DIR,
+            output_dir=transcript_output_dir,
+            subtitle_dir=subtitle_output_dir,
             model_size=whisper_model_size,
             generate_subtitles=generate_subtitles,
             translate_to_chinese=translate_to_chinese,
@@ -3863,7 +3893,7 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
                 video_with_subtitles = embed_subtitles_to_video(
                     video_path,
                     subtitle_path,
-                    output_dir=VIDEOS_WITH_SUBTITLES_DIR
+                    output_dir=embedded_video_output_dir
                 )
                 if video_with_subtitles:
                     print(f"带字幕的视频已生成: {video_with_subtitles}")
@@ -3895,7 +3925,14 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
         print(f"处理过程中出现错误: {str(e)}")
         return None
 
-def process_local_videos_batch(input_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None, target_language="zh-CN"):
+    finally:
+        if project_layout:
+            try:
+                refresh_series_project_manifest(project_layout.root)
+            except Exception as manifest_error:
+                print(f"警告: 剧集项目清单刷新失败: {manifest_error}")
+
+def process_local_videos_batch(input_path, model=None, api_key=None, base_url=None, whisper_model_size="medium", stream=True, summary_dir=DEFAULT_SUMMARY_DIR, custom_prompt=None, template_path=None, generate_subtitles=False, translate_to_chinese=True, embed_subtitles=False, enable_transcription=True, generate_article=True, source_language=None, enable_translation_polish=None, target_language="zh-CN", series_project=False):
     """
     批量处理本地视频文件（支持单个文件或目录）
     :param input_path: 输入路径（可以是单个视频文件或包含视频文件的目录）
@@ -3913,6 +3950,7 @@ def process_local_videos_batch(input_path, model=None, api_key=None, base_url=No
     :param enable_transcription: 是否执行转录，默认为True
     :param generate_article: 是否生成文章，默认为True
     :param source_language: 指定源语言（可选），如果为None则自动检测
+    :param series_project: 是否把输入目录作为剧集项目，生成文件保存在该目录内
     :return: 处理结果列表
     """
     import glob
@@ -3924,6 +3962,17 @@ def process_local_videos_batch(input_path, model=None, api_key=None, base_url=No
     # 收集需要处理的视频文件
     video_files = []
     
+    project_root = None
+    if series_project:
+        if not os.path.exists(input_path):
+            print(f"错误：路径 {input_path} 不存在")
+            return []
+        project_root = input_path if os.path.isdir(input_path) else os.path.dirname(input_path)
+        project_layout = ensure_series_project(project_root)
+        refresh_series_project_manifest(project_layout.root)
+        print(f"已启用剧集项目模式: {project_layout.root}")
+        print(f"项目清单: {project_layout.manifest_path}")
+
     if os.path.isfile(input_path):
         # 如果是单个文件
         if Path(input_path).suffix.lower() in video_extensions:
@@ -3934,14 +3983,21 @@ def process_local_videos_batch(input_path, model=None, api_key=None, base_url=No
     elif os.path.isdir(input_path):
         # 如果是目录，查找所有视频文件
         print(f"扫描目录中的视频文件: {input_path}")
-        for ext in video_extensions:
-            pattern = os.path.join(input_path, f"*{ext}")
-            video_files.extend(glob.glob(pattern))
-            # 也搜索大写扩展名
-            pattern = os.path.join(input_path, f"*{ext.upper()}")
-            video_files.extend(glob.glob(pattern))
-        
-        video_files = sorted(list(set(video_files)))  # 去重并排序
+        if series_project:
+            video_files = [str(path) for path in list_series_videos(input_path)]
+        else:
+            for ext in video_extensions:
+                pattern = os.path.join(input_path, f"*{ext}")
+                video_files.extend(glob.glob(pattern))
+                # 也搜索大写扩展名
+                pattern = os.path.join(input_path, f"*{ext.upper()}")
+                video_files.extend(glob.glob(pattern))
+
+        if series_project:
+            # list_series_videos 已按集数自然排序。
+            video_files = list(dict.fromkeys(video_files))
+        else:
+            video_files = sorted(set(video_files))
         
         if not video_files:
             print(f"在目录 {input_path} 中未找到任何视频文件")
@@ -3984,6 +4040,7 @@ def process_local_videos_batch(input_path, model=None, api_key=None, base_url=No
                 source_language=source_language,
                 enable_translation_polish=enable_translation_polish,
                 target_language=target_language,
+                project_root=project_root,
             )
             
             if result and result != "SKIPPED":
@@ -4028,6 +4085,10 @@ def process_local_videos_batch(input_path, model=None, api_key=None, base_url=No
     print(f"成功: {successful_count} 个")
     print(f"失败: {failed_count} 个")
     print(f"跳过: {len([r for r in results if r.get('status') == 'skipped'])} 个")
+
+    if project_root:
+        manifest_path = refresh_series_project_manifest(project_root)
+        print(f"剧集项目清单已更新: {manifest_path}")
     
     # 显示处理成功的文件
     if successful_count > 0:
@@ -5842,7 +5903,7 @@ if __name__ == "__main__":
     source_group = parser.add_mutually_exclusive_group(required=True)
     source_group.add_argument('--youtube', type=str, help='YouTube视频URL')
     source_group.add_argument('--audio', type=str, help='本地音频文件路径')
-    source_group.add_argument('--video', type=str, help='本地视频文件路径')
+    source_group.add_argument('--video', type=str, help='本地视频文件或剧集目录路径')
     source_group.add_argument('--text', type=str, help='本地文本文件路径，直接进行摘要生成')
     source_group.add_argument('--batch', type=str, help='包含多个YouTube URL的文本文件路径，每行一个URL')
     source_group.add_argument('--urls', nargs='+', type=str, help='多个YouTube URL，用空格分隔')
@@ -5867,6 +5928,7 @@ if __name__ == "__main__":
     parser.add_argument('--template', type=str, help='使用指定的模板文件，可以是模板名称或完整路径')
     parser.add_argument('--template-content', type=str, help='创建模板时的模板内容，仅与--create-template一起使用')
     parser.add_argument('--transcribe-only', action='store_true', help='仅将音频转换为文本，不进行摘要生成')
+    parser.add_argument('--series-project', action='store_true', help='把本地视频所在目录作为剧集项目并在目录内保存输出')
     # 字幕相关参数
     parser.add_argument('--generate-subtitles', action='store_true', help='生成字幕文件（SRT、VTT和ASS格式）')
     parser.add_argument('--no-translate', action='store_true', help='不翻译字幕')
@@ -6068,8 +6130,29 @@ if __name__ == "__main__":
                 print(f"读取批处理文件时出错: {str(e)}")
                 
         elif args.video:
-            # 处理本地视频文件
-            if args.transcribe_only:
+            # 目录输入自动按剧集项目批量处理；单文件可显式启用同目录项目模式。
+            if os.path.isdir(args.video):
+                results = process_local_videos_batch(
+                    args.video,
+                    model=args.model,
+                    api_key=args.api_key,
+                    base_url=args.base_url,
+                    whisper_model_size=args.whisper_model,
+                    stream=not args.no_stream,
+                    summary_dir=args.summary_dir,
+                    custom_prompt=custom_prompt,
+                    template_path=template_path,
+                    generate_subtitles=args.generate_subtitles,
+                    translate_to_chinese=not args.no_translate,
+                    embed_subtitles=args.embed_subtitles,
+                    generate_article=not (args.no_summary or args.transcribe_only),
+                    target_language=args.target_language,
+                    series_project=True,
+                )
+                success_count = sum(item.get("status") == "success" for item in results)
+                print(f"\n剧集项目处理完成: {success_count}/{len(results)} 个视频成功")
+                summary_path = None
+            elif args.transcribe_only:
                 summary_path = transcribe_only(extract_audio_from_video(args.video, output_dir="downloads"), whisper_model_size=args.whisper_model, output_dir="transcripts")
             else:
                 summary_path = process_local_video(
@@ -6086,11 +6169,12 @@ if __name__ == "__main__":
                     translate_to_chinese=not args.no_translate,
                     embed_subtitles=args.embed_subtitles,
                     target_language=args.target_language,
+                    project_root=os.path.dirname(os.path.abspath(args.video)) if args.series_project else None,
                 )
             
             if summary_path:
                 print(f"\n处理完成! 文章已保存到: {summary_path}")
-            else:
+            elif not os.path.isdir(args.video):
                 print("\n处理失败，请检查错误信息。")
                 
         elif args.audio:

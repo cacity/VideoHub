@@ -44,6 +44,26 @@ description: 把长视频或已有字幕转成有完整叙事的几分钟短片�
 - 成片目录：`workspace/videos_with_subtitles/` 或计划中的输出目录。
 - 抖音发布包：`workspace/publish_packages/douyin/<package_name>/`。
 
+## 剧集素材项目目录
+
+用户只提供一个剧集目录时，不再要求分别提供视频和字幕路径。先刷新目录内的可移植项目清单：
+
+```powershell
+python src/series_project.py "<series_dir>"
+```
+
+读取 `<series_dir>/videohub_project.json`，按用户给出的集数或文件名选择 `episodes` 中的条目。
+视频位于项目根目录；本地批处理生成的字幕位于 `subtitles/`。选择字幕时依次优先使用：
+
+1. `subtitles.polished` 中的 SRT。
+2. `subtitles.translated` 中与目标语言匹配的 SRT。
+3. `subtitles.source` 中的 SRT。
+4. 视频内嵌字幕；仍没有字幕时再调用 VideoHub Whisper 流程。
+
+清单只保存相对路径，移动整个剧集目录后仍可使用。空格、下划线、连字符以及
+`_google`、`_polished`、语言后缀的差异由项目扫描器归一化匹配。目录包含多集而用户未说明
+集数时，必须先确认目标集，不能默认把整季当成一个视频任务。
+
 ## 可视化时间线精修
 
 已有解说项目完成 AI 初剪后，可以启动本地网页工作台：
@@ -61,7 +81,8 @@ python src/story_timeline_server.py
 旁白计划、字幕和证据文件，显示视频、原声、TTS 旁白、原声锚点和字幕五条轨道。
 
 - 可以预览素材，拖动切点，拆分、删除和重排片段，并撤销或重做。
-- 可以修改旁白文本、单独调用 MiniMax 重生成一个语音块，拖动原声窗口和字幕边界。
+- 可以修改旁白文本、单独调用 MiniMax 重生成一个语音块，拖动原声窗口和字幕边界；
+  预览画面中的解说字幕可上下拖动，避开原片已有的硬字幕，保存后按同一位置烧录。
 - 可以设置片段音量关键帧、淡入淡出、交叉转场，并注册其他本地视频源。
 - 配置 `DEEPSEEK_API_KEY` 后可以对选中的旁白做保守局部改写；缺少密钥时不影响其他功能。
 - 保存会写入项目的 `revisions/rev-*`；片段缓存写入 `.story_editor_cache/segments`。
@@ -157,6 +178,11 @@ python .agents/skills/videohub-story-editor/scripts/prepare_story_subtitles.py `
   --analysis "<job_dir>/story_analysis.json" `
   --output "<job_dir>/final_source.srt"
 ```
+
+`source_subtitle_ids` 是剧情证据引用，不保证覆盖片段里的全部对白。影视解说需要在底部
+持续显示完整原声字幕时，渲染器必须使用 `--source-subtitle-policy all-intersecting`，按每个
+入选片段的源时间范围收集并裁切全部相交字幕。默认 `explicit` 保持证据引用模式，兼容已有
+计划。
 
 再翻译最终 SRT。`translation_polish=true` 或显式 `--polish` 时，复用 VideoHub
 现有的 Google 基础翻译和 DeepSeek 全局轻度润色，并保留可对比的基础翻译与润色版。

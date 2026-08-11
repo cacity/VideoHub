@@ -61,6 +61,27 @@ def test_client_writes_wav_and_builds_expected_payload(monkeypatch, tmp_path):
     assert request["headers"]["Authorization"] == "Bearer sk-test-secret"
 
 
+def test_client_rejects_zero_duration_wav(monkeypatch, tmp_path):
+    wav_bytes = make_wav_bytes(duration_seconds=0.0)
+    response = make_response(
+        payload={
+            "data": {"audio": wav_bytes.hex(), "status": 2},
+            "extra_info": {"audio_length": 0},
+            "base_resp": {"status_code": 0, "status_msg": "success"},
+            "trace_id": "trace-empty",
+        }
+    )
+    monkeypatch.setattr(
+        "src.minimax_tts_client.requests.post", Mock(return_value=response)
+    )
+
+    client = MiniMaxTTSClient(api_key="sk-test", max_retries=0)
+    with pytest.raises(RuntimeError, match="empty audio"):
+        client.synthesize("empty audio test", tmp_path / "empty.wav")
+
+    assert not (tmp_path / "empty.wav").exists()
+
+
 def test_client_retries_rate_limit(monkeypatch, tmp_path):
     wav_bytes = make_wav_bytes()
     success = make_response(

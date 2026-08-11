@@ -26,6 +26,8 @@ python src/youtube_transcriber.py --youtube "<url>" --download-video --embed-sub
 python src/youtube_transcriber.py --audio "path/to/file.mp3"
 python src/youtube_transcriber.py --video "path/to/file.mp4" --generate-subtitles
 python src/youtube_transcriber.py --video "path/to/file.mp4" --generate-subtitles --target-language ko
+python src/youtube_transcriber.py --video "path/to/series" --generate-subtitles
+python src/youtube_transcriber.py --video "path/to/file.mp4" --generate-subtitles --series-project
 python src/youtube_transcriber.py --text "path/to/file.txt"
 python src/youtube_transcriber.py --urls "<url1>" "<url2>"
 python src/youtube_transcriber.py --history
@@ -48,3 +50,6 @@ python src/youtube_transcriber.py --cleanup-preview
 - 输出目录遵循 `paths_config.py` 下的 workspace 结构。
 - 字幕翻译默认使用 Google；Google 失败时会尝试 DeepSeek/OpenAI 备用翻译。中文目标语言可选 DeepSeek 润色。
 - 本地 GUI 里还有“提取本地视频音频到 songs 目录”的功能，对应 `extract_audio_from_local_videos()`，不属于当前 CLI 的主参数。
+- 本地目录输入会作为剧集项目处理，在视频目录内建立 `subtitles/`、`transcripts/`、
+  `summaries/`、`audio/`、`videos_with_subtitles/` 和 `videohub_project.json`。后续故事剪辑或
+  影视解说只需接收该目录并读取项目清单。

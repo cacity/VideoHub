@@ -1,0 +1,4 @@
+interface:
+  display_name: "VideoHub 封面设计"
+  short_description: "生成影视剧与短视频多画幅封面并验证主页缩略图可读性"
+  default_prompt: "Use $videohub-cover-designer to create verified multi-format covers from this source image."

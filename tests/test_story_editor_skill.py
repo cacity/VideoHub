@@ -30,6 +30,7 @@ from story_pipeline_common import (  # noqa: E402
     SubtitleCue,
     pair_translations,
     parse_srt_or_vtt,
+    write_ass,
 )
 from validate_narration_plan import validate_narration_plan  # noqa: E402
 
@@ -51,6 +52,26 @@ Guest: We solved the wrong problem.
     assert cues[0].text == "为什么失败？"
     assert cues[1].speaker == "Guest"
     assert cues[1].text == "We solved the wrong problem."
+
+
+def test_ass_subtitle_position_uses_authored_vertical_percentage(tmp_path):
+    output = tmp_path / "positioned.ass"
+    write_ass(
+        output,
+        [
+            {
+                "start_sec": 0.0,
+                "end_sec": 2.0,
+                "source_text": "",
+                "target_text": "向上移动的解说字幕",
+            }
+        ],
+        "translated",
+        position_percent=70,
+    )
+
+    content = output.read_text(encoding="utf-8")
+    assert "Target,,0,0,324,,向上移动的解说字幕" in content
 
 
 def test_pair_translations_uses_timeline_overlap():
@@ -117,6 +138,58 @@ def test_rebuild_subtitles_follows_reordered_output_timeline():
     assert [item["source_subtitle_id"] for item in rebuilt] == ["sub-002", "sub-001"]
     assert rebuilt[0]["start_sec"] == 0.0
     assert rebuilt[1]["start_sec"] == 1.0
+
+
+def test_rebuild_subtitles_can_include_all_intersecting_cues():
+    evidence = {
+        "subtitles": [
+            {
+                "id": "sub-001",
+                "start_sec": 1.0,
+                "end_sec": 2.0,
+                "speaker": "A",
+                "source_text": "Explicit cue",
+                "target_text": "显式字幕",
+            },
+            {
+                "id": "sub-002",
+                "start_sec": 2.2,
+                "end_sec": 3.0,
+                "speaker": "B",
+                "source_text": "Unlisted cue",
+                "target_text": "未列出的字幕",
+            },
+        ]
+    }
+    plan = {
+        "segments": [
+            {
+                "id": "seg-001",
+                "kind": "visual",
+                "source_start_sec": 1.5,
+                "source_end_sec": 3.0,
+                "output_start_sec": 0.0,
+                "output_end_sec": 1.5,
+                "playback_rate": 1.0,
+                "source_subtitle_ids": ["sub-001"],
+            }
+        ]
+    }
+
+    rebuilt = rebuild_subtitle_timeline(
+        plan,
+        evidence,
+        subtitle_policy="all-intersecting",
+    )
+
+    assert [item["source_subtitle_id"] for item in rebuilt] == [
+        "sub-001",
+        "sub-002",
+    ]
+    assert rebuilt[0]["start_sec"] == 0.0
+    assert rebuilt[0]["end_sec"] == 0.5
+    assert rebuilt[1]["start_sec"] == 0.7
+    assert rebuilt[1]["end_sec"] == 1.5
 
 
 def test_post_edit_translation_is_attached_to_final_timeline(tmp_path):
@@ -198,6 +271,7 @@ def test_segment_cache_reuses_unchanged_render(tmp_path, monkeypatch):
         segment=segment,
         output_path=output,
         source_has_audio=True,
+        source_audio_stream=0,
         cache_dir=cache_dir,
     )
     output.unlink()
@@ -207,6 +281,7 @@ def test_segment_cache_reuses_unchanged_render(tmp_path, monkeypatch):
         segment=segment,
         output_path=output,
         source_has_audio=True,
+        source_audio_stream=0,
         cache_dir=cache_dir,
     )
 
@@ -386,6 +461,39 @@ def test_hybrid_commentary_accepts_separated_source_audio_windows():
 
     assert errors == []
     assert warnings == []
+
+
+def test_english_narration_uses_word_rate_instead_of_character_rate():
+    narration, story_plan, evidence, analysis = _hybrid_commentary_inputs()
+    narration["blocks"][0]["text"] = (
+        "Three years later, Rinko arrives in Paris to rebuild her career."
+    )
+
+    errors, _warnings = validate_narration_plan(
+        narration,
+        story_plan,
+        evidence,
+        analysis,
+    )
+
+    assert not any("narration is too dense" in error for error in errors)
+
+
+def test_english_narration_rejects_excessive_word_rate():
+    narration, story_plan, evidence, analysis = _hybrid_commentary_inputs()
+    narration["blocks"][0]["text"] = (
+        "Rinko returns to Paris and immediately begins explaining every detail "
+        "of her long career while the entire kitchen waits for her final answer."
+    )
+
+    errors, _warnings = validate_narration_plan(
+        narration,
+        story_plan,
+        evidence,
+        analysis,
+    )
+
+    assert any("words/s" in error for error in errors)
 
 
 def test_hybrid_commentary_rejects_narration_over_source_audio():

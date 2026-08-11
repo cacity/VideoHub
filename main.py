@@ -1394,6 +1394,7 @@ class WorkerThread(QThread):
         generate_article = self.params.get("generate_article", True)
         source_language = self.params.get("source_language", None)
         enable_translation_polish = self.params.get("enable_translation_polish", False)
+        series_project = self.params.get("series_project", False)
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
         
         # 重定向print输出
@@ -1412,7 +1413,8 @@ class WorkerThread(QThread):
                 input_path, model, api_key, base_url, whisper_model_size,
                 stream, summary_dir, custom_prompt, template_path,
                 generate_subtitles, translate_to_chinese, embed_subtitles,
-                enable_transcription, generate_article, source_language, enable_translation_polish, target_language
+                enable_transcription, generate_article, source_language, enable_translation_polish, target_language,
+                series_project=series_project,
             )
             
             if results:
@@ -2247,6 +2249,12 @@ class MainWindow(QMainWindow):
         self.video_translate_checkbox = QCheckBox("翻译字幕")
         self.video_translate_checkbox.setChecked(True)
         self.video_embed_subtitles_checkbox = QCheckBox("将字幕嵌入到视频中")
+        self.video_series_project_checkbox = QCheckBox("剧集项目模式（输出保存在视频目录）")
+        self.video_series_project_checkbox.setChecked(True)
+        self.video_series_project_checkbox.setEnabled(False)
+        self.video_series_project_checkbox.setToolTip(
+            "目录批处理时，在视频目录内创建字幕、转录、摘要子目录和 videohub_project.json"
+        )
         
         # 处理步骤选择
         self.video_enable_transcription_checkbox = QCheckBox("执行转录（音频转文字）")
@@ -2260,6 +2268,7 @@ class MainWindow(QMainWindow):
         left_options.addWidget(self.video_translate_checkbox)
         left_options.addWidget(self.video_embed_subtitles_checkbox)
         left_options.addWidget(self.video_generate_article_checkbox)
+        left_options.addWidget(self.video_series_project_checkbox)
         
         # 右侧选项
         right_options = QVBoxLayout()
@@ -5034,7 +5043,11 @@ class MainWindow(QMainWindow):
             "embed_subtitles": self.video_embed_subtitles_checkbox.isChecked(),
             "enable_transcription": self.video_enable_transcription_checkbox.isChecked(),
             "generate_article": self.video_generate_article_checkbox.isChecked(),
-            "source_language": self.video_source_language_combo.currentData()  # 获取选择的源语言代码
+            "source_language": self.video_source_language_combo.currentData(),  # 获取选择的源语言代码
+            "series_project": (
+                self.video_batch_mode_radio.isChecked()
+                and self.video_series_project_checkbox.isChecked()
+            ),
         }
         
         # 验证至少选择一个处理选项
@@ -6655,9 +6668,11 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         if self.video_single_mode_radio.isChecked():
             self.video_path_label.setText("视频文件:")
             self.video_path_input.setPlaceholderText("选择本地视频文件...")
+            self.video_series_project_checkbox.setEnabled(False)
         else:
             self.video_path_label.setText("视频目录:")
             self.video_path_input.setPlaceholderText("选择包含视频文件的目录...")
+            self.video_series_project_checkbox.setEnabled(True)
         
         # 清空当前路径
         self.video_path_input.clear()
@@ -8501,7 +8516,11 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "embed_subtitles": self.video_embed_subtitles_checkbox.isChecked(),
                 "enable_transcription": enable_transcription,
                 "generate_article": generate_article,
-                "source_language": self.video_source_language_combo.currentData()
+                "source_language": self.video_source_language_combo.currentData(),
+                "series_project": (
+                    self.video_batch_mode_radio.isChecked()
+                    and self.video_series_project_checkbox.isChecked()
+                ),
             },
             "title": f"视频: {os.path.basename(video_path)}"
         }

@@ -269,10 +269,18 @@ def write_ass(
     cues: Iterable[dict[str, Any]],
     mode: str,
     title: str = "VideoHub Story",
+    position_percent: float | None = None,
 ) -> int:
     rows = list(cues)
     path.parent.mkdir(parents=True, exist_ok=True)
     written = 0
+    if position_percent is None:
+        target_margin = 24
+        source_margin = 72
+    else:
+        bounded_position = min(94.0, max(12.0, float(position_percent)))
+        target_margin = round((100.0 - bounded_position) * 10.8)
+        source_margin = target_margin + 48
 
     with path.open("w", encoding="utf-8", newline="\n") as handle:
         handle.write("[Script Info]\n")
@@ -295,7 +303,7 @@ def write_ass(
         )
         handle.write(
             "Style: Target,Microsoft YaHei,46,&H0000D7FF,&H000000FF,&H00000000,"
-            "&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,50,50,24,1\n\n"
+            f"&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,50,50,{target_margin},1\n\n"
         )
         handle.write("[Events]\n")
         handle.write(
@@ -309,7 +317,7 @@ def write_ass(
             end = format_ass_timestamp(float(cue["end_sec"]))
             if mode in {"source", "bilingual"} and source:
                 style = "Source" if mode == "bilingual" else "Target"
-                margin = 72 if mode == "bilingual" else 24
+                margin = source_margin if mode == "bilingual" else target_margin
                 handle.write(
                     f"Dialogue: 0,{start},{end},{style},,0,0,{margin},,"
                     f"{escape_ass_text(source)}\n"
@@ -317,7 +325,7 @@ def write_ass(
                 written += 1
             if mode in {"translated", "bilingual"} and target:
                 handle.write(
-                    f"Dialogue: 1,{start},{end},Target,,0,0,24,,"
+                    f"Dialogue: 1,{start},{end},Target,,0,0,{target_margin},,"
                     f"{escape_ass_text(target)}\n"
                 )
                 written += 1
