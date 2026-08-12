@@ -14,7 +14,7 @@ VideoHub 的 MIT 开源版本继续免费。如果你不想自己排查 Python�
 - **Creator Series Workflow — USD 999**：统一系列字幕、画幅、音色、封面和三个授权样例。
 - **Team Local Deployment — USD 2,999**：团队私有部署、一个定制流程、验收、培训和 30 天缺陷支持。
 
-服务不包括绕过平台限制、处理未授权内容、第三方 API 费用或无限期维护。如需咨询，请邮件联系 [stark fng](mailto:gf7823332@gmail.com)：`gf7823332@gmail.com`。
+服务不包括绕过平台限制、处理未授权内容、第三方 API 费用或无限期维护。查看[完整服务范围、验收与付款说明](./SERVICES.md)，或向 [stark fng 发送预填咨询邮件](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A)。
 
 ## 在 Codex / Claude Code 中安装和使用
 

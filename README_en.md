@@ -14,7 +14,7 @@ The MIT-licensed open-source edition remains free. Fixed-scope implementation se
 - **Creator Series Workflow — USD 999**: consistent subtitles, aspect ratio, voice, covers, and three authorized samples.
 - **Team Local Deployment — USD 2,999**: private deployment, one custom workflow, acceptance testing, training, and 30 days of defect support.
 
-Services do not include bypassing platform restrictions, processing unlicensed content, third-party API costs, or unlimited maintenance. For inquiries, contact [stark fng](mailto:gf7823332@gmail.com) at `gf7823332@gmail.com`.
+Services do not include bypassing platform restrictions, processing unlicensed content, third-party API costs, or unlimited maintenance. Read the [full scope, acceptance, and payment terms](./SERVICES.md), or [start a prefilled inquiry with stark fng](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A).
 
 ## Install and Use with Codex or Claude Code
 
