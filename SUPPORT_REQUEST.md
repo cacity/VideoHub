@@ -1,8 +1,8 @@
 # VideoHub 付费支持申请 / Paid Support Request
 
-请复制下面的字段到邮件正文，并附上无密钥预检报告。不要发送密码、Cookie、Token、API Key、私人素材或完整客户数据。
+请通过[公开付费支持 Issue 表单](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml)提交下面的范围信息。不要公开提交密码、Cookie、Token、API Key、私人素材、私有链接或完整客户数据；只提供脱敏摘要。
 
-联系：**stark fng** · [gf7823332@gmail.com](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support%20request)
+维护者：**stark fng**。当前不通过邮件受理或跟进。
 
 ## 申请模板
 
@@ -33,7 +33,7 @@ python src/support_preflight.py
 - `videohub_support_report.json`
 - `videohub_support_report.md`
 
-报告不联网、不扫描媒体，只记录系统版本、Python/FFmpeg、关键包、磁盘、目录可写性，以及可选 API 凭据是否配置。报告不会包含凭据值，相关文件默认不进入 Git。发送前仍建议自行打开检查。
+报告不联网、不扫描媒体，只记录系统版本、Python/FFmpeg、关键包、磁盘、目录可写性，以及可选 API 凭据是否配置。报告不会包含凭据值，相关文件默认不进入 Git。公开提交前仍建议自行打开检查，并且只粘贴必要的脱敏摘要，不上传完整文件。
 
 ## 如何选择档位
 
@@ -48,7 +48,7 @@ python src/support_preflight.py
 
 ## English template
 
-Copy these fields into your email and attach the secret-safe preflight report. Do not send passwords, cookies, tokens, API keys, private media, or complete customer datasets.
+Use the [public paid-support Issue form](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml) for the fields below. Do not post passwords, cookies, tokens, API keys, private media, private links, or complete customer datasets. Paste only the minimum sanitized summary; requests and follow-ups are not handled by email at this time.
 
 ```text
 Service tier: Diagnosis USD 149 / QuickStart USD 299 / Creator USD 999 / Team USD 2,999 / unsure

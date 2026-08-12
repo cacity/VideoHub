@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: VideoHub Series Ops Kit — USD 59 interest list
+    url: https://github.com/cacity/VideoHub/issues/new?template=ops-kit-interest.yml
+    about: Public, no-email product-interest form. The download is not yet on sale and this is not a payment request.
   - name: Paid service scope and terms
     url: https://github.com/cacity/VideoHub/blob/main/SERVICES.md
     about: Review fixed prices, deliverables, acceptance criteria, and payment gates before opening a request.

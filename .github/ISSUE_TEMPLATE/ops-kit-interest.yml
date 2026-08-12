@@ -1,0 +1,102 @@
+name: Series Ops Kit interest
+description: Join the public interest list for the planned USD 59 self-serve Excel workflow kit.
+title: "[Ops Kit interest] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The **VideoHub Series Ops Kit** is a planned USD 59 one-time digital download for creators and small teams. It contains an Excel workbook for episode tracking, source rights, narration timing, subtitle QA, cover variants, final delivery gates, and a dashboard.
+
+        **This is an interest form, not a checkout, reservation, or payment obligation.** The product is not yet available for purchase. Opening this issue does not guarantee a launch date, platform approval, compatibility, support, views, sales, or revenue.
+
+        This form is public and does not ask for an email address. Do not post passwords, API keys, cookies, private download links, confidential media, customer data, personal data, or unpublished materials.
+
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: Primary workflow
+      description: Choose the closest use case.
+      options:
+        - Short-video or commentary series
+        - Course or training series
+        - Interview or podcast-video series
+        - Localization or subtitle workflow
+        - Other repeatable media workflow
+    validations:
+      required: true
+
+  - type: dropdown
+    id: team-size
+    attributes:
+      label: Team size
+      options:
+        - Solo creator
+        - 2–5 people
+        - More than 5 people
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: pain-points
+    attributes:
+      label: What would you use it for?
+      description: Select every relevant operational problem.
+      options:
+        - label: Episode status and ownership
+        - label: Source-rights evidence and expiry
+        - label: Narration timing and silent-tail QA
+        - label: Subtitle duration, length, overlap, and safe-area QA
+        - label: Multi-ratio cover checks
+        - label: Final decode, metadata, hash, and delivery gate
+        - label: Series dashboard and blocker queue
+    validations:
+      required: true
+
+  - type: dropdown
+    id: price-fit
+    attributes:
+      label: USD 59 price fit
+      description: This validates positioning only; it is not a purchase commitment.
+      options:
+        - Reasonable for the described download
+        - Interested, but price-sensitive
+        - Need more product details first
+        - Not a fit at this price
+    validations:
+      required: true
+
+  - type: dropdown
+    id: excel
+    attributes:
+      label: Microsoft Excel access
+      description: The current release candidate is designed for Microsoft Excel; other spreadsheet apps may alter formulas, validation, charts, or formatting.
+      options:
+        - I use Microsoft Excel
+        - I use another spreadsheet app
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: decision-detail
+    attributes:
+      label: What detail would determine your decision?
+      description: Product-related questions only. Do not include private project files or identifying information.
+      placeholder: "Example: supported episode count, a larger dashboard screenshot, or Google Sheets compatibility"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Public-form confirmation
+      options:
+        - label: I understand this is public product research, not an order or payment request.
+          required: true
+        - label: I have not included secrets, private media, confidential information, or personal data.
+          required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        Maintainer: **stark fng**. Launch and checkout details will be added to the repository only after the product and payout channel are approved and verified. No files or payment instructions are exchanged through this public issue.

@@ -8,14 +8,18 @@ VideoHub is a local video processing and intelligent editing workbench built wit
 
 ## Paid setup and customization
 
+### USD 59 self-serve workflow kit (pre-launch validation)
+
+The **VideoHub Series Ops Kit** is being prepared as a one-time USD 59 Excel download with episode tracking, source-rights records, narration timing, subtitle QA, multi-ratio cover checks, final delivery gates, and a dashboard. Review the [actual workbook previews and planned delivery](./SERIES_OPS_KIT.md). It is not yet available for purchase. Use the [public, no-email interest form](https://github.com/cacity/VideoHub/issues/new?template=ops-kit-interest.yml) to share your use case and price fit. An interest issue is not an order, reservation, or payment obligation and does not guarantee a launch date, compatibility, sales, or revenue. Never post secrets, private media, customer data, or personal data.
+
 The MIT-licensed open-source edition remains free. Fixed-scope implementation services are available if you prefer not to troubleshoot Python, FFmpeg, TTS, or repeatable series workflows yourself:
 
-- **Async environment diagnosis — USD 149**: review of the secret-safe preflight report and sanitized error logs, a written root-cause assessment, prioritized next steps, and one email follow-up; fully credited toward QuickStart booked within seven days.
+- **Async environment diagnosis — USD 149**: review of the secret-safe preflight report and sanitized error logs, a written root-cause assessment, prioritized next steps, and one public Issue follow-up; fully credited toward QuickStart booked within seven days.
 - **QuickStart remote setup — USD 299**: installation, one authorized sample, a 45-minute handoff, and seven days of defect support.
 - **Creator Series Workflow — USD 999**: consistent subtitles, aspect ratio, voice, covers, and three authorized samples.
 - **Team Local Deployment — USD 2,999**: private deployment, one custom workflow, acceptance testing, training, and 30 days of defect support.
 
-Services do not include bypassing platform restrictions, processing unlicensed content, third-party API costs, or unlimited maintenance. Read the [full scope, acceptance, and payment terms](./SERVICES.md), open a [public paid support request](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml), or [start a prefilled inquiry with stark fng](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A). Never post secrets, private media, or personal data in a public issue.
+Services do not include bypassing platform restrictions, processing unlicensed content, third-party API costs, or unlimited maintenance. Read the [full scope, acceptance, and payment terms](./SERVICES.md), or open a [public paid support request](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml). Never post secrets, private media, or personal data in a public issue; requests and follow-ups are not handled by email at this time.
 
 Review the evidence first: the [anonymized 11-episode authorized art-content case study](./CASE_STUDY.md) links the claim to repository-verifiable videos, subtitles, chapters, release notes, and 44 multi-format covers. Internal output counts are not presented as client counts or business results.
 

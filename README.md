@@ -8,14 +8,18 @@ VideoHub 是一个基于 PyQt6 的本地视频处理与智能剪辑工作台，�
 
 ## 付费安装与定制支持
 
+### USD 59 自助工作流包（上线前意向验证）
+
+正在准备 **VideoHub Series Ops Kit**：一次性 USD 59 的 Excel 数字下载包，包含剧集跟踪、素材权利、旁白时长、字幕 QA、多画幅封面和最终交付门禁。先查看[真实工作簿预览与交付说明](./SERIES_OPS_KIT.md)；当前尚未开放购买，可通过[公开、无需邮箱的意向表单](https://github.com/cacity/VideoHub/issues/new?template=ops-kit-interest.yml)说明用途和价格匹配度。提交意向不是订单、预约或付款承诺，也不保证上线日期、兼容性、销量或收益。请勿公开提交密钥、私有素材、客户数据或个人敏感信息。
+
 VideoHub 的 MIT 开源版本继续免费。如果你不想自己排查 Python、FFmpeg、TTS 和系列配置，也可以购买固定范围的实施服务：
 
-- **异步环境诊断 — USD 149**：审阅无密钥预检报告与脱敏错误日志，提供书面根因判断、按优先级排列的修复步骤和一次邮件答疑；7 天内升级 QuickStart 可全额抵扣。
+- **异步环境诊断 — USD 149**：审阅无密钥预检报告与脱敏错误日志，提供书面根因判断、按优先级排列的修复步骤和一次公开 Issue 跟进；7 天内升级 QuickStart 可全额抵扣。
 - **QuickStart 远程安装 — USD 299**：安装配置、一个授权样例、45 分钟交接和 7 天缺陷支持。
 - **Creator Series Workflow — USD 999**：统一系列字幕、画幅、音色、封面和三个授权样例。
 - **Team Local Deployment — USD 2,999**：团队私有部署、一个定制流程、验收、培训和 30 天缺陷支持。
 
-服务不包括绕过平台限制、处理未授权内容、第三方 API 费用或无限期维护。查看[完整服务范围、验收与付款说明](./SERVICES.md)，可直接提交[公开的付费支持申请](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml)，或向 [stark fng 发送预填咨询邮件](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A)。公开 Issue 中禁止粘贴密钥、私有素材或个人敏感信息。
+服务不包括绕过平台限制、处理未授权内容、第三方 API 费用或无限期维护。查看[完整服务范围、验收与付款说明](./SERVICES.md)，或直接提交[公开的付费支持申请](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml)。公开 Issue 中禁止粘贴密钥、私有素材或个人敏感信息；当前不通过邮件受理或跟进。
 
 先看证据：[11 期授权艺术内容系列的匿名案例](./CASE_STUDY.md)，包含可在仓库中复核的成片、字幕、章节、发布说明和 44 张多画幅封面；不把内部产出数量包装成客户数量或商业收益。
 
