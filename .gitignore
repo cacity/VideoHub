@@ -3,6 +3,8 @@ plans/
 local_docs/
 *.plan.md
 *.design.md
+videohub_support_report*.json
+videohub_support_report*.md
 .env
 .env.local
 .env.development
