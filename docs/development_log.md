@@ -1500,3 +1500,31 @@ git diff --check -- README.md README_en.md .agents/skills
 - `python scripts/qa_series.py` 为 11/11 PASS：完整解码、1080x1920 H.264、AAC、持续黑场和封面尺寸检查均通过。
 - 第 3 至第 12 期逐期抽取中段画面进行视觉检查，画作长方形上下边界一致，中心均为 960px，未与进度条、字幕或底栏重叠。
 - 居中参数和视觉证据记录在项目 `docs/qa_recenter/recenter_qa.md`。
+## 2026-08-12：付费支持无密钥环境预检与结构化申请
+
+### 更新内容
+
+- 新增 `src/support_preflight.py`，生成 JSON 与 Markdown 环境报告，覆盖 Python、FFmpeg/FFprobe、关键依赖、仓库文件、磁盘空间和目录可写性。
+- 新增 `SUPPORT_REQUEST.md` 中英文申请模板，把服务档位、输入、输出、授权样例、日期和第三方费用偏好结构化。
+- README 中英文版及 `SERVICES.md` 增加预检命令和申请入口。
+- `.gitignore` 排除 `videohub_support_report*.json` 与 `videohub_support_report*.md`，避免机器环境信息进入版本库。
+
+### 设计思路
+
+QuickStart 的首次沟通成本主要来自无法复现的环境描述。预检只做本地、可审计检查，不联网、不扫描媒体、不调用付费 API；凭据只报告“是否配置”，不读取到输出。路径只保留 `<repo>` / `<home>` 后缀或可执行文件名。
+
+目录可写性通过 3 秒硬超时子进程探测，防止权限异常或文件系统问题让整个客户报告无响应。预检失败仍输出完整报告，并使用非零退出码提醒客户处理 FAIL 项。
+
+### 验证结果
+
+- `python -B -m unittest discover -s tests -p 'test_support_preflight.py' -v`：5/5 PASS。
+- 沙箱账户真实运行：24 PASS、2 FAIL；正确识别仓库与 workspace 不可写，未卡住。
+- 普通 Windows 用户权限真实运行：26 PASS、0 WARN、0 FAIL，readiness 为 `ready`。
+- 用当前 `.env` 值做哨兵扫描：报告中的密钥值泄露数为 0。
+- `git check-ignore` 确认两类生成报告均被忽略；`git diff --check` 通过。
+
+### 已知边界
+
+- 预检不验证第三方 API 余额、账号权限、网络可达性、GPU 性能或特定素材兼容性。
+- `ready` 只表示本地基础检查通过，不代表自动接单或承诺某个处理速度。
+- 客户发送报告前仍应自行打开复核，不应附带 `.env` 或任何密钥文件。

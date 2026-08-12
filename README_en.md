@@ -10,6 +10,7 @@ VideoHub is a local video processing and intelligent editing workbench built wit
 
 The MIT-licensed open-source edition remains free. Fixed-scope implementation services are available if you prefer not to troubleshoot Python, FFmpeg, TTS, or repeatable series workflows yourself:
 
+- **Async environment diagnosis — USD 149**: review of the secret-safe preflight report and sanitized error logs, a written root-cause assessment, prioritized next steps, and one email follow-up; fully credited toward QuickStart booked within seven days.
 - **QuickStart remote setup — USD 299**: installation, one authorized sample, a 45-minute handoff, and seven days of defect support.
 - **Creator Series Workflow — USD 999**: consistent subtitles, aspect ratio, voice, covers, and three authorized samples.
 - **Team Local Deployment — USD 2,999**: private deployment, one custom workflow, acceptance testing, training, and 30 days of defect support.
@@ -17,6 +18,8 @@ The MIT-licensed open-source edition remains free. Fixed-scope implementation se
 Services do not include bypassing platform restrictions, processing unlicensed content, third-party API costs, or unlimited maintenance. Read the [full scope, acceptance, and payment terms](./SERVICES.md), or [start a prefilled inquiry with stark fng](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A).
 
 Review the evidence first: the [anonymized 11-episode authorized art-content case study](./CASE_STUDY.md) links the claim to repository-verifiable videos, subtitles, chapters, release notes, and 44 multi-format covers. Internal output counts are not presented as client counts or business results.
+
+Before contacting us, run `python src/support_preflight.py` to generate a local environment report with no network calls or secret values, then use the [paid support request template](./SUPPORT_REQUEST.md) to supply the scope needed for tier and schedule qualification.
 
 ## Install and Use with Codex or Claude Code
 
