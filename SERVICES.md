@@ -10,11 +10,24 @@ VideoHub 的 MIT 开源版本继续免费。以下费用购买的是固定范围
 
 | 服务 | 固定价格 | 适合 | 核心交付 | 支持期 |
 |---|---:|---|---|---:|
+| 异步环境诊断 | USD 149 | 安装失败、依赖冲突或 FFmpeg/TTS 配置问题 | 书面根因判断、修复步骤、一次邮件答疑 | 一次答疑 |
 | QuickStart 远程安装 | USD 299 | 单台电脑、一个明确流程 | 环境检查、安装、一个授权样例、45 分钟交接 | 7 天 |
 | Creator Series Workflow | USD 999 | 课程、访谈或连续内容 | 统一字幕、画幅、音色、封面，三个授权样例，操作说明 | 14 天 |
 | Team Local Deployment | USD 2,999 | 小团队或私有环境 | 本地/私有部署、一个定制工作流、验收测试、90 分钟培训 | 30 天 |
 
 “支持期”仅覆盖已约定范围内可复现的缺陷，不包括新增功能、第三方平台变化、API 余额或客户环境变更。
+
+## 0. 异步环境诊断 — USD 149
+
+交付内容：
+
+- 审阅 `support_preflight.py` 生成的无密钥报告，以及客户主动提供的脱敏错误日志。
+- 在两个工作日内提供一份书面诊断：可能根因、证据、按优先级排列的修复步骤和仍需客户确认的项目。
+- 通过邮件回答一次与该诊断直接相关的后续问题。
+
+验收：交付文件明确列出已确认事实、无法确认的限制、建议执行顺序和可复核命令。诊断不包含远程登录、实际安装、代码修改、未授权素材处理或结果保证。
+
+付款：确认材料足够诊断后全额预付。若在诊断交付后 7 个日历日内预订同一台电脑、同一问题范围的 QuickStart，USD 149 全额抵扣 QuickStart 价格；不兑换现金，不与其他折扣叠加。
 
 ## 1. QuickStart 远程安装 — USD 299
 
@@ -85,6 +98,10 @@ VideoHub 的 MIT 开源版本继续免费。以下费用购买的是固定范围
 ## English summary
 
 The MIT-licensed open-source edition remains free. These fixed prices cover implementation and handoff, not a software license.
+
+### Async environment diagnosis — USD 149
+
+Review of the secret-safe preflight report and customer-sanitized error logs, followed within two business days by a written root-cause assessment, evidence, prioritized remediation steps, known limits, and one directly related email follow-up. It excludes remote login, installation, code changes, private media handling, and outcome guarantees. Paid in full after feasibility is confirmed. The USD 149 fee is fully credited toward QuickStart booked within seven calendar days for the same computer and issue scope; it is not cash-redeemable or combinable with other discounts.
 
 ### QuickStart remote setup — USD 299
 

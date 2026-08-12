@@ -10,6 +10,7 @@ VideoHub is a local video processing and intelligent editing workbench built wit
 
 The MIT-licensed open-source edition remains free. Fixed-scope implementation services are available if you prefer not to troubleshoot Python, FFmpeg, TTS, or repeatable series workflows yourself:
 
+- **Async environment diagnosis — USD 149**: review of the secret-safe preflight report and sanitized error logs, a written root-cause assessment, prioritized next steps, and one email follow-up; fully credited toward QuickStart booked within seven days.
 - **QuickStart remote setup — USD 299**: installation, one authorized sample, a 45-minute handoff, and seven days of defect support.
 - **Creator Series Workflow — USD 999**: consistent subtitles, aspect ratio, voice, covers, and three authorized samples.
 - **Team Local Deployment — USD 2,999**: private deployment, one custom workflow, acceptance testing, training, and 30 days of defect support.

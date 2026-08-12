@@ -7,7 +7,7 @@
 ## 申请模板
 
 ```text
-服务档位：QuickStart USD 299 / Creator USD 999 / Team USD 2,999 / 不确定
+服务档位：诊断 USD 149 / QuickStart USD 299 / Creator USD 999 / Team USD 2,999 / 不确定
 操作系统与版本：
 个人或团队：
 希望跑通的一个明确流程：
@@ -37,6 +37,7 @@ python src/support_preflight.py
 
 ## 如何选择档位
 
+- 只需先确认失败原因和修复顺序，不需要远程登录或实际安装：诊断 USD 149。
 - 只需在一台 Windows 电脑安装并跑通一个样例：QuickStart USD 299。
 - 需要统一三个系列样例的字幕、音色、画幅和封面：Creator USD 999。
 - 需要私有部署、定制团队流程、验收测试和培训：Team USD 2,999。
@@ -50,7 +51,7 @@ python src/support_preflight.py
 Copy these fields into your email and attach the secret-safe preflight report. Do not send passwords, cookies, tokens, API keys, private media, or complete customer datasets.
 
 ```text
-Service tier: QuickStart USD 299 / Creator USD 999 / Team USD 2,999 / unsure
+Service tier: Diagnosis USD 149 / QuickStart USD 299 / Creator USD 999 / Team USD 2,999 / unsure
 OS and version:
 Individual or team:
 One workflow to make repeatable:
@@ -64,4 +65,3 @@ Additional notes:
 ```
 
 Run `python src/support_preflight.py` from the repository root. It makes no network calls, scans no media, and reports only versions, executable/package status, storage, writable directories, and whether optional credentials are configured. Secret values are never included.
-
