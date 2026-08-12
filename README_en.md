@@ -25,7 +25,7 @@ Services do not include bypassing platform restrictions, processing unlicensed c
 
 Review the evidence first: the [anonymized 11-episode authorized art-content case study](./CASE_STUDY.md) links the claim to repository-verifiable videos, subtitles, chapters, release notes, and 44 multi-format covers. Internal output counts are not presented as client counts or business results.
 
-Before contacting us, run `python src/support_preflight.py` to generate a local environment report with no network calls or secret values, then use the [paid support request template](./SUPPORT_REQUEST.md) to supply the scope needed for tier and schedule qualification.
+Before contacting us, run `python src/support_preflight.py` to generate a local environment report with no network calls or secret values, then use the [paid support request template](./SUPPORT_REQUEST.md) to supply the scope needed for tier and schedule qualification. If you only need the likely cause and remediation order, review the [sanitized USD 149 diagnosis delivery example](./docs/support_diagnosis_example.md).
 
 ## Install and Use with Codex or Claude Code
 

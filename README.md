@@ -25,7 +25,7 @@ VideoHub 的 MIT 开源版本继续免费。如果你不想自己排查 Python�
 
 先看证据：[11 期授权艺术内容系列的匿名案例](./CASE_STUDY.md)，包含可在仓库中复核的成片、字幕、章节、发布说明和 44 张多画幅封面；不把内部产出数量包装成客户数量或商业收益。
 
-咨询前可运行 `python src/support_preflight.py`，生成不联网、不含密钥值的环境报告；再按[付费支持申请模板](./SUPPORT_REQUEST.md)提供范围信息，可以更快判断适合的档位与排期。只想先确认问题和修复路径，可选择 USD 149 异步环境诊断。
+咨询前可运行 `python src/support_preflight.py`，生成不联网、不含密钥值的环境报告；再按[付费支持申请模板](./SUPPORT_REQUEST.md)提供范围信息，可以更快判断适合的档位与排期。只想先确认问题和修复路径，可选择 USD 149 异步环境诊断，并先查看[脱敏交付样例](./docs/support_diagnosis_example.md)。
 
 ## 在 Codex / Claude Code 中安装和使用
 
