@@ -2,9 +2,11 @@
 
 VideoHub 的 MIT 开源版本继续免费。以下费用购买的是固定范围的安装、配置、实施、验收和交接，不是软件许可证。
 
-联系 / Contact: **stark fng** · [gf7823332@gmail.com](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support)
+维护者 / Maintainer: **stark fng**
 
-[提交公开付费支持申请 / Open a public paid support request](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml) · [发送预填咨询邮件 / Start an inquiry](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A)
+[提交公开付费支持申请 / Open a public paid support request](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml)
+
+当前仅通过公开 GitHub Issue 受理和跟进，不使用邮件。Requests and follow-ups are handled only in public GitHub Issues at this time, not by email.
 
 公开 Issue 中禁止粘贴密码、API 密钥、cookies、私有下载链接、保密素材或个人敏感信息。Never post passwords, API keys, cookies, private links, confidential media, or personal data in a public issue.
 
@@ -12,7 +14,7 @@ VideoHub 的 MIT 开源版本继续免费。以下费用购买的是固定范围
 
 | 服务 | 固定价格 | 适合 | 核心交付 | 支持期 |
 |---|---:|---|---|---:|
-| 异步环境诊断 | USD 149 | 安装失败、依赖冲突或 FFmpeg/TTS 配置问题 | 书面根因判断、修复步骤、一次邮件答疑 | 一次答疑 |
+| 异步环境诊断 | USD 149 | 安装失败、依赖冲突或 FFmpeg/TTS 配置问题 | 书面根因判断、修复步骤、一次公开 Issue 跟进 | 一次跟进 |
 | QuickStart 远程安装 | USD 299 | 单台电脑、一个明确流程 | 环境检查、安装、一个授权样例、45 分钟交接 | 7 天 |
 | Creator Series Workflow | USD 999 | 课程、访谈或连续内容 | 统一字幕、画幅、音色、封面，三个授权样例，操作说明 | 14 天 |
 | Team Local Deployment | USD 2,999 | 小团队或私有环境 | 本地/私有部署、一个定制工作流、验收测试、90 分钟培训 | 30 天 |
@@ -25,7 +27,7 @@ VideoHub 的 MIT 开源版本继续免费。以下费用购买的是固定范围
 
 - 审阅 `support_preflight.py` 生成的无密钥报告，以及客户主动提供的脱敏错误日志。
 - 在两个工作日内提供一份书面诊断：可能根因、证据、按优先级排列的修复步骤和仍需客户确认的项目。
-- 通过邮件回答一次与该诊断直接相关的后续问题。
+- 在原公开申请 Issue 中回答一次与该诊断直接相关的后续问题，不交换私有材料。
 
 验收：交付文件明确列出已确认事实、无法确认的限制、建议执行顺序和可复核命令。诊断不包含远程登录、实际安装、代码修改、未授权素材处理或结果保证。
 
@@ -92,7 +94,7 @@ VideoHub 的 MIT 开源版本继续免费。以下费用购买的是固定范围
 - 无限修改、无限期维护、未约定的平台或工作流。
 - 账号密码托管、非法数据迁移、虚假结果或业务效果保证。
 
-客户不应通过邮件发送密码、Cookie、Token、API Key 或其他密钥。需要密钥的功能由客户在自己的环境中配置。
+客户不应在公开 Issue 中提交密码、Cookie、Token、API Key、私有素材或其他敏感信息。需要密钥的功能由客户在自己的环境中配置。
 预检工具不会联网或验证第三方账号余额，只报告本地基础环境和“是否配置”；预检结果不是性能、兼容性或接单承诺。
 
 ---
@@ -103,7 +105,7 @@ The MIT-licensed open-source edition remains free. These fixed prices cover impl
 
 ### Async environment diagnosis — USD 149
 
-Review of the secret-safe preflight report and customer-sanitized error logs, followed within two business days by a written root-cause assessment, evidence, prioritized remediation steps, known limits, and one directly related email follow-up. It excludes remote login, installation, code changes, private media handling, and outcome guarantees. Paid in full after feasibility is confirmed. The USD 149 fee is fully credited toward QuickStart booked within seven calendar days for the same computer and issue scope; it is not cash-redeemable or combinable with other discounts.
+Review of the secret-safe preflight report and customer-sanitized error logs, followed within two business days by a written root-cause assessment, evidence, prioritized remediation steps, known limits, and one directly related follow-up in the original public Issue. It excludes remote login, installation, code changes, private media handling, and outcome guarantees. Paid in full after feasibility is confirmed. The USD 149 fee is fully credited toward QuickStart booked within seven calendar days for the same computer and issue scope; it is not cash-redeemable or combinable with other discounts.
 
 ### QuickStart remote setup — USD 299
 
@@ -117,4 +119,4 @@ One repeatable series workflow with consistent subtitles, aspect ratio, voice, c
 
 One local or private deployment, one fixed-scope team workflow, input/output contract, logs, acceptance tests, a 90-minute training session, one consolidated revision, and 30 days of in-scope defect support. Payment: 50% deposit, 25% when the acceptance environment runs, and 25% before final delivery.
 
-All work requires authorized content and a written scope. Third-party fees, platform bypasses, credentials custody, unlimited changes, and business-result guarantees are excluded. Do not email passwords, cookies, tokens, API keys, or other secrets.
+All work requires authorized content and a written scope. Third-party fees, platform bypasses, credentials custody, unlimited changes, and business-result guarantees are excluded. Do not post passwords, cookies, tokens, API keys, private media, or other secrets in a public Issue.
