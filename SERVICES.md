@@ -31,6 +31,8 @@ VideoHub 的 MIT 开源版本继续免费。以下费用购买的是固定范围
 
 验收：交付文件明确列出已确认事实、无法确认的限制、建议执行顺序和可复核命令。诊断不包含远程登录、实际安装、代码修改、未授权素材处理或结果保证。
 
+购买前可查看[使用虚构机器信息制作的脱敏交付样例](./docs/support_diagnosis_example.md)。样例只展示报告结构和判断深度，不代表客户案例、真实订单、免费个案诊断或兼容性保证。
+
 付款：确认材料足够诊断后全额预付。若在诊断交付后 7 个日历日内预订同一台电脑、同一问题范围的 QuickStart，USD 149 全额抵扣 QuickStart 价格；不兑换现金，不与其他折扣叠加。
 
 ## 1. QuickStart 远程安装 — USD 299
@@ -106,6 +108,8 @@ The MIT-licensed open-source edition remains free. These fixed prices cover impl
 ### Async environment diagnosis — USD 149
 
 Review of the secret-safe preflight report and customer-sanitized error logs, followed within two business days by a written root-cause assessment, evidence, prioritized remediation steps, known limits, and one directly related follow-up in the original public Issue. It excludes remote login, installation, code changes, private media handling, and outcome guarantees. Paid in full after feasibility is confirmed. The USD 149 fee is fully credited toward QuickStart booked within seven calendar days for the same computer and issue scope; it is not cash-redeemable or combinable with other discounts.
+
+[Review a sanitized delivery example built with fictional machine details](./docs/support_diagnosis_example.md). It demonstrates report structure and reasoning depth; it is not a customer case, real order, free individual diagnosis, or compatibility guarantee.
 
 ### QuickStart remote setup — USD 299
 
