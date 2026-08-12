@@ -16,6 +16,8 @@ VideoHub 的 MIT 开源版本继续免费。如果你不想自己排查 Python�
 
 服务不包括绕过平台限制、处理未授权内容、第三方 API 费用或无限期维护。查看[完整服务范围、验收与付款说明](./SERVICES.md)，或向 [stark fng 发送预填咨询邮件](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A)。
 
+先看证据：[11 期授权艺术内容系列的匿名案例](./CASE_STUDY.md)，包含可在仓库中复核的成片、字幕、章节、发布说明和 44 张多画幅封面；不把内部产出数量包装成客户数量或商业收益。
+
 ## 在 Codex / Claude Code 中安装和使用
 
 项目地址：[https://github.com/cacity/VideoHub](https://github.com/cacity/VideoHub)

@@ -16,6 +16,8 @@ The MIT-licensed open-source edition remains free. Fixed-scope implementation se
 
 Services do not include bypassing platform restrictions, processing unlicensed content, third-party API costs, or unlimited maintenance. Read the [full scope, acceptance, and payment terms](./SERVICES.md), or [start a prefilled inquiry with stark fng](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A).
 
+Review the evidence first: the [anonymized 11-episode authorized art-content case study](./CASE_STUDY.md) links the claim to repository-verifiable videos, subtitles, chapters, release notes, and 44 multi-format covers. Internal output counts are not presented as client counts or business results.
+
 ## Install and Use with Codex or Claude Code
 
 Repository: [https://github.com/cacity/VideoHub](https://github.com/cacity/VideoHub)
