@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Paid service scope and terms
+    url: https://github.com/cacity/VideoHub/blob/main/SERVICES.md
+    about: Review fixed prices, deliverables, acceptance criteria, and payment gates before opening a request.

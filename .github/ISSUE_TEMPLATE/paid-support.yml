@@ -1,0 +1,91 @@
+name: Paid support request
+description: Request fixed-scope setup, diagnosis, workflow, or team deployment support.
+title: "[Paid support] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for considering paid VideoHub support. This form is public.
+
+        Do not paste passwords, API keys, cookies, private download links, confidential media, personal data, or unpublished customer materials. Use placeholders and a legally shareable, sanitized example only.
+
+        Published options: USD 149 async diagnosis, USD 299 QuickStart, USD 999 Creator Series Workflow, and USD 2,999 Team Local Deployment. Opening this issue is an inquiry, not an order or payment obligation.
+
+  - type: dropdown
+    id: service
+    attributes:
+      label: Service option
+      description: Choose the closest option. Scope is confirmed before payment.
+      options:
+        - USD 149 — Async environment diagnosis
+        - USD 299 — QuickStart remote setup
+        - USD 999 — Creator Series Workflow
+        - USD 2,999 — Team Local Deployment
+        - Not sure — qualification only
+    validations:
+      required: true
+
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system and hardware
+      description: "Example: Windows 11, 32 GB RAM, NVIDIA RTX 4060. Do not include device IDs or account details."
+      placeholder: Windows version, RAM, CPU/GPU
+    validations:
+      required: true
+
+  - type: textarea
+    id: workflow-goal
+    attributes:
+      label: Workflow goal
+      description: Describe the input, expected output, volume, and the step currently blocking you.
+      placeholder: We have authorized local MP4 files and need...
+    validations:
+      required: true
+
+  - type: textarea
+    id: sanitized-evidence
+    attributes:
+      label: Sanitized evidence
+      description: Paste only non-sensitive error text or a summary from support_preflight.py. Never include secret values or private file links.
+      placeholder: Error summary or redacted preflight details
+    validations:
+      required: false
+
+  - type: input
+    id: target-date
+    attributes:
+      label: Target date
+      description: Give a realistic date and timezone.
+      placeholder: YYYY-MM-DD, timezone
+    validations:
+      required: true
+
+  - type: dropdown
+    id: buyer-type
+    attributes:
+      label: Buyer type
+      options:
+        - Individual
+        - Team or organization
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: authorization
+    attributes:
+      label: Authorization and scope confirmation
+      options:
+        - label: I have the right to provide and process the described materials.
+          required: true
+        - label: I will not provide passwords, tokens, cookies, restricted data, or confidential media in this public issue.
+          required: true
+        - label: I understand that third-party API, cloud, and media-license costs are not included.
+          required: true
+        - label: I understand that work starts only after written scope confirmation and the required verified payment or funded platform milestone.
+          required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        Maintainer: **stark fng**. A response will confirm whether the request fits a published tier, the exact deliverables, acceptance checks, schedule, and payment gate. Do not send private materials until a secure transfer method is agreed.

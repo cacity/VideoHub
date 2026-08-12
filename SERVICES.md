@@ -4,7 +4,9 @@ VideoHub 的 MIT 开源版本继续免费。以下费用购买的是固定范围
 
 联系 / Contact: **stark fng** · [gf7823332@gmail.com](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support)
 
-[发送预填咨询邮件 / Start an inquiry](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A)
+[提交公开付费支持申请 / Open a public paid support request](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml) · [发送预填咨询邮件 / Start an inquiry](mailto:gf7823332@gmail.com?subject=VideoHub%20paid%20support&body=Service%20tier%3A%0AOperating%20system%3A%0AWorkflow%20goal%3A%0AAuthorized%20sample%3A%0ATarget%20date%3A%0AIndividual%20or%20team%3A)
+
+公开 Issue 中禁止粘贴密码、API 密钥、cookies、私有下载链接、保密素材或个人敏感信息。Never post passwords, API keys, cookies, private links, confidential media, or personal data in a public issue.
 
 ## 服务对比
 
