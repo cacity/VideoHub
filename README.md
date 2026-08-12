@@ -6,6 +6,8 @@
 
 VideoHub 是一个基于 PyQt6 的本地视频处理与智能剪辑工作台，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等平台及本地媒体。除了视频下载、音频提取、Whisper 转录、双语字幕、字幕翻译、**AI 配音**和内容摘要，它还通过供 Codex、Claude Code、DeepSeek 等智能助手调用的项目级 Skills，提供基于字幕与画面证据的故事剪辑、影视解说、连续剧批量自动剪辑、音乐卡点、多画幅封面和完整发布包。桌面端同时支持批量处理、闲时队列和剧集目录项目化管理，让多集视频可以按统一配置分阶段处理、复用中间资源并持续调整。
 
+> **需要尽快跑通或定制工作流？** 现有固定范围付费支持从 **USD 149** 起，可直接提交[公开付费支持申请](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml)。无需邮箱；请勿提交密钥、私有素材、客户数据或个人敏感信息。
+
 ## 付费安装与定制支持
 
 ### USD 59 自助工作流包（上线前意向验证）

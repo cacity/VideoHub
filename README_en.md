@@ -6,6 +6,8 @@ English | [简体中文](./README.md)
 
 VideoHub is a local video processing and intelligent editing workbench built with **PyQt6**, supporting **YouTube, Twitter/X, Douyin/TikTok, Instagram, Bilibili**, and local media. Alongside downloading, audio extraction, Whisper transcription, bilingual subtitles, subtitle translation, **AI dubbing**, and LLM summaries, its project-level skills for Codex, Claude Code, DeepSeek, and compatible agents provide evidence-grounded story editing, film commentary, configuration-driven batch episode editing, beat-synced edits, multi-format covers, and complete publishing packages. The desktop application also includes batch processing, an idle-time queue, and portable series-directory projects so multi-episode work can run in stages, reuse intermediate assets, and remain editable.
 
+> **Need a working or customized workflow quickly?** Fixed-scope paid support starts at **USD 149**. Open a [public paid-support request](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml). No email is required; never post secrets, private media, customer data, or personal data.
+
 ## Paid setup and customization
 
 ### USD 59 self-serve workflow kit (pre-launch validation)
