@@ -10,7 +10,7 @@ VideoHub 是一个基于 PyQt6 的本地视频处理与智能剪辑工作台，�
 
 ### USD 59 自助工作流包（上线前意向验证）
 
-正在准备 **VideoHub Series Ops Kit**：一次性 USD 59 的 Excel 数字下载包，包含剧集跟踪、素材权利、旁白时长、字幕 QA、多画幅封面和最终交付门禁。当前尚未开放购买；可通过[公开、无需邮箱的意向表单](https://github.com/cacity/VideoHub/issues/new?template=ops-kit-interest.yml)说明用途和价格匹配度。提交意向不是订单、预约或付款承诺，也不保证上线日期、兼容性、销量或收益。请勿公开提交密钥、私有素材、客户数据或个人敏感信息。
+正在准备 **VideoHub Series Ops Kit**：一次性 USD 59 的 Excel 数字下载包，包含剧集跟踪、素材权利、旁白时长、字幕 QA、多画幅封面和最终交付门禁。先查看[真实工作簿预览与交付说明](./SERIES_OPS_KIT.md)；当前尚未开放购买，可通过[公开、无需邮箱的意向表单](https://github.com/cacity/VideoHub/issues/new?template=ops-kit-interest.yml)说明用途和价格匹配度。提交意向不是订单、预约或付款承诺，也不保证上线日期、兼容性、销量或收益。请勿公开提交密钥、私有素材、客户数据或个人敏感信息。
 
 VideoHub 的 MIT 开源版本继续免费。如果你不想自己排查 Python、FFmpeg、TTS 和系列配置，也可以购买固定范围的实施服务：
 

@@ -10,7 +10,7 @@ VideoHub is a local video processing and intelligent editing workbench built wit
 
 ### USD 59 self-serve workflow kit (pre-launch validation)
 
-The **VideoHub Series Ops Kit** is being prepared as a one-time USD 59 Excel download with episode tracking, source-rights records, narration timing, subtitle QA, multi-ratio cover checks, final delivery gates, and a dashboard. It is not yet available for purchase. Use the [public, no-email interest form](https://github.com/cacity/VideoHub/issues/new?template=ops-kit-interest.yml) to share your use case and price fit. An interest issue is not an order, reservation, or payment obligation and does not guarantee a launch date, compatibility, sales, or revenue. Never post secrets, private media, customer data, or personal data.
+The **VideoHub Series Ops Kit** is being prepared as a one-time USD 59 Excel download with episode tracking, source-rights records, narration timing, subtitle QA, multi-ratio cover checks, final delivery gates, and a dashboard. Review the [actual workbook previews and planned delivery](./SERIES_OPS_KIT.md). It is not yet available for purchase. Use the [public, no-email interest form](https://github.com/cacity/VideoHub/issues/new?template=ops-kit-interest.yml) to share your use case and price fit. An interest issue is not an order, reservation, or payment obligation and does not guarantee a launch date, compatibility, sales, or revenue. Never post secrets, private media, customer data, or personal data.
 
 The MIT-licensed open-source edition remains free. Fixed-scope implementation services are available if you prefer not to troubleshoot Python, FFmpeg, TTS, or repeatable series workflows yourself:
 
