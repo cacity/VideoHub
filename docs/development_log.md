@@ -1558,3 +1558,29 @@ QuickStart 的首次沟通成本主要来自无法复现的环境描述。预检
 
 - GitHub README 不直接内嵌播放 MP4；用户需要点击缩略图进入视频文件页面播放或下载。
 - 样片来自既有项目成片，仅用于功能演示。仓库不声明拥有原始影视、音乐或画面素材的版权，发布者仍需自行确认素材授权。
+
+## 2026-08-21：作品展示在线播放修复
+
+### 更新内容
+
+- 新增 `docs/showcase/index.html` 静态播放器，通过查询参数选择五个既有展示样片。
+- 中英文 README 的封面链接由仓库 MP4 文件页改为 GitHub Pages 播放器地址。
+- GitHub Pages 使用 `main` 分支的 `/docs` 目录发布，不重复上传视频文件。
+
+### 原因与设计
+
+GitHub 仓库 `blob` 地址返回 HTML 文件查看页；`raw.githubusercontent.com` 对仓库 MP4 返回 `application/octet-stream` 和 `X-Content-Type-Options: nosniff`，浏览器会下载文件而不是可靠地调用视频播放器。修复方式与参考项目一致：让 README 只展示缩略图，点击后进入独立的静态 HTML5 播放器。
+
+播放器只接受代码中列出的五个文件名，查询参数无法拼接任意路径。视频继续保存在 `docs/assets/showcase/`，页面通过相对路径读取，减少重复资产和维护成本。
+
+### 验证结果
+
+- 本地静态服务返回播放器页面 `200 text/html`，MP4 返回 `200 video/mp4`。
+- 内联 JavaScript 语法检查通过，五个视频文件名均存在于播放器白名单映射中。
+- HTML5 `video` 使用 `controls`、`playsinline` 和 `preload="metadata"`，页面在 760px 与 440px 两个断点调整布局。
+- `git diff --check` 通过；发布后继续检查 Pages 页面、媒体响应头及 README 的五个入口。
+
+### 已知边界
+
+- GitHub Pages 首次启用或新提交发布通常需要短暂构建时间，期间地址可能暂时返回 404。
+- 浏览器不会强制带声音自动播放，用户仍需点击播放器的播放按钮。

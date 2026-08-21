@@ -15,29 +15,29 @@ VideoHub 是一个基于 PyQt6 的本地视频处理与智能剪辑工作台，�
 <table>
   <tr>
     <td align="center" width="33%">
-      <a href="./docs/assets/showcase/beat-edit-japan.mp4"><img src="./docs/assets/showcase/beat-edit-japan.jpg" width="300" alt="日本风景音乐卡点视频样片"></a><br>
+      <a href="https://cacity.github.io/VideoHub/showcase/?video=beat-edit-japan.mp4"><img src="./docs/assets/showcase/beat-edit-japan.jpg" width="300" alt="日本风景音乐卡点视频样片"></a><br>
       <strong>日本风景音乐卡点</strong><br>
       卡点剪辑 · 17 秒
     </td>
     <td align="center" width="33%">
-      <a href="./docs/assets/showcase/wife-elementary-school.mp4"><img src="./docs/assets/showcase/wife-elementary-school.jpg" width="300" alt="妻子变成小学生影视解说样片"></a><br>
+      <a href="https://cacity.github.io/VideoHub/showcase/?video=wife-elementary-school.mp4"><img src="./docs/assets/showcase/wife-elementary-school.jpg" width="300" alt="妻子变成小学生影视解说样片"></a><br>
       <strong>妻子变成小学生</strong><br>
       影视解说 · 12 秒
     </td>
     <td align="center" width="33%">
-      <a href="./docs/assets/showcase/banshaku-no-ryugi.mp4"><img src="./docs/assets/showcase/banshaku-no-ryugi.jpg" width="300" alt="晚酌的流派连续剧解说样片"></a><br>
+      <a href="https://cacity.github.io/VideoHub/showcase/?video=banshaku-no-ryugi.mp4"><img src="./docs/assets/showcase/banshaku-no-ryugi.jpg" width="300" alt="晚酌的流派连续剧解说样片"></a><br>
       <strong>晚酌的流派</strong><br>
       连续剧解说 · 15 秒
     </td>
   </tr>
   <tr>
     <td align="center" width="33%">
-      <a href="./docs/assets/showcase/day-of-the-jackal.mp4"><img src="./docs/assets/showcase/day-of-the-jackal.jpg" width="300" alt="豺狼的日子外语剧解说样片"></a><br>
+      <a href="https://cacity.github.io/VideoHub/showcase/?video=day-of-the-jackal.mp4"><img src="./docs/assets/showcase/day-of-the-jackal.jpg" width="300" alt="豺狼的日子外语剧解说样片"></a><br>
       <strong>豺狼的日子</strong><br>
       外语剧解说 · 12 秒
     </td>
     <td align="center" width="33%">
-      <a href="./docs/assets/showcase/kim-agent.mp4"><img src="./docs/assets/showcase/kim-agent.jpg" width="300" alt="金特务本色回归动作剧解说样片"></a><br>
+      <a href="https://cacity.github.io/VideoHub/showcase/?video=kim-agent.mp4"><img src="./docs/assets/showcase/kim-agent.jpg" width="300" alt="金特务本色回归动作剧解说样片"></a><br>
       <strong>金特务：本色回归</strong><br>
       动作剧解说 · 11 秒
     </td>
