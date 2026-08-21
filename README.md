@@ -8,6 +8,45 @@ VideoHub 是一个基于 PyQt6 的本地视频处理与智能剪辑工作台，�
 
 > **需要尽快跑通或定制工作流？** 现有固定范围付费支持从 **USD 149** 起，可直接提交[公开付费支持申请](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml)。无需邮箱；请勿提交密钥、私有素材、客户数据或个人敏感信息。
 
+## 作品展示 🎬
+
+以下短样片均由 VideoHub 现有工作流实际生成，并从已完成成片中截取约 11–17 秒。**点击预览图即可播放**，可直观看到音乐卡点、影视解说、TTS 旁白、字幕和连续剧批量制作效果。
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <a href="./docs/assets/showcase/beat-edit-japan.mp4"><img src="./docs/assets/showcase/beat-edit-japan.jpg" width="300" alt="日本风景音乐卡点视频样片"></a><br>
+      <strong>日本风景音乐卡点</strong><br>
+      卡点剪辑 · 17 秒
+    </td>
+    <td align="center" width="33%">
+      <a href="./docs/assets/showcase/wife-elementary-school.mp4"><img src="./docs/assets/showcase/wife-elementary-school.jpg" width="300" alt="妻子变成小学生影视解说样片"></a><br>
+      <strong>妻子变成小学生</strong><br>
+      影视解说 · 12 秒
+    </td>
+    <td align="center" width="33%">
+      <a href="./docs/assets/showcase/banshaku-no-ryugi.mp4"><img src="./docs/assets/showcase/banshaku-no-ryugi.jpg" width="300" alt="晚酌的流派连续剧解说样片"></a><br>
+      <strong>晚酌的流派</strong><br>
+      连续剧解说 · 15 秒
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <a href="./docs/assets/showcase/day-of-the-jackal.mp4"><img src="./docs/assets/showcase/day-of-the-jackal.jpg" width="300" alt="豺狼的日子外语剧解说样片"></a><br>
+      <strong>豺狼的日子</strong><br>
+      外语剧解说 · 12 秒
+    </td>
+    <td align="center" width="33%">
+      <a href="./docs/assets/showcase/kim-agent.mp4"><img src="./docs/assets/showcase/kim-agent.jpg" width="300" alt="金特务本色回归动作剧解说样片"></a><br>
+      <strong>金特务：本色回归</strong><br>
+      动作剧解说 · 11 秒
+    </td>
+    <td width="33%"></td>
+  </tr>
+</table>
+
+> 样片仅用于展示 VideoHub 的处理结果，不代表对原始影视、音乐或画面素材拥有版权。原素材权利归各自权利人所有，请只处理和发布你有权使用的内容。
+
 ## 付费安装与定制支持
 
 ### USD 59 自助工作流包（上线前意向验证）

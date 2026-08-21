@@ -121,6 +121,10 @@ chromedriver.exe
 *.wav
 *.flac
 
+# README 作品展示：仅允许提交经过压缩的短样片和缩略图
+!docs/assets/showcase/*.jpg
+!docs/assets/showcase/*.mp4
+
 # 备份文件
 *.backup
 *.bak
