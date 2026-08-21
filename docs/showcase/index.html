@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="VideoHub 实际工作流生成的视频样片播放器。">
+  <title>VideoHub 作品展示</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #0f1113;
+      color: #f5f7f9;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: #0f1113;
+    }
+
+    a { color: inherit; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 58px;
+      padding: 0 24px;
+      border-bottom: 1px solid #2d3237;
+      background: #171a1d;
+    }
+
+    .brand {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .repo-link {
+      color: #b8c1ca;
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    .repo-link:hover { color: #ffffff; }
+
+    main {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      padding: 28px 24px 48px;
+    }
+
+    .player-shell {
+      overflow: hidden;
+      background: #000000;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      aspect-ratio: 16 / 9;
+    }
+
+    video {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000000;
+    }
+
+    h1 {
+      margin: 22px 0 4px;
+      font-size: clamp(24px, 3vw, 36px);
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .meta {
+      margin: 0;
+      color: #aeb7c0;
+      font-size: 14px;
+    }
+
+    h2 {
+      margin: 34px 0 14px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .clip-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .clip {
+      display: block;
+      overflow: hidden;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #191d21;
+      text-decoration: none;
+    }
+
+    .clip[aria-current="true"] {
+      border-color: #22b8a9;
+      box-shadow: 0 0 0 1px #22b8a9;
+    }
+
+    .clip img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+    }
+
+    .clip span {
+      display: block;
+      padding: 10px 12px 12px;
+      overflow: hidden;
+      color: #eef1f4;
+      font-size: 14px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .notice {
+      margin: 24px 0 0;
+      padding-top: 18px;
+      border-top: 1px solid #2d3237;
+      color: #909aa4;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 760px) {
+      .topbar { padding: 0 16px; }
+      main { padding: 18px 12px 36px; }
+      .clip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 440px) {
+      .repo-link { font-size: 13px; }
+      .clip-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">VideoHub 作品展示</div>
+    <a class="repo-link" href="https://github.com/cacity/VideoHub">返回 GitHub</a>
+  </header>
+
+  <main>
+    <div class="player-shell">
+      <video id="showcase-player" controls playsinline preload="metadata"></video>
+    </div>
+    <h1 id="clip-title">VideoHub 样片</h1>
+    <p class="meta" id="clip-meta"></p>
+
+    <h2>其他样片</h2>
+    <div class="clip-grid" id="clip-grid"></div>
+
+    <p class="notice">样片仅用于展示 VideoHub 的处理结果。原始影视、音乐和画面素材的权利归各自权利人所有，请只处理和发布你有权使用的内容。</p>
+  </main>
+
+  <script>
+    const clips = {
+      "beat-edit-japan.mp4": {
+        title: "日本风景音乐卡点",
+        meta: "卡点剪辑 · 17 秒",
+        poster: "beat-edit-japan.jpg"
+      },
+      "wife-elementary-school.mp4": {
+        title: "妻子变成小学生",
+        meta: "影视解说 · 12 秒",
+        poster: "wife-elementary-school.jpg"
+      },
+      "banshaku-no-ryugi.mp4": {
+        title: "晚酌的流派",
+        meta: "连续剧解说 · 15 秒",
+        poster: "banshaku-no-ryugi.jpg"
+      },
+      "day-of-the-jackal.mp4": {
+        title: "豺狼的日子",
+        meta: "外语剧解说 · 12 秒",
+        poster: "day-of-the-jackal.jpg"
+      },
+      "kim-agent.mp4": {
+        title: "金特务：本色回归",
+        meta: "动作剧解说 · 11 秒",
+        poster: "kim-agent.jpg"
+      }
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("video");
+    const current = Object.prototype.hasOwnProperty.call(clips, requested)
+      ? requested
+      : Object.keys(clips)[0];
+    const selected = clips[current];
+    const assetRoot = "../assets/showcase/";
+    const player = document.getElementById("showcase-player");
+
+    player.src = assetRoot + encodeURIComponent(current);
+    player.poster = assetRoot + encodeURIComponent(selected.poster);
+    document.getElementById("clip-title").textContent = selected.title;
+    document.getElementById("clip-meta").textContent = selected.meta;
+    document.title = selected.title + " | VideoHub";
+
+    const grid = document.getElementById("clip-grid");
+    Object.entries(clips).forEach(([fileName, clip]) => {
+      const link = document.createElement("a");
+      link.className = "clip";
+      link.href = "?video=" + encodeURIComponent(fileName);
+      link.setAttribute("aria-current", String(fileName === current));
+
+      const image = document.createElement("img");
+      image.src = assetRoot + encodeURIComponent(clip.poster);
+      image.alt = clip.title;
+      image.loading = "lazy";
+
+      const label = document.createElement("span");
+      label.textContent = clip.title;
+      link.append(image, label);
+      grid.appendChild(link);
+    });
+  </script>
+</body>
+</html>
