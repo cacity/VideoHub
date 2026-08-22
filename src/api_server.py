@@ -329,6 +329,12 @@ class APIServer:
                 },
                 "title": f"Instagram: {data['title'][:50]}..."
             }
+        elif platform == 'koushare':
+            task = {
+                "type": "koushare",
+                "params": {"url": data['url']},
+                "title": f"蔻享: {data['title'][:50]}..."
+            }
         else:
             raise ValueError(f"Unsupported platform: {platform}")
         

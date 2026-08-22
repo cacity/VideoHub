@@ -372,6 +372,16 @@ function createTask(platform, data) {
             };
             break;
 
+        case 'koushare':
+            task = {
+                type: "koushare",
+                params: {
+                    url: data.url
+                },
+                title: `蔻享: ${data.title}`
+            };
+            break;
+
         default:
             throw new Error('不支持的平台: ' + platform);
     }
@@ -474,7 +484,7 @@ function attemptApiCall(task, apiUrl, callback) {
     const requestData = {
         platform: task.platform,
         url: task.params.youtube_url || task.params.url,
-        title: task.title.replace(/^(视频|Twitter|TikTok|B站): /, ''),
+        title: task.title.replace(/^(视频|Twitter|TikTok|B站|蔻享): /, ''),
         videoId: task.params.videoId,
         uploader: task.params.uploader,
         author: task.params.author,

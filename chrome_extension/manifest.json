@@ -24,6 +24,8 @@
     "https://www.bilibili.com/*",
     "https://m.bilibili.com/*",
     "https://bilibili.com/*",
+    "https://www.koushare.com/*",
+    "https://koushare.com/*",
     "http://127.0.0.1:8765/*",
     "http://localhost:8765/*"
   ],
@@ -68,6 +70,15 @@
         "https://bilibili.com/*"
       ],
       "js": ["content-scripts/bilibili.js"],
+      "css": ["content-scripts/styles.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://www.koushare.com/*",
+        "https://koushare.com/*"
+      ],
+      "js": ["content-scripts/koushare.js"],
       "css": ["content-scripts/styles.css"],
       "run_at": "document_end"
     }
