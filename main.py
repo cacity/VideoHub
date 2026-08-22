@@ -93,6 +93,7 @@ SMART_PASTE_URL_KEYWORDS = [
     "instagram.com",
     "instagr.am",
     "tiktok.com",
+    "koushare.com",
     "pornhub.com",
     "cn.pornhub.com",
 ]
@@ -504,6 +505,7 @@ from paths_config import (
     INSTAGRAM_DOWNLOADS_DIR,
     DOUYIN_DOWNLOADS_DIR,
     LIVE_DOWNLOADS_DIR,
+    KOUSHARE_DOWNLOADS_DIR,
     DIRECTORY_MAP,
     DEFAULT_SUMMARY_DIR,
 )
@@ -859,6 +861,8 @@ class WorkerThread(QThread):
                 self.process_bilibili()
             elif not self.stopped and self.task_type == "instagram":
                 self.process_instagram()
+            elif not self.stopped and self.task_type == "koushare":
+                self.process_koushare()
             elif not self.stopped and self.task_type == "local_audio":
                 self.process_local_audio()
             elif not self.stopped and self.task_type == "local_video":
@@ -1262,6 +1266,50 @@ class WorkerThread(QThread):
             import traceback
             error_msg = f"Instagram视频下载失败: {str(e)}\n{traceback.format_exc()}"
             self.update_signal.emit(error_msg)
+            self.finished_signal.emit("", False)
+
+    def process_koushare(self):
+        """使用蔻享专用接口下载视频。"""
+        self.update_signal.emit("开始处理蔻享视频...")
+
+        url = self.params.get("url", "")
+        if not url:
+            self.update_signal.emit("错误: 未提供蔻享视频 URL")
+            self.finished_signal.emit("", False)
+            return
+
+        self.update_signal.emit(f"蔻享 URL: {url}")
+
+        try:
+            import koushare_downloader
+
+            def progress_callback(message, percent):
+                if not self.stopped:
+                    self.update_signal.emit(f"[{percent}%] {message}")
+
+            result = koushare_downloader.download(
+                url,
+                output_dir=KOUSHARE_DOWNLOADS_DIR,
+                progress_callback=progress_callback,
+            )
+
+            if self.stopped:
+                return
+
+            if result.get("success"):
+                file_path = result.get("file_path", "")
+                title = result.get("title", "")
+                self.update_signal.emit(f"蔻享视频下载完成: {title}")
+                self.update_signal.emit(f"保存位置: {file_path}")
+                self.finished_signal.emit(file_path, True)
+            else:
+                error = result.get("error", "未知错误")
+                self.update_signal.emit(f"蔻享视频下载失败: {error}")
+                self.finished_signal.emit("", False)
+
+        except Exception as e:
+            import traceback
+            self.update_signal.emit(f"蔻享视频下载异常: {str(e)}\n{traceback.format_exc()}")
             self.finished_signal.emit("", False)
 
     def process_local_audio(self):
@@ -1844,6 +1892,16 @@ class MainWindow(QMainWindow):
         # 初始化API服务器
         self.api_server = None
         self.init_api_server()
+
+        # 恢复上次保存的蔻享鉴权状态。
+        koushare_token = os.getenv("KOUSHARE_ACCESS_TOKEN", "").strip()
+        if koushare_token:
+            try:
+                import koushare_downloader
+                koushare_downloader.set_token(koushare_token)
+                print("蔻享 access token 已加载")
+            except Exception as exc:
+                print(f"蔻享 token 初始化失败: {exc}")
 
         # 加载保存的闲时队列
         self.load_idle_queue()
@@ -4729,6 +4787,53 @@ class MainWindow(QMainWindow):
         queue_layout.addWidget(self.view_queue_button)
         queue_layout.addWidget(self.clear_queue_button)
         idle_layout.addLayout(queue_layout)
+
+        # 蔻享学术账号设置
+        koushare_group = CollapsibleGroupBox("蔻享学术账号", collapsed=True)
+        ks_layout = koushare_group.content_layout
+
+        ks_user_layout = QHBoxLayout()
+        ks_user_layout.addWidget(QLabel("手机号/邮箱:"))
+        self.ks_username_input = QLineEdit()
+        self.ks_username_input.setPlaceholderText("输入蔻享账号")
+        self.ks_username_input.setText(os.getenv("KOUSHARE_USERNAME", ""))
+        ks_user_layout.addWidget(self.ks_username_input)
+        ks_layout.addLayout(ks_user_layout)
+
+        ks_pwd_layout = QHBoxLayout()
+        ks_pwd_layout.addWidget(QLabel("密码:"))
+        self.ks_password_input = QLineEdit()
+        self.ks_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ks_password_input.setPlaceholderText("输入蔻享密码")
+        ks_pwd_layout.addWidget(self.ks_password_input)
+        ks_layout.addLayout(ks_pwd_layout)
+
+        ks_btn_layout = QHBoxLayout()
+        self.ks_login_button = QPushButton("登录")
+        self.ks_status_label = QLabel("未登录")
+        self.ks_status_label.setStyleSheet("color: gray;")
+        ks_btn_layout.addWidget(self.ks_login_button)
+        ks_btn_layout.addWidget(self.ks_status_label)
+        ks_btn_layout.addStretch()
+        ks_layout.addLayout(ks_btn_layout)
+
+        ks_token_layout = QHBoxLayout()
+        ks_token_layout.addWidget(QLabel("Token:"))
+        self.ks_token_input = QLineEdit()
+        self.ks_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ks_token_input.setPlaceholderText("也可手动粘贴 Access Token")
+        existing_token = os.getenv("KOUSHARE_ACCESS_TOKEN", "")
+        if existing_token:
+            self.ks_token_input.setText(existing_token)
+            self.ks_status_label.setText("Token 已加载")
+            self.ks_status_label.setStyleSheet("color: green;")
+        self.ks_set_token_button = QPushButton("应用 Token")
+        ks_token_layout.addWidget(self.ks_token_input)
+        ks_token_layout.addWidget(self.ks_set_token_button)
+        ks_layout.addLayout(ks_token_layout)
+
+        self.ks_login_button.clicked.connect(self.koushare_login)
+        self.ks_set_token_button.clicked.connect(self.koushare_set_token)
         
         # yt-dlp 设置组
         ytdlp_group = CollapsibleGroupBox("yt-dlp 设置", collapsed=True)
@@ -4784,6 +4889,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(summary_group)
         layout.addWidget(template_group)
         layout.addWidget(idle_group)
+        layout.addWidget(koushare_group)
         layout.addWidget(ytdlp_group)
 
         # 保存设置按钮
@@ -4933,7 +5039,9 @@ class MainWindow(QMainWindow):
         self.youtube_stop_button.setEnabled(True)
         
         # 创建并启动工作线程
-        if 'instagram.com' in youtube_url.lower() or 'instagr.am' in youtube_url.lower():
+        if 'koushare.com' in youtube_url.lower():
+            self.worker_thread = WorkerThread("koushare", {"url": youtube_url})
+        elif 'instagram.com' in youtube_url.lower() or 'instagr.am' in youtube_url.lower():
             self.worker_thread = WorkerThread("instagram", {"url": youtube_url, "cookies_file": params.get("cookies_file")})
         else:
             self.worker_thread = WorkerThread("youtube", params)
@@ -6226,6 +6334,8 @@ class MainWindow(QMainWindow):
         os.environ["MINIMAX_TTS_MODEL"] = self.minimax_model_combo.currentText()
         os.environ["MINIMAX_TTS_VOICE_ID"] = self.get_minimax_voice_id()
         os.environ["MINIMAX_TTS_LANGUAGE_BOOST"] = self.minimax_language_combo.currentText().strip() or "Chinese"
+        os.environ["KOUSHARE_ACCESS_TOKEN"] = self.ks_token_input.text().strip()
+        os.environ["KOUSHARE_USERNAME"] = self.ks_username_input.text().strip()
 
         # 保存摘要生成设置
         summary_mode = "two_stage" if self.summary_mode_combo.currentText() == "两阶段生成（思考+生成）" else "single"
@@ -6284,6 +6394,8 @@ class MainWindow(QMainWindow):
                 "MINIMAX_TTS_MODEL": self.minimax_model_combo.currentText(),
                 "MINIMAX_TTS_VOICE_ID": self.get_minimax_voice_id(),
                 "MINIMAX_TTS_LANGUAGE_BOOST": self.minimax_language_combo.currentText().strip() or "Chinese",
+                "KOUSHARE_ACCESS_TOKEN": self.ks_token_input.text().strip(),
+                "KOUSHARE_USERNAME": self.ks_username_input.text().strip(),
                 "SUMMARY_GENERATION_MODE": summary_mode,
                 "THINKING_MODEL": self.thinking_model_combo.currentText(),
                 "OUTPUT_MODEL": self.output_model_combo.currentText(),
@@ -6355,6 +6467,59 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
             QMessageBox.warning(self, "设置保存错误", f"保存设置时出错: {str(e)}\n\n请检查文件权限和磁盘空间")
+
+    def koushare_login(self):
+        """登录蔻享并只在本机保存返回的 access token。"""
+        username = self.ks_username_input.text().strip()
+        password = self.ks_password_input.text()
+        if not username or not password:
+            QMessageBox.warning(self, "输入错误", "请输入蔻享账号和密码")
+            return
+
+        self.ks_login_button.setEnabled(False)
+        self.ks_status_label.setText("登录中...")
+        try:
+            import koushare_downloader
+            result = koushare_downloader.login(username, password)
+            if not result.get("success"):
+                error = result.get("error", "未知错误")
+                self.ks_status_label.setText("登录失败")
+                self.ks_status_label.setStyleSheet("color: red;")
+                QMessageBox.warning(self, "登录失败", f"蔻享登录失败：\n{error}")
+                return
+
+            token = result.get("access_token", "")
+            nickname = result.get("nickname") or username
+            os.environ["KOUSHARE_ACCESS_TOKEN"] = token
+            os.environ["KOUSHARE_USERNAME"] = username
+            _save_env_key(ENV_FILE, "KOUSHARE_ACCESS_TOKEN", token)
+            _save_env_key(ENV_FILE, "KOUSHARE_USERNAME", username)
+            self.ks_token_input.setText(token)
+            self.ks_password_input.clear()
+            self.ks_status_label.setText("已登录")
+            self.ks_status_label.setStyleSheet("color: green;")
+            QMessageBox.information(self, "登录成功", f"蔻享登录成功：{nickname}")
+        except Exception as exc:
+            self.ks_status_label.setText("登录出错")
+            self.ks_status_label.setStyleSheet("color: red;")
+            QMessageBox.critical(self, "登录错误", f"登录时发生错误：\n{exc}")
+        finally:
+            self.ks_login_button.setEnabled(True)
+
+    def koushare_set_token(self):
+        """手动设置并保存蔻享 access token。"""
+        token = self.ks_token_input.text().strip()
+        if not token:
+            QMessageBox.warning(self, "输入错误", "请粘贴 Access Token")
+            return
+
+        import koushare_downloader
+        koushare_downloader.set_token(token)
+        os.environ["KOUSHARE_ACCESS_TOKEN"] = token
+        _save_env_key(ENV_FILE, "KOUSHARE_ACCESS_TOKEN", token)
+        self.ks_status_label.setText("Token 已设置")
+        self.ks_status_label.setStyleSheet("color: green;")
+        QMessageBox.information(self, "Token 已设置", "蔻享 Access Token 已保存")
 
     def browse_ytdlp_exe(self):
         """浏览选择 yt-dlp.exe 文件"""
@@ -6787,6 +6952,9 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             if 'instagram.com' in youtube_url.lower() or 'instagr.am' in youtube_url.lower():
                 idle_task_type = "instagram"
                 idle_task_params = {"url": youtube_url, "cookies_file": self.cookies_path_input.text() if self.cookies_path_input.text() else None}
+            elif 'koushare.com' in youtube_url.lower():
+                idle_task_type = "koushare"
+                idle_task_params = {"url": youtube_url}
             task = {
                 "type": idle_task_type,
                 "params": idle_task_params,
@@ -6925,6 +7093,18 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             self.worker_thread.finished_signal.connect(self.on_idle_task_finished)
             self.worker_thread.start()
 
+        elif task_type == "koushare":
+            print(f"[闲时任务] 开始处理蔻享视频: {task['title']}")
+            self.youtube_output_text.clear()
+            self.youtube_output_text.append(f"[闲时任务] 开始处理蔻享视频: {task['title']}")
+            self.youtube_process_button.setEnabled(False)
+            self.youtube_process_button.setText("闲时处理中...")
+            self.youtube_stop_button.setEnabled(True)
+            self.worker_thread = WorkerThread("koushare", task["params"])
+            self.worker_thread.update_signal.connect(self.update_youtube_output)
+            self.worker_thread.finished_signal.connect(self.on_idle_task_finished)
+            self.worker_thread.start()
+
         else:
             # 未知类型，标记为失败并继续下一个
             print(f"[闲时任务] 警告: 未知任务类型 '{task_type}'，跳过此任务")
@@ -7017,6 +7197,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                     'tiktok': 'TikTok',
                     'bilibili': 'Bilibili',
                     'instagram': 'Instagram',
+                    'koushare': '蔻享',
                 }
                 platform_key = task.get('platform') or task_type
                 platform = platform_map.get(platform_key, platform_map.get(task_type, task_type))

@@ -276,7 +276,8 @@ function updateStatus() {
                 'twitter.com',
                 'x.com',
                 'tiktok.com',
-                'bilibili.com'
+                'bilibili.com',
+                'koushare.com'
             ];
             
             const isSupported = supportedSites.some(site => url.includes(site));
