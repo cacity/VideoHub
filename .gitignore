@@ -51,6 +51,8 @@ bilibili/
 instagram/
 douyin/
 live/
+koushare/
+koushare_downloads/
 .gstack/
 .claude/
 website/
@@ -165,6 +167,7 @@ install_extension_guide.html
 *.part
 *.ytdl
 *.part-Frag*
+*.m3u8
 
 # 特定媒体文件
 1.png
