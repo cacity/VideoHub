@@ -9,13 +9,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-BASE_PATH = Path(__file__).resolve().parent.parent
+BASE_PATH = Path(os.environ.get("VIDEOHUB_APP_ROOT", Path(__file__).resolve().parent.parent)).expanduser().resolve()
 SRC_PATH = BASE_PATH / "src"
-WORKSPACE_PATH = BASE_PATH / "workspace"
+WORKSPACE_PATH = Path(os.environ.get("VIDEOHUB_WORKSPACE_DIR", BASE_PATH / "workspace")).expanduser().resolve()
+DATA_PATH = Path(os.environ.get("VIDEOHUB_DATA_DIR", BASE_PATH)).expanduser().resolve()
 
 BASE_DIR = str(BASE_PATH)
 SRC_DIR = str(SRC_PATH)
 WORKSPACE_DIR = str(WORKSPACE_PATH)
+DATA_DIR = str(DATA_PATH)
 
 
 def _ensure_dir(path: Path) -> str:
@@ -107,12 +109,12 @@ DIRECTORY_MAP = {
 
 
 # Repository-root state/config files.
-ENV_FILE = str(BASE_PATH / ".env")
-IDLE_QUEUE_FILE = str(BASE_PATH / "idle_queue.json")
-FFMPEG_CONFIG_FILE = str(BASE_PATH / "ffmpeg_config.json")
-YTDLP_CONFIG_FILE = str(BASE_PATH / "ytdlp_config.json")
-LOCAL_FFMPEG_DIR = str(BASE_PATH / "ffmpeg")
-LOCAL_YTDLP_DIR = str(BASE_PATH / "ytdlp")
+ENV_FILE = str(DATA_PATH / ".env")
+IDLE_QUEUE_FILE = str(DATA_PATH / "idle_queue.json")
+FFMPEG_CONFIG_FILE = str(DATA_PATH / "ffmpeg_config.json")
+YTDLP_CONFIG_FILE = str(DATA_PATH / "ytdlp_config.json")
+LOCAL_FFMPEG_DIR = str(Path(os.environ.get("VIDEOHUB_FFMPEG_DIR", BASE_PATH / "ffmpeg")).expanduser().resolve())
+LOCAL_YTDLP_DIR = str(Path(os.environ.get("VIDEOHUB_YTDLP_DIR", BASE_PATH / "ytdlp")).expanduser().resolve())
 
 
 DEFAULT_SUMMARY_DIR = SUMMARIES_DIR

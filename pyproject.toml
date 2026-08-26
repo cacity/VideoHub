@@ -18,3 +18,11 @@ python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+# The repository contains deployable website code and generated media projects
+# with their own lifecycle. The desktop application's maintained regression
+# suite lives here; avoiding root-wide discovery keeps moved workspace folders
+# and independently runnable site tests out of the desktop CI contract.
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"

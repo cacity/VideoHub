@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"VideoHub desktop window permissions","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open","opener:allow-open-path"]}}
