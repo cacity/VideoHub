@@ -4,9 +4,34 @@
 
 简体中文  | [English](./README_en.md)
 
-VideoHub 是一个基于 PyQt6 的本地视频处理与智能剪辑工作台，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等平台及本地媒体。除了视频下载、音频提取、Whisper 转录、双语字幕、字幕翻译、**AI 配音**和内容摘要，它还通过供 Codex、Claude Code、DeepSeek 等智能助手调用的项目级 Skills，提供基于字幕与画面证据的故事剪辑、影视解说、连续剧批量自动剪辑、音乐卡点、多画幅封面和完整发布包。桌面端同时支持批量处理、闲时队列和剧集目录项目化管理，让多集视频可以按统一配置分阶段处理、复用中间资源并持续调整。
+VideoHub 是一个本地视频处理与智能剪辑工作台。新版桌面端使用 **React + Tauri** 构建界面，以受控的 Python sidecar 复用 FFmpeg、yt-dlp、Whisper、TTS 和现有媒体处理能力；原 PyQt6 界面继续保留为兼容回退入口。项目支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等平台及本地媒体，并提供视频下载、音频提取、Whisper 转录、双语字幕、字幕翻译、**AI 配音**、内容摘要、连续剧批量自动剪辑、故事时间线精修、音乐卡点、多画幅封面和完整发布包。供 Codex、Claude Code、DeepSeek 等智能助手调用的项目级 Skills，可以把这些能力组合成可复用、可断点继续的生产流程。
 
-> **需要尽快跑通或定制工作流？** 现有固定范围付费支持从 **USD 149** 起，可直接提交[公开付费支持申请](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml)。无需邮箱；请勿提交密钥、私有素材、客户数据或个人敏感信息。
+## 最新桌面版：React + Tauri
+
+新的 Tauri 桌面端位于 `desktop/`，目前在 `feature/tauri-desktop-migration` 分支进行安装包验证，尚未替换 `main` 上的 PyQt6 稳定入口。它提供统一的下载、本地媒体、字幕、AI 配音、批量处理、故事时间线、闲时队列、任务历史、直播录制、清理和设置界面。
+
+- Tauri 每次启动时在 `127.0.0.1` 随机端口创建 Python sidecar，并生成仅本次会话有效的访问令牌。
+- 长任务在独立工作进程中运行，可查看进度、历史并取消；关闭桌面窗口时会终止所属 sidecar 和子进程。
+- 工作区、任务记录和非敏感配置默认存放在 `%LOCALAPPDATA%\\VideoHub`；API 密钥写入系统凭据库，不通过设置接口返回明文。
+- Windows 安装包捆绑 FFmpeg、ffprobe、yt-dlp 和 Python sidecar；Whisper、CosyVoice 等体积较大的模型仍按需下载，不写入 Git 或安装包。
+- Chrome 扩展仍通过兼容桥接接口连接 `127.0.0.1:8765`；主桌面 API 不使用固定端口。
+
+开发运行：
+
+```powershell
+cd desktop
+npm install
+npm run tauri -- dev
+```
+
+构建 Windows 安装包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup_desktop_build_env.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_desktop_release.ps1
+```
+
+安装包生成在 `desktop/src-tauri/target/release/bundle/`。在 Tauri 版本通过干净 Windows 环境验收前，仍可使用 `python main.py` 启动原 PyQt6 桌面端。
 
 ## 作品展示 🎬
 
@@ -47,25 +72,6 @@ VideoHub 是一个基于 PyQt6 的本地视频处理与智能剪辑工作台，�
 
 > 样片仅用于展示 VideoHub 的处理结果，不代表对原始影视、音乐或画面素材拥有版权。原素材权利归各自权利人所有，请只处理和发布你有权使用的内容。
 
-## 付费安装与定制支持
-
-### USD 59 自助工作流包（上线前意向验证）
-
-正在准备 **VideoHub Series Ops Kit**：一次性 USD 59 的 Excel 数字下载包，包含剧集跟踪、素材权利、旁白时长、字幕 QA、多画幅封面和最终交付门禁。先查看[真实工作簿预览与交付说明](./SERIES_OPS_KIT.md)；当前尚未开放购买，可通过[公开、无需邮箱的意向表单](https://github.com/cacity/VideoHub/issues/new?template=ops-kit-interest.yml)说明用途和价格匹配度。提交意向不是订单、预约或付款承诺，也不保证上线日期、兼容性、销量或收益。请勿公开提交密钥、私有素材、客户数据或个人敏感信息。
-
-VideoHub 的 MIT 开源版本继续免费。如果你不想自己排查 Python、FFmpeg、TTS 和系列配置，也可以购买固定范围的实施服务：
-
-- **异步环境诊断 — USD 149**：审阅无密钥预检报告与脱敏错误日志，提供书面根因判断、按优先级排列的修复步骤和一次公开 Issue 跟进；7 天内升级 QuickStart 可全额抵扣。
-- **QuickStart 远程安装 — USD 299**：安装配置、一个授权样例、45 分钟交接和 7 天缺陷支持。
-- **Creator Series Workflow — USD 999**：统一系列字幕、画幅、音色、封面和三个授权样例。
-- **Team Local Deployment — USD 2,999**：团队私有部署、一个定制流程、验收、培训和 30 天缺陷支持。
-
-服务不包括绕过平台限制、处理未授权内容、第三方 API 费用或无限期维护。查看[完整服务范围、验收与付款说明](./SERVICES.md)，或直接提交[公开的付费支持申请](https://github.com/cacity/VideoHub/issues/new?template=paid-support.yml)。公开 Issue 中禁止粘贴密钥、私有素材或个人敏感信息；当前不通过邮件受理或跟进。
-
-先看证据：[11 期授权艺术内容系列的匿名案例](./CASE_STUDY.md)，包含可在仓库中复核的成片、字幕、章节、发布说明和 44 张多画幅封面；不把内部产出数量包装成客户数量或商业收益。
-
-咨询前可运行 `python src/support_preflight.py`，生成不联网、不含密钥值的环境报告；再按[付费支持申请模板](./SUPPORT_REQUEST.md)提供范围信息，可以更快判断适合的档位与排期。只想先确认问题和修复路径，可选择 USD 149 异步环境诊断，并先查看[脱敏交付样例](./docs/support_diagnosis_example.md)。
-
 ## 在 Codex / Claude Code 中安装和使用
 
 项目地址：[https://github.com/cacity/VideoHub](https://github.com/cacity/VideoHub)
@@ -100,14 +106,14 @@ VideoHub 的 MIT 开源版本继续免费。如果你不想自己排查 Python�
 每集剪成 6 分钟，沿用统一音色、封面和发布包规格，支持断点继续。
 ```
 
-基础下载、转录、字幕和本地编辑不依赖付费大模型。MiniMax、豆包 TTS、DeepSeek 润色等可选能力需要在本地环境变量或未提交的 `.env` 中配置相应凭据。请只处理自己拥有下载、剪辑和发布权利的素材。
+基础下载、转录、字幕和本地编辑无需额外的大模型服务。MiniMax、豆包 TTS、DeepSeek 润色等可选能力需要在本地环境变量或未提交的 `.env` 中配置相应凭据。请只处理自己拥有下载、剪辑和发布权利的素材。
 
 ## 智能剪辑与系列生产
 
 最近新增的能力已经从“单次剪一条视频”扩展到可复用的系列生产：
 
 - **连续剧配置驱动批量制作**：`videohub-film-commentary` 新增统一系列执行器。系列级 TTS、音量、画幅、封面和输出路径写入 `series_spec.json`，每集剧情、旁白、选段和发布文案写入 `episode_specs.json`，不再为每个项目复制一份 `build_episode_series.py`。
-- **分阶段执行与断点复用**：支持 `preflight`、`prepare`、`render`、`package`、`audit` 和 `all`。修改单集文案后可复用未变化的证据包、视频片段、TTS 分块缓存和发布资产；预检与计划阶段不会调用付费 TTS。
+- **分阶段执行与断点复用**：支持 `preflight`、`prepare`、`render`、`package`、`audit` 和 `all`。修改单集文案后可复用未变化的证据包、视频片段、TTS 分块缓存和发布资产；预检与计划阶段不会调用外部 TTS API。
 - **剧集目录项目模式**：批量处理本地剧集时，字幕、翻译、转录稿和摘要保存在原视频目录，并生成可移动的 `videohub_project.json`。后续只需给出剧集目录，Skill 会自动定位视频和最佳字幕。
 - **五轨时间线精修**：本地网页工作台支持调整视频切点、原声、TTS 旁白、原声窗口和字幕；预览自适应窗口，预览区与时间线可上下拖动调整，解说字幕位置也可手动移动。
 
@@ -337,11 +343,11 @@ python tts_service.py --host 127.0.0.1 --port 8877
 
 #### 使用 MiniMax API 配音
 
-MiniMax 是外部付费 TTS API，适合想快速获得更多中文音色选择、又不想在本地加载大模型的场景。
+MiniMax 是外部 TTS API，适合想快速获得更多中文音色选择、又不想在本地加载大模型的场景。
 
 在 VideoHub 中进入 `设置 -> TTS 配音设置`：
 
-1. `TTS 类型和引擎` 选择 `外部付费 - MiniMax API`
+1. `TTS 类型和引擎` 选择 `MiniMax API`
 2. 填写 `MiniMax API Key`
 3. 选择模型，例如 `speech-2.8-turbo` 或 `speech-2.8-hd`
 4. 在 `MiniMax 音色` 中选择男声、女声、播音、主持等预置音色

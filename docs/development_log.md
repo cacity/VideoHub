@@ -23,6 +23,82 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-08-24：YouTube 下载中途 HTTP 403 自动回退
+
+### 更新内容
+
+- 本地 `yt-dlp.exe` 和 Python `yt-dlp` 下载在媒体分片返回 `HTTP 403` 时，不再直接结束任务，
+  而是自动改用 `web_embedded` 播放器客户端重新提取媒体地址并续传。
+- 本地可执行文件模式增加文件访问重试和 HTTP/分片指数退避，降低短时网络波动导致的失败率。
+- 默认客户端与回退客户端均失败时，错误信息会提示检查代理出口、cookies 和 yt-dlp 官方
+  PO Token provider 配置，不再只显示底层 traceback。
+
+### 设计与实现
+
+- 保留 yt-dlp 默认客户端作为首选，仅在明确识别到 `HTTP Error 403` 后执行一次有边界的回退，
+  避免改变所有正常视频的格式发现行为。
+- 回退继续使用原输出模板和 `.part` 文件，因此同一格式可复用已经下载的部分；Python 模式关闭
+  `ignoreerrors`，确保下载失败会进入回退逻辑，而不是返回空结果。
+
+### 验证结果
+
+- `python -m py_compile src/youtube_transcriber.py` 通过。
+- `python -m pytest -q tests/test_minimax_tts.py -k "exe_download"`：2 项通过。
+- 对问题视频 `COpWTc7BFro` 使用同一代理进行真实验证：默认 `android_vr` 客户端稳定复现 403，
+  自动切换 `web_embedded` 后，音频下载成功；144p 视频与音频也均下载成功并合并为 MP4。
+
+### 遗留问题
+
+- YouTube 的客户端和 PO Token 要求可能继续变化；如果 `web_embedded` 也被限制，仍需要更新
+  yt-dlp、提供有效 cookies 或按官方文档安装 PO Token provider。
+
+## 2026-08-24：React/Tauri 桌面端与 Python sidecar 迁移
+
+### 更新内容
+
+- 在 `codex/tauri-desktop-migration` 分支新增 `desktop/`，使用 React、TypeScript、Vite 和 Tauri 2
+  建立新的 Windows 桌面工作台；`main.py` 的 PyQt6 界面继续保留，不在本分支直接移除。
+- 新增 `src/videohub_desktop/` FastAPI sidecar，将下载、本地媒体、字幕、配音、批量任务、直播、
+  清理、闲时队列、设置、凭据和故事时间线统一为桌面 API。
+- 长任务改由独立 Python worker 执行，任务状态持久化到本机数据目录；取消任务和退出 Tauri 时
+  会终止应用拥有的子进程树。
+- Tauri 使用随机回环端口和每次启动重新生成的令牌访问主 API；浏览器扩展继续使用独立的
+  `127.0.0.1:8765` 兼容桥。API 密钥写入操作系统凭据库，设置接口仅返回是否已配置。
+- 新增 PyInstaller sidecar、FFmpeg/ffprobe/yt-dlp 资源暂存、MSI/NSIS 安装包构建脚本，模型目录
+  不打包、不提交，缺少模型时由预检和任务错误给出可操作提示。
+- `src/paths_config.py` 支持 Tauri 注入的应用根目录、工作区、数据目录和工具目录，同时兼容现有
+  Python/PyQt 启动方式。
+
+### 设计与实现
+
+- React 只负责界面和任务编排，现有 Python 模块继续负责媒体与 AI 处理，避免一次性重写经过
+  长期验证的 FFmpeg、下载、转写和配音逻辑。
+- Tauri 负责原生窗口、文件选择、sidecar 生命周期和安装包；FastAPI 只监听本机回环地址，所有
+  `/v1` 业务接口都要求会话令牌。
+- 桌面界面覆盖概览、下载、本地媒体、字幕、AI 配音、批量处理、故事时间线、闲时队列、运行任务、
+  历史、直播、清理和设置。现有 Flask/React 故事编辑器通过受保护的 WSGI 挂载方式复用。
+- Windows 构建使用仓库独立的 `.venv-desktop-build`，避免污染 VideoHub 的运行环境；生成的
+  sidecar、工具资源、Rust target 和安装包全部由 `.gitignore` 排除。
+
+### 验证结果
+
+- `tests/test_desktop_sidecar.py` 共 10 项通过，覆盖认证、任务执行与取消、设置、凭据、闲时队列、
+  扩展桥和故事编辑器访问控制。
+- Ruff、Python `compileall`、TypeScript 类型检查、Vite 生产构建、`cargo fmt --check`、
+  `cargo check` 和 `cargo clippy -- -D warnings` 均通过。
+- PyInstaller 单文件 sidecar 已完成真实 HTTP 冒烟测试：18 个操作可发现，鉴权生效，故事编辑器
+  页面和前端资源可用，扩展桥与主 API 共享队列，预检任务成功。
+- Tauri 开发版已完成首次 Rust 编译并启动，关闭后确认 Tauri 与 sidecar 进程均无残留。
+- MSI 与 NSIS 安装包均已完成构建；MSI 管理提取后的桌面程序、sidecar、FFmpeg、ffprobe 和 yt-dlp
+  文件完整，提取版本可启动并正确拉起 sidecar，退出后没有残留测试进程。
+
+### 遗留问题
+
+- 干净 Windows 虚拟机上的首次安装/卸载、模型下载、GPU TTS 和各平台完整真实任务仍属于合并到
+  `main` 前的发布门禁；当前只完成了本机 MSI 管理提取与启动验证。
+- 故事编辑器当前通过 Starlette 的 WSGI 兼容层挂载 Flask，运行正常但上游已标记该中间件弃用，
+  后续应迁移为原生 ASGI 或使用维护中的 WSGI-to-ASGI 适配器。
+
 ## 2026-08-11：连续剧解说配置化生产与 README 更新
 
 ### 更新内容
@@ -1612,3 +1688,26 @@ GitHub 仓库 `blob` 地址返回 HTML 文件查看页；`raw.githubusercontent.
 
 - 受保护视频仍取决于账号自身的观看权限，登录成功不代表拥有全部内容权限。
 - 蔻享若调整接口、签名算法或页面结构，下载器和扩展内容脚本需要同步更新。
+
+## 2026-08-25：Tauri 下载日志流修复与 README 清理
+
+### 更新内容
+
+- `platform.download` 和直播下载为 `yt-dlp` 传入专用 logger 回调，不再依赖冻结 sidecar 进程中的标准输出对象。
+- 新增回归测试，确认初次下载与 `web_embedded` 回退都会携带可用 logger，并能把 `yt-dlp` 日志写入任务记录。
+- README 中英文版移除付费支持、报价、意向申请和定制服务推广；保留开源安装、功能与凭据配置说明。
+- Tauri 迁移分支统一更名为 `feature/tauri-desktop-migration`，避免使用 `codex/` 前缀。
+
+### 设计与实现
+
+打包后 Python 的 `stdout`/`stderr` 可能不再是可写流。`yt-dlp` 在没有 logger 时会尝试向该对象写入状态消息，导致 `AttributeError: 'str' object has no attribute 'write'`。本次改用其公开的 `logger` 选项将调试、警告和错误消息转交给任务事件日志，下载流程不再耦合冻结进程的控制台实现。
+
+### 验证结果
+
+- `tests/test_desktop_sidecar.py` 回归测试通过，覆盖 logger 的 `debug`、`warning`、`error` 接口和 YouTube `web_embedded` 回退。
+- 重新生成本地 NSIS 与 MSI 安装包；MSI 继续使用仅此构建主机所需的 WiX ICE 验证绕过路径，正式发布前仍需在干净 Windows 环境完成安装验收。
+- 通过重建后的冻结 sidecar 实际下载 YouTube 视频：首次格式请求报“Requested format is not available”后自动改用 `web_embedded`，任务以 `succeeded`、`100%` 完成并生成有效 MP4；任务日志未出现 `str` 没有 `write` 属性的异常。
+
+### 已知边界
+
+- 该修复解决日志输出对象类型错误；受登录、地区限制或平台反爬影响的下载仍可能需要代理、cookies 或 yt-dlp 后续更新。
