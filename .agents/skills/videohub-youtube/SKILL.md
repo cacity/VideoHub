@@ -53,3 +53,10 @@ python src/youtube_transcriber.py --cleanup-preview
 - 本地目录输入会作为剧集项目处理，在视频目录内建立 `subtitles/`、`transcripts/`、
   `summaries/`、`audio/`、`videos_with_subtitles/` 和 `videohub_project.json`。后续故事剪辑或
   影视解说只需接收该目录并读取项目清单。
+
+## Twitter/X 来源包
+
+- 可以接收来自 TweetClaw/OpenClaw 等工具的已审核公开 X/Twitter 来源包。
+- 来源包只应包含规范推文 URL、公开文本或摘录、作者 handle、采集时间、媒体说明和授权边界。
+- 之后仍由 VideoHub 执行下载、转写、字幕和总结流程。
+- 不要要求或记录 X Cookie、浏览器配置、会话 token、私信或 API key。
