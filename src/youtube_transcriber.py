@@ -110,6 +110,10 @@ VIDEO_LIST_FILE = os.path.join(LOGS_DIR, "downloaded_videos.json")
 TRANSLATION_VERBOSE = True
 GOOGLE_TRANSLATE_RATE_LIMITED = False
 GOOGLE_TRANSLATE_SKIP_NOTICE_SHOWN = False
+YOUTUBE_CLIENT_FALLBACK_ERRORS = (
+    "HTTP Error 403",
+    "Requested format is not available",
+)
 
 SUPPORTED_TRANSLATION_LANGUAGES = {
     "zh-CN": "Simplified Chinese",
@@ -342,6 +346,9 @@ def download_with_exe(
     cmd.extend(['--retries', '5'])
     cmd.extend(['--fragment-retries', '5'])
     cmd.extend(['--extractor-retries', '3'])
+    cmd.extend(['--file-access-retries', '3'])
+    cmd.extend(['--retry-sleep', 'http:exp=1:10'])
+    cmd.extend(['--retry-sleep', 'fragment:exp=1:10'])
     cmd.extend(['--concurrent-fragments', '4'])
     if not audio_only:
         cmd.extend(['--merge-output-format', 'mp4'])
@@ -354,6 +361,24 @@ def download_with_exe(
     # 执行下载
     timeout_seconds = max(60, int(os.getenv("YTDLP_DOWNLOAD_TIMEOUT_SECONDS", "1800")))
     result = _run_process_with_live_output(cmd, timeout_seconds)
+
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    if result.returncode != 0 and any(
+        marker in combined_output for marker in YOUTUBE_CLIENT_FALLBACK_ERRORS
+    ):
+        fallback_cmd = [
+            *cmd[:-1],
+            '--extractor-args',
+            'youtube:player_client=web_embedded',
+            cmd[-1],
+        ]
+        print(
+            "检测到 YouTube 媒体服务器返回 403，正在改用 web_embedded 客户端"
+            "重新提取下载链接并续传..."
+        )
+        print(f"执行回退命令: {' '.join(fallback_cmd)}")
+        result = _run_process_with_live_output(fallback_cmd, timeout_seconds)
+        cmd = fallback_cmd
 
     print(f"命令返回码: {result.returncode}")
 
@@ -373,6 +398,15 @@ def download_with_exe(
                 f"yt-dlp.exe 仍然提示需要登录验证\n"
                 f"错误信息: {error_msg}\n"
                 f"\n💡 建议: 请确保 cookies 文件有效，或重新导出 cookies"
+            )
+
+        if 'HTTP Error 403' in error_msg:
+            raise Exception(
+                "yt-dlp.exe 下载失败: YouTube 默认客户端和 web_embedded 回退均返回 HTTP 403。\n"
+                "请确认本地代理使用固定出口 IP，不要在同一次下载中轮换节点；"
+                "若视频需要登录，请更新 cookies。YouTube 持续要求 PO Token 时，"
+                "请按 yt-dlp 官方 PO Token Guide 配置 provider 插件。\n"
+                f"错误信息: {error_msg}"
             )
 
         raise Exception(f"yt-dlp.exe 下载失败: {error_msg}")
@@ -2408,7 +2442,7 @@ def download_youtube_video(
             }],
             'outtmpl': os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s'),
             'quiet': False,  # 显示下载进度和错误信息
-            'ignoreerrors': True,  # 忽略部分错误，尝试继续下载
+            'ignoreerrors': False,
             'noplaylist': True  # 确保只下载单个视频的音频而不是整个播放列表
         }
         expected_ext = "mp3"
@@ -2426,7 +2460,7 @@ def download_youtube_video(
             'merge_output_format': 'mp4',  # 确保输出为mp4
             'outtmpl': os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s'),
             'quiet': False,  # 显示下载进度和错误信息
-            'ignoreerrors': True,  # 忽略部分错误，尝试继续下载
+            'ignoreerrors': False,
             'noplaylist': True  # 确保只下载单个视频而不是整个播放列表
         }
         expected_ext = "mp4"
@@ -2503,10 +2537,23 @@ def download_youtube_video(
             return final_path
         else:
             # 使用 Python yt-dlp 库
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # 获取视频信息
-                print(f"正在获取视频信息...")
-                info = ydl.extract_info(youtube_url, download=True)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    print("正在获取视频信息...")
+                    info = ydl.extract_info(youtube_url, download=True)
+            except yt_dlp.utils.DownloadError as exc:
+                if not any(marker in str(exc) for marker in YOUTUBE_CLIENT_FALLBACK_ERRORS):
+                    raise
+                print(
+                    "检测到 YouTube 媒体服务器返回 403，正在改用 web_embedded 客户端"
+                    "重新提取下载链接并续传..."
+                )
+                fallback_opts = dict(ydl_opts)
+                fallback_opts['extractor_args'] = {
+                    'youtube': {'player_client': ['web_embedded']},
+                }
+                with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+                    info = ydl.extract_info(youtube_url, download=True)
 
                 # 尝试从info中获取实际导出的文件扩展名，避免与预期扩展名不一致导致找不到文件
                 try:

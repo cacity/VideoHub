@@ -241,11 +241,55 @@ def test_exe_download_command_is_resumable_and_bounded(monkeypatch, tmp_path):
     assert "--newline" in cmd
     assert "--retries" in cmd
     assert "--fragment-retries" in cmd
+    assert "--file-access-retries" in cmd
+    assert "--retry-sleep" in cmd
     assert "--cookies-from-browser" in cmd
     assert "--merge-output-format" in cmd
     assert "-k" not in cmd
     assert captured["timeout_seconds"] == 1800
     assert info["filepath"].endswith("sample_pZypOP-D7LU.mp4")
+
+
+@pytest.mark.parametrize(
+    "failure_message",
+    [
+        "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+        "ERROR: Requested format is not available",
+    ],
+)
+def test_exe_download_retries_youtube_client_errors_with_web_embedded(
+    monkeypatch, tmp_path, failure_message
+):
+    from src import youtube_transcriber
+
+    commands = []
+
+    def fake_run(cmd, timeout_seconds):
+        commands.append(cmd)
+        if len(commands) == 1:
+            return subprocess.CompletedProcess(
+                cmd,
+                1,
+                stdout=failure_message,
+                stderr="",
+            )
+        output = tmp_path / "sample_pZypOP-D7LU.webm"
+        output.write_bytes(b"audio")
+        return subprocess.CompletedProcess(cmd, 0, stdout="downloaded", stderr="")
+
+    monkeypatch.setattr(youtube_transcriber, "_run_process_with_live_output", fake_run)
+
+    info = youtube_transcriber.download_with_exe(
+        "https://www.youtube.com/watch?v=pZypOP-D7LU",
+        "yt-dlp.exe",
+        str(tmp_path),
+        audio_only=True,
+    )
+
+    assert len(commands) == 2
+    fallback = commands[1]
+    assert fallback[fallback.index("--extractor-args") + 1] == "youtube:player_client=web_embedded"
+    assert info["filepath"].endswith("sample_pZypOP-D7LU.webm")
 
 
 def test_live_process_timeout_terminates_command():
