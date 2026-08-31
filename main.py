@@ -4335,22 +4335,22 @@ class MainWindow(QMainWindow):
         tts_backend_label = QLabel("TTS 类型和引擎:")
         self.tts_backend_combo = QComboBox()
         self.tts_backend_combo.addItems([
-            "本地免费 - Kokoro（默认）",
-            "本地免费 - CosyVoice SFT",
-            "本地免费 - CosyVoice Instruct",
-            "外部付费 - MiniMax API",
+            "本地 - Kokoro（默认）",
+            "本地 - CosyVoice SFT",
+            "本地 - CosyVoice Instruct",
+            "云端 - MiniMax API",
         ])
         self.apply_readable_combo_style(self.tts_backend_combo)
         current_tts_backend = os.getenv("TTS_BACKEND", "kokoro")
         current_cosyvoice_mode = os.getenv("COSYVOICE_TTS_MODE", "sft")
         if current_tts_backend == "minimax":
-            self.tts_backend_combo.setCurrentText("外部付费 - MiniMax API")
+            self.tts_backend_combo.setCurrentText("云端 - MiniMax API")
         elif current_tts_backend == "cosyvoice" and current_cosyvoice_mode == "instruct":
-            self.tts_backend_combo.setCurrentText("本地免费 - CosyVoice Instruct")
+            self.tts_backend_combo.setCurrentText("本地 - CosyVoice Instruct")
         elif current_tts_backend == "cosyvoice":
-            self.tts_backend_combo.setCurrentText("本地免费 - CosyVoice SFT")
+            self.tts_backend_combo.setCurrentText("本地 - CosyVoice SFT")
         else:
-            self.tts_backend_combo.setCurrentText("本地免费 - Kokoro（默认）")
+            self.tts_backend_combo.setCurrentText("本地 - Kokoro（默认）")
         tts_backend_layout.addWidget(tts_backend_label)
         tts_backend_layout.addWidget(self.tts_backend_combo)
         tts_layout.addLayout(tts_backend_layout)
@@ -4449,8 +4449,8 @@ class MainWindow(QMainWindow):
         tts_layout.addLayout(minimax_language_layout)
 
         tts_info = QLabel(
-            "Kokoro 和 CosyVoice 在本地运行，不按调用收费；MiniMax 使用外部付费 API，"
-            "按生成字符计费。试听和正式配音都会使用当前选择。"
+            "Kokoro 和 CosyVoice 在本地运行；MiniMax 通过外部 API 运行。"
+            "试听和正式配音都会使用当前选择。"
         )
         tts_info.setStyleSheet("color: #666; font-size: 11px;")
         tts_info.setWordWrap(True)
@@ -8454,10 +8454,10 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                     return
                 self.dubbing_log_text.append(
                     f"TTS 引擎: MiniMax {params['minimax_model']}, "
-                    f"voice_id={params['minimax_voice_id']}（外部付费）"
+                    f"voice_id={params['minimax_voice_id']}（云端）"
                 )
             else:
-                self.dubbing_log_text.append("TTS 引擎: Kokoro（本地免费）")
+                self.dubbing_log_text.append("TTS 引擎: Kokoro（本地）")
 
             # 更新UI状态
             self.dubbing_start_button.setEnabled(False)

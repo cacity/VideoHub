@@ -23,6 +23,28 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-08-31：移除仓库商业化入口
+
+### 更新内容
+
+- 从中英文 README 删除商业推广段落和关联入口。
+- 删除商业服务说明、产品意向页、支持申请、诊断交付样例和两个商业化 Issue 模板。
+- 清理案例页、界面文案、Skill 参考和技术文档中的商业化措辞及失效链接。
+
+### 设计与实现
+
+- 保留开源软件功能、环境预检工具和第三方 API 配置能力，只移除仓库自身的商业推广和交易入口。
+- TTS 选择器统一改为“本地 / 云端”分类，不再使用商业属性作为技术后端名称。
+
+### 验证结果
+
+- 扫描所有已跟踪 Markdown、YAML 和 Python 文件，确认不存在仓库商业服务、产品金额或交易入口引用。
+- Python 编译、相关测试和 `git diff --check` 均通过。
+
+### 已知边界
+
+- MiniMax 等第三方 API 仍作为可选功能保留，使用者需要自行配置对应凭据。
+
 ## 2026-08-11：连续剧解说配置化生产与 README 更新
 
 ### 更新内容
@@ -48,7 +70,7 @@ python -m py_compile main.py
   和本地证据决定。
 - 新增 `series-job-schema.md`，规定 `series_spec.json` 与 `episode_specs.json` 的边界、
   安全要求、恢复规则和执行命令。旧项目脚本暂不删除，保留为回归基线。
-- 将 project078 加入新配置格式并对 13 集真实素材执行无付费 API 的预检，验证视频、字幕、
+- 将 project078 加入新配置格式并对 13 集真实素材执行不调用外部 API 的预检，验证视频、字幕、
   流信息、时长和选段边界均可被统一入口读取。
 - 新增系列配置与执行器单元测试，并同步旧片段缓存测试所需的 `source_audio_stream` 参数。
 
@@ -828,7 +850,7 @@ git diff --check
 
 手动验证建议：
 
-- 在设置页切换到“外部付费 - MiniMax API”，确认 MiniMax 音色下拉框可选择男声和女声。
+- 在设置页切换到“云端 - MiniMax API”，确认 MiniMax 音色下拉框可选择男声和女声。
 - 在 AI 配音页确认音色列表跟随 MiniMax 后端切换。
 - 选择一个男声试听，确认请求日志中的 `voice_id` 是真实 MiniMax voice_id。
 - 手动输入一个自定义 voice_id，保存设置后确认 `.env` 中保存的是该 ID。
@@ -1500,35 +1522,6 @@ git diff --check -- README.md README_en.md .agents/skills
 - `python scripts/qa_series.py` 为 11/11 PASS：完整解码、1080x1920 H.264、AAC、持续黑场和封面尺寸检查均通过。
 - 第 3 至第 12 期逐期抽取中段画面进行视觉检查，画作长方形上下边界一致，中心均为 960px，未与进度条、字幕或底栏重叠。
 - 居中参数和视觉证据记录在项目 `docs/qa_recenter/recenter_qa.md`。
-## 2026-08-12：付费支持无密钥环境预检与结构化申请
-
-### 更新内容
-
-- 新增 `src/support_preflight.py`，生成 JSON 与 Markdown 环境报告，覆盖 Python、FFmpeg/FFprobe、关键依赖、仓库文件、磁盘空间和目录可写性。
-- 新增 `SUPPORT_REQUEST.md` 中英文申请模板，把服务档位、输入、输出、授权样例、日期和第三方费用偏好结构化。
-- README 中英文版及 `SERVICES.md` 增加预检命令和申请入口。
-- `.gitignore` 排除 `videohub_support_report*.json` 与 `videohub_support_report*.md`，避免机器环境信息进入版本库。
-
-### 设计思路
-
-QuickStart 的首次沟通成本主要来自无法复现的环境描述。预检只做本地、可审计检查，不联网、不扫描媒体、不调用付费 API；凭据只报告“是否配置”，不读取到输出。路径只保留 `<repo>` / `<home>` 后缀或可执行文件名。
-
-目录可写性通过 3 秒硬超时子进程探测，防止权限异常或文件系统问题让整个客户报告无响应。预检失败仍输出完整报告，并使用非零退出码提醒客户处理 FAIL 项。
-
-### 验证结果
-
-- `python -B -m unittest discover -s tests -p 'test_support_preflight.py' -v`：5/5 PASS。
-- 沙箱账户真实运行：24 PASS、2 FAIL；正确识别仓库与 workspace 不可写，未卡住。
-- 普通 Windows 用户权限真实运行：26 PASS、0 WARN、0 FAIL，readiness 为 `ready`。
-- 用当前 `.env` 值做哨兵扫描：报告中的密钥值泄露数为 0。
-- `git check-ignore` 确认两类生成报告均被忽略；`git diff --check` 通过。
-
-### 已知边界
-
-- 预检不验证第三方 API 余额、账号权限、网络可达性、GPU 性能或特定素材兼容性。
-- `ready` 只表示本地基础检查通过，不代表自动接单或承诺某个处理速度。
-- 客户发送报告前仍应自行打开复核，不应附带 `.env` 或任何密钥文件。
-
 ## 2026-08-21：README 作品展示短样片
 
 ### 更新内容
