@@ -37,10 +37,17 @@ class DouyinDownloader:
         download_dir = self.config.get("download_dir")
         os.makedirs(download_dir, exist_ok=True)
         
-        # 初始化新的提取器（使用douyin.py）
-        self.douyinvd_extractor = DouyinVdExtractor(port=port)
+        # 保留旧属性名以兼容调用方；内部已是 F2 -> DLPanda provider chain。
+        self.douyinvd_extractor = DouyinVdExtractor(port=port, config=self.config)
+        self._video_info_cache: Dict[str, Dict[str, Any]] = {}
+        self.last_error = ""
     
-    def download_video(self, url: str, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    def download_video(
+        self,
+        url: str,
+        progress_callback: Optional[Callable] = None,
+        video_info: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         下载单个视频
         :param url: 抖音视频链接
@@ -48,21 +55,29 @@ class DouyinDownloader:
         :return: 下载结果
         """
         try:
-            # 使用新的 douyin.py 下载
-            print("使用新douyin.py下载...")
+            print("使用 F2 主解析、DLPanda 回退模式下载...")
             if progress_callback:
-                progress_callback("正在下载抖音视频...", 5)
-            
-            douyinvd_result = self._download_with_douyinvd(url, progress_callback)
+                progress_callback("正在准备抖音下载...", 5)
+
+            resolved_info = video_info or self._video_info_cache.get(url)
+
+            douyinvd_result = self._download_with_douyinvd(
+                url,
+                progress_callback,
+                video_info=resolved_info,
+            )
             if douyinvd_result.get("success"):
                 print("下载成功")
+                self.last_error = ""
                 return douyinvd_result
             else:
                 error = douyinvd_result.get('error', '未知错误')
+                self.last_error = error
                 print(f"下载失败: {error}")
                 return {"success": False, "error": error}
             
         except Exception as e:
+            self.last_error = str(e)
             print(f"下载视频失败: {e}")
             return {"success": False, "error": str(e)}
     
@@ -189,15 +204,19 @@ class DouyinDownloader:
         try:
             print("获取视频信息...")
             video_info = self.douyinvd_extractor.get_video_info(url)
-            
+
             if video_info:
-                print("获取视频信息成功")
+                self._video_info_cache[url] = video_info
+                self.last_error = ""
+                print(f"获取视频信息成功（解析源：{video_info.get('provider', 'unknown')}）")
                 return video_info
             else:
+                self.last_error = self.douyinvd_extractor.last_error or "无法获取视频信息"
                 print("获取视频信息失败")
                 return None
                 
         except Exception as e:
+            self.last_error = str(e)
             print(f"获取视频信息异常: {e}")
             return None
     
@@ -232,8 +251,14 @@ class DouyinDownloader:
             from f2.apps.douyin.handler import DouyinHandler
             from f2.apps.douyin.utils import SecUserIdFetcher
             from f2.utils.utils import extract_valid_urls
-        except ImportError as e:
-            return {"success": False, "error": f"需要安装 f2 库: pip install f2\n({e})"}
+        except Exception as e:
+            return {
+                "success": False,
+                "error": (
+                    "F2 不可用或依赖版本不兼容，请在干净环境中安装 requirements.txt\n"
+                    f"({type(e).__name__}: {e})"
+                ),
+            }
 
         cookie = validation.get("cookie") or ""
         normalized_url = validation.get("url") or user_url
@@ -368,37 +393,44 @@ class DouyinDownloader:
             print(f"清理文件失败: {e}")
             return {"success": False, "error": str(e)}
     
-    def _download_with_douyinvd(self, url: str, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    def _download_with_douyinvd(
+        self,
+        url: str,
+        progress_callback: Optional[Callable] = None,
+        video_info: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
-        使用 douyinVd 下载视频
+        使用 F2 -> DLPanda provider chain 下载视频（方法名保留兼容性）
         :param url: 视频URL
         :param progress_callback: 进度回调函数
         :return: 下载结果
         """
         try:
-            print("使用 douyinVd 下载模式")
+            print("使用 F2 主解析、DLPanda 回退下载模式")
             if progress_callback:
-                progress_callback("使用 douyinVd 下载...", 10)
+                progress_callback("解析媒体地址...", 10)
             
-            # 使用 douyinVd 下载
+            # 兼容层负责解析和下载。
             download_dir = self.config.get("download_dir")
             result = self.douyinvd_extractor.download_video(
                 url,
                 download_dir,
                 save_metadata=self.config.get("save_metadata", False),
+                video_info=video_info,
+                progress_callback=progress_callback,
             )
             
             if result.get("success"):
-                print("douyinVd 下载成功")
+                print(f"抖音下载成功（解析源：{result.get('provider', 'unknown')}）")
                 if progress_callback:
-                    progress_callback("douyinVd 下载完成", 100)
+                    progress_callback("抖音下载完成", 100)
                 return result
             else:
-                error_msg = result.get("error", "douyinVd 下载失败")
-                print(f"douyinVd 下载失败: {error_msg}")
+                error_msg = result.get("error", "抖音下载失败")
+                print(f"抖音下载失败: {error_msg}")
                 return {"success": False, "error": error_msg}
                 
         except Exception as e:
-            error_msg = f"douyinVd 下载异常: {str(e)}"
+            error_msg = f"抖音下载异常: {str(e)}"
             print(f"{error_msg}")
             return {"success": False, "error": error_msg}

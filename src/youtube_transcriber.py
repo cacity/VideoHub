@@ -3529,7 +3529,8 @@ def embed_subtitles_to_video(video_path, subtitle_path, output_dir=VIDEOS_WITH_S
             
             if subtitle_ext_lower == '.ass':
                 # 对于ASS字幕，直接使用ass文件过滤器
-                filter_param = f'ass={temp_subtitle_abs.replace("\\", "/")}'
+                temp_subtitle_filter_path = temp_subtitle_abs.replace('\\', '/')
+                filter_param = f'ass={temp_subtitle_filter_path}'
             else:
                 # 对于其他字幕格式，使用subtitles过滤器
                 if os.name == 'nt':  # Windows
@@ -3597,10 +3598,11 @@ def embed_subtitles_to_video(video_path, subtitle_path, output_dir=VIDEOS_WITH_S
                 
                 # 构建ffmpeg命令
                 subtitle_ext_lower = Path(subtitle_path).suffix.lower()
+                temp_subtitle_filter_path = temp_subtitle_abs.replace('\\', '/')
                 if subtitle_ext_lower == '.ass':
-                    filter_str = f"ass={temp_subtitle_abs.replace('\\', '/')}"
+                    filter_str = f"ass={temp_subtitle_filter_path}"
                 else:
-                    filter_str = f"subtitles={temp_subtitle_abs.replace('\\', '/')}"
+                    filter_str = f"subtitles={temp_subtitle_filter_path}"
                 
                 (
                     ffmpeg

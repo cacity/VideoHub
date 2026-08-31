@@ -968,9 +968,9 @@ class WorkerThread(QThread):
                         self.update_signal.emit("❌ 无法获取抖音视频信息")
                         self.update_signal.emit("可能原因：")
                         self.update_signal.emit("1. 视频链接已失效或被删除")
-                        self.update_signal.emit("2. douyinVd 服务器暂时不可用")
-                        self.update_signal.emit("3. 网络连接问题")
-                        self.update_signal.emit("建议：尝试使用其他抖音链接或稍后重试")
+                        self.update_signal.emit("2. F2 解析失败且 DLPanda 回退不可用")
+                        self.update_signal.emit("3. 私密/受限制视频缺少有效 Cookie")
+                        self.update_signal.emit("建议：检查链接，或在抖音下载设置中填入有效 Cookie")
                         self.finished_signal.emit("抖音视频信息获取失败", False)
                         return
 
@@ -7732,7 +7732,11 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         # 创建解析线程
         is_user_profile = getattr(self, '_pending_douyin_url_is_user', False)
         self._pending_douyin_url_is_user = False  # 消费后重置
-        self.douyin_parse_thread = DouyinParseThread(url, is_user_profile=is_user_profile)
+        self.douyin_parse_thread = DouyinParseThread(
+            url,
+            is_user_profile=is_user_profile,
+            config=self.get_douyin_download_config(),
+        )
         self.douyin_parse_thread.result_signal.connect(self.on_douyin_info_parsed)
         self.douyin_parse_thread.finished_signal.connect(self.on_douyin_parse_finished)
         self.douyin_parse_thread.update_signal.connect(self.update_douyin_output)
@@ -7937,7 +7941,11 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         
         # 创建下载线程
         url = self.douyin_url_input.text().strip()
-        self.douyin_download_thread = DouyinDownloadThread(url, config)
+        self.douyin_download_thread = DouyinDownloadThread(
+            url,
+            config,
+            video_info=self.current_douyin_info,
+        )
         self.douyin_download_thread.progress_signal.connect(self.update_douyin_progress)
         self.douyin_download_thread.update_signal.connect(self.update_douyin_output)
         self.douyin_download_thread.result_signal.connect(self.on_douyin_download_finished)
@@ -9199,10 +9207,11 @@ class DouyinParseThread(QThread):
     result_signal = pyqtSignal(object)
     finished_signal = pyqtSignal(bool, str)
 
-    def __init__(self, url, is_user_profile=False):
+    def __init__(self, url, is_user_profile=False, config=None):
         super().__init__()
         self.url = url
         self.is_user_profile = is_user_profile
+        self.config = config
         self.stopped = False
     
     def stop(self):
@@ -9257,8 +9266,7 @@ class DouyinParseThread(QThread):
                 self.finished_signal.emit(True, "检测到用户主页")
                 return
 
-            # 创建下载器，使用默认端口8080
-            downloader = DouyinDownloader(port="8080")
+            downloader = DouyinDownloader(self.config, port="8080")
             
             # 解析视频信息
             print(f"[线程] 调用 downloader.get_video_info({self.url})")
@@ -9279,7 +9287,10 @@ class DouyinParseThread(QThread):
                 print(f"[线程] 事件循环处理完成")
             else:
                 print(f"[线程] 视频信息为空，发出失败信号")
-                self.finished_signal.emit(False, "无法解析视频信息")
+                self.finished_signal.emit(
+                    False,
+                    downloader.last_error or "F2 与 DLPanda 均无法解析视频信息",
+                )
                 
         except Exception as e:
             if not self.stopped:
@@ -9296,10 +9307,11 @@ class DouyinDownloadThread(QThread):
     result_signal = pyqtSignal(object)
     finished_signal = pyqtSignal(bool, str)
     
-    def __init__(self, url, config):
+    def __init__(self, url, config, video_info=None):
         super().__init__()
         self.url = url
         self.config = config
+        self.video_info = video_info
         self.stopped = False
     
     def stop(self):
@@ -9400,7 +9412,11 @@ class DouyinDownloadThread(QThread):
                     self.progress_signal.emit(progress, message)
             
             # 下载视频
-            result = downloader.download_video(self.url, progress_callback)
+            result = downloader.download_video(
+                self.url,
+                progress_callback=progress_callback,
+                video_info=self.video_info,
+            )
             
             if self.stopped:
                 return

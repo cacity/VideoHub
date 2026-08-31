@@ -3,7 +3,7 @@
 
 """
 抖音下载命令行工具
-使用集成的 douyinVd 功能下载抖音视频或用户主页作品
+单视频使用 F2 主解析、DLPanda 回退；用户主页作品使用 F2
 """
 
 import sys
@@ -33,7 +33,7 @@ def download_douyin_video(url, output_dir=DOUYIN_DOWNLOADS_DIR, cookie=None):
     """下载单个视频"""
 
     print("=" * 60)
-    print("抖音视频下载工具（基于 douyinVd）")
+    print("抖音视频下载工具（F2 主解析 + DLPanda 回退）")
     print("=" * 60)
 
     downloader = build_downloader(output_dir, cookie)
@@ -99,8 +99,8 @@ def download_douyin_video(url, output_dir=DOUYIN_DOWNLOADS_DIR, cookie=None):
         print(f"错误信息: {error}")
         print("\n建议:")
         print("1. 检查抖音链接是否有效")
-        print("2. 确保 douyinVd 服务器正在运行")
-        print("3. 检查网络连接")
+        print("2. 私密或受限视频请提供有效 Cookie")
+        print("3. 检查 F2 依赖和网络连接；公开链接会自动尝试 DLPanda")
         return 1
 
     except KeyboardInterrupt:
@@ -177,8 +177,9 @@ def main():
   - 用户主页: https://www.douyin.com/user/xxxxx 或可展开为主页的分享短链
 
 注意:
-  - 主页批量下载通常需要提供有效 Cookie
-  - 需要先启动 douyinVd 服务器: cd douyinVd && deno task dev
+  - 单视频优先使用 F2；F2 不可用或解析失败时自动回退 DLPanda
+  - DLPanda 仅适合作为公开链接回退；不会向第三方发送你的抖音 Cookie
+  - 主页批量下载需要 F2 和有效 Cookie
   - 单视频下载默认尝试无水印版本，不保存 JSON 元数据
         """
     )

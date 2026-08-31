@@ -1612,3 +1612,41 @@ GitHub 仓库 `blob` 地址返回 HTML 文件查看页；`raw.githubusercontent.
 
 - 受保护视频仍取决于账号自身的观看权限，登录成功不代表拥有全部内容权限。
 - 蔻享若调整接口、签名算法或页面结构，下载器和扩展内容脚本需要同步更新。
+
+## 2026-08-31：抖音 F2 主解析与 DLPanda 回退
+
+### 更新内容
+
+- 新增统一解析链：单视频先调用 F2 `fetch_one_video`，失败后按 DLPanda 当前 CSRF + `t0ken` 表单协议回退。
+- 移除活动路径对 `src/douyin.py` 页面正则解析的依赖；保留 `DouyinVdExtractor` 类名只用于兼容既有调用方。
+- GUI 解析线程现在会传入 Cookie 配置，下载线程复用已解析信息，避免同一作品重复请求和临时媒体地址过期。
+- 下载使用 `.part` 临时文件和原子替换，拒绝 HTML 错误页；DLPanda CDN 请求不发送抖音 Cookie，也不发送会触发 403 的 Referer。
+- CLI、错误提示和 Douyin skill 文档改为 F2 主解析 + DLPanda 回退；`requirements.txt` 固定 `f2==0.0.1.7` 和其兼容的 `httpx==0.27.2`。
+
+### 验证结果
+
+- `python -m pytest tests/test_douyin_providers.py -q`：6/6 PASS，覆盖 F2 归一化、provider 回退、DLPanda 动态令牌、Cookie 隔离、解析结果复用和失败清理。
+- 新增解析器与下载兼容层通过 Ruff 的 E/F/I 检查；相关 Python 文件通过 `py_compile`。
+- 近期公开作品真实冒烟：当前 Anaconda 环境中的 F2 因 `protobuf` 版本不匹配失败后，DLPanda 自动接管并成功下载 788,371 字节 MP4；FFprobe 识别时长 7.614 秒、容器为 MP4。
+- 实测确认 DLPanda 返回的签名 CDN 地址在带 DLPanda Referer 时返回 403、无 Referer 时返回 200，代码和测试均已固化该要求。
+
+### 已知边界
+
+- 当前活动 Anaconda 环境仍是历史依赖混装状态，F2 会失败并回退；重新按更新后的依赖文件创建或同步干净环境后，F2 才能成为实际首选来源。
+- DLPanda 是第三方公开链接回退，页面结构或令牌协议变化时需要更新；私密、好友可见或受限作品不能依赖该回退。
+- 本次未提交、未推送，也未改动用户已有的 `idle_queue.json` 和未跟踪桌面构建目录。
+
+## 2026-08-31：Python 3.11 与 F2 干净环境修复
+
+- 用户按依赖文件新建 Python 3.11 `VideoHubClean` 环境后，发现 `youtube_transcriber.py` 三处 f-string 在表达式内包含反斜杠，只能被 Python 3.12 解析。现改为先规范化字幕路径，再构造 ASS/subtitles 过滤器。
+- F2 在干净环境成功导入后，首次真实接口调用因 VideoHub 请求头错误声明支持 Brotli，收到压缩正文后发生 UTF-8 解码失败。F2 provider 现在移除手工 `Accept-Encoding`，让 httpx 只协商当前环境真正支持的编码。
+- F2 0.0.1.7 默认启用无密钥 Bark 通知并产生 HTTP 405；VideoHub 的元数据调用现在显式关闭该无关通知。
+- 验证：Python 3.11 成功编译 107 个已跟踪 Python 文件；`main.py` 在 offscreen 模式实际启动到 12 个标签页与本地 API 服务；6 项 provider 测试通过；近期公开作品真实返回 `provider=f2`，没有触发 DLPanda 回退或 Bark 错误。
+
+## 2026-08-31：Git 临时文件与本机构建产物隔离
+
+- 扩充 `.gitignore`，覆盖仓库内 pip/npm/uv/pnpm 缓存、`.venv-*` 环境、Ruff/Python 缓存、凭据与 Cookie、本地数据库附属文件、部分下载文件、安装包及 Tauri/PyInstaller 构建产物。
+- 把运行输出目录改为仓库根目录锚定规则，避免 `/douyin/` 这类名称误伤 `src/douyin/` 新源码；保留 `requirements*.txt`、桌面端未来真实源码和已有界面/文档图片资源可被 Git 发现。
+- 对桌面构建目录采用子目录级规则：忽略 `dist`、`node_modules`、Rust `target`、sidecar、工具 resources 和自动生成 icons，但未把整个 `desktop/` 永久屏蔽。
+- 已将 `idle_queue.json` 和 12 个历史 `.pyc` 从 Git 索引移除，文件仍保留在本机。以后它们会被忽略，不再进入提交。
+- 验证：当前约 12.5 GiB 的缓存、虚拟环境和桌面构建内容均不出现在普通 `git status`；`git ls-files -ci --exclude-standard` 返回空；未跟踪列表只剩需要评审的源码/依赖/测试文件。
