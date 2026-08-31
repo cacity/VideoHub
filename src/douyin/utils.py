@@ -412,18 +412,26 @@ class DouyinUtils:
         try:
             author = video_info.get('author', {}).get('nickname', '未知')
             title = video_info.get('desc', '无标题')[:50]
-            duration = video_info.get('duration', 0)
+            duration = video_info.get('duration') or video_info.get('video', {}).get('duration', 0)
             create_time = video_info.get('create_time', 0)
-            
+            provider = video_info.get('provider', 'unknown')
+
             # 格式化时间
-            create_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(create_time))
-            duration_str = DouyinUtils.format_duration(duration)
-            
+            if isinstance(create_time, str):
+                create_date = create_time or "未知"
+            elif isinstance(create_time, (int, float)) and create_time > 0:
+                create_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(create_time))
+            else:
+                create_date = "未知"
+            duration_str = DouyinUtils.format_duration(int(duration or 0))
+            provider_label = {"f2": "F2", "dlpanda": "DLPanda"}.get(provider, provider)
+
             summary = f"""
 作者: {author}
 标题: {title}
 时长: {duration_str}
 发布时间: {create_date}
+解析源: {provider_label}
             """.strip()
             
             return summary

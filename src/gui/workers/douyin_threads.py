@@ -13,10 +13,11 @@ class DouyinParseThread(QThread):
     result_signal = pyqtSignal(object)
     finished_signal = pyqtSignal(bool, str)
 
-    def __init__(self, url, is_user_profile=False):
+    def __init__(self, url, is_user_profile=False, config=None):
         super().__init__()
         self.url = url
         self.is_user_profile = is_user_profile
+        self.config = config
         self.stopped = False
 
     def stop(self):
@@ -71,9 +72,8 @@ class DouyinParseThread(QThread):
                 self.finished_signal.emit(True, "检测到用户主页")
                 return
 
-            # 创建下载器，使用默认端口8080
             from douyin import DouyinDownloader
-            downloader = DouyinDownloader(port="8080")
+            downloader = DouyinDownloader(self.config, port="8080")
 
             # 解析视频信息
             print(f"[线程] 调用 downloader.get_video_info({self.url})")
@@ -94,7 +94,10 @@ class DouyinParseThread(QThread):
                 print(f"[线程] 事件循环处理完成")
             else:
                 print(f"[线程] 视频信息为空，发出失败信号")
-                self.finished_signal.emit(False, "无法解析视频信息")
+                self.finished_signal.emit(
+                    False,
+                    downloader.last_error or "F2 与 DLPanda 均无法解析视频信息",
+                )
 
         except Exception as e:
             if not self.stopped:
@@ -111,10 +114,11 @@ class DouyinDownloadThread(QThread):
     result_signal = pyqtSignal(object)
     finished_signal = pyqtSignal(bool, str)
 
-    def __init__(self, url, config):
+    def __init__(self, url, config, video_info=None):
         super().__init__()
         self.url = url
         self.config = config
+        self.video_info = video_info
         self.stopped = False
 
     def stop(self):
@@ -200,7 +204,11 @@ class DouyinDownloadThread(QThread):
                     self.progress_signal.emit(progress, message)
 
             # 下载视频
-            result = downloader.download_video(self.url, progress_callback=progress_callback)
+            result = downloader.download_video(
+                self.url,
+                progress_callback=progress_callback,
+                video_info=self.video_info,
+            )
 
             if self.stopped:
                 return
