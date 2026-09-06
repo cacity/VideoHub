@@ -1,7 +1,7 @@
 """Generate a shareable, secret-safe VideoHub support preflight report.
 
 The command performs local, read-only checks plus short-lived write probes. It
-does not contact external services, call paid APIs, scan media, or print secret
+does not contact external services, call external APIs, scan media, or print secret
 values. Generated report files are ignored by Git by default.
 """
 

@@ -23,6 +23,59 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-09-06：修复 YouTube 403 与 TikTok 页面解析失败
+
+### 更新内容
+
+- TikTok 在 `yt-dlp` 无法提取网页重建数据时，自动改用 TikTok 官方嵌入页元数据和媒体地址下载公开视频。
+- YouTube 遇到媒体服务器 `HTTP 403` 或默认格式不可用时，自动切换到 `web_embedded` 客户端重新提取地址并继续下载。
+- 增加文件访问重试和指数等待，关闭 Python `yt-dlp` 路径会隐藏真实失败的 `ignoreerrors`。
+- 桌面与完整依赖清单增加 `curl-cffi`，并把最低 `yt-dlp` 版本更新到 `2026.8.19`。
+- 中英文 README 在简介后增加本次修复说明和故障恢复边界。
+
+### 设计与实现
+
+- `src/youtube_transcriber.py` 集中识别 YouTube 与 TikTok URL，并让外部 `yt-dlp.exe` 和 Python `yt_dlp` 两条下载路径采用一致的回退规则。
+- TikTok 回退优先使用 `curl_cffi` 的 Chrome 请求模拟；未安装该可选依赖时继续支持 `requests`，代理配置在网页、嵌入页和媒体请求间保持一致。
+- TikTok 媒体先写入 `.part`，验证内容类型和最小文件大小后原子替换成最终文件；音频模式复用现有 FFmpeg 音频提取函数。
+- 错误信息区分默认下载失败、YouTube 双客户端均失败和 TikTok 双路径均失败，避免只显示不具备操作价值的底层异常。
+
+### 验证结果
+
+- `VideoHubClean` Python 3.11 环境执行 `tests/test_douyin_providers.py` 与 `tests/test_minimax_tts.py`：20 项通过。
+- `python -m py_compile src/youtube_transcriber.py`：通过。
+- `python -m pip check`：未发现损坏或冲突的依赖。
+- `git diff --check`：通过，仅有 Git 对工作区 LF/CRLF 转换的提示。
+- 包含同一代码改动的 PyQt6 单文件 EXE 已完成窗口启动、本地 API 和内置 `curl_cffi`/libcurl 资源检查；尚未进行干净 Windows 机器验收和 Authenticode 签名。
+
+### 已知边界
+
+- TikTok 官方嵌入页回退只处理可公开访问的视频作品，不处理图文、私密、区域限制或必须登录的内容。
+- YouTube `web_embedded` 回退不能绕过登录、地区、版权或平台授权限制；持续要求验证时仍需有效 Cookie、稳定代理或按 `yt-dlp` 官方说明配置 PO Token provider。
+- `pytest-asyncio` 仍提示未来默认 fixture loop scope 将变化，本次同步未修改该项全局测试配置。
+
+## 2026-08-31：移除仓库商业化入口
+
+### 更新内容
+
+- 从中英文 README 删除商业推广段落和关联入口。
+- 删除商业服务说明、产品意向页、支持申请、诊断交付样例和两个商业化 Issue 模板。
+- 清理案例页、界面文案、Skill 参考和技术文档中的商业化措辞及失效链接。
+
+### 设计与实现
+
+- 保留开源软件功能、环境预检工具和第三方 API 配置能力，只移除仓库自身的商业推广和交易入口。
+- TTS 选择器统一改为“本地 / 云端”分类，不再使用商业属性作为技术后端名称。
+
+### 验证结果
+
+- 扫描所有已跟踪 Markdown、YAML 和 Python 文件，确认不存在仓库商业服务、产品金额或交易入口引用。
+- Python 编译、相关测试和 `git diff --check` 均通过。
+
+### 已知边界
+
+- MiniMax 等第三方 API 仍作为可选功能保留，使用者需要自行配置对应凭据。
+
 ## 2026-08-26：移除 README 商业推广内容
 
 ### 更新内容
@@ -70,7 +123,7 @@ python -m py_compile main.py
   和本地证据决定。
 - 新增 `series-job-schema.md`，规定 `series_spec.json` 与 `episode_specs.json` 的边界、
   安全要求、恢复规则和执行命令。旧项目脚本暂不删除，保留为回归基线。
-- 将 project078 加入新配置格式并对 13 集真实素材执行无付费 API 的预检，验证视频、字幕、
+- 将 project078 加入新配置格式并对 13 集真实素材执行不调用外部 API 的预检，验证视频、字幕、
   流信息、时长和选段边界均可被统一入口读取。
 - 新增系列配置与执行器单元测试，并同步旧片段缓存测试所需的 `source_audio_stream` 参数。
 
@@ -850,7 +903,7 @@ git diff --check
 
 手动验证建议：
 
-- 在设置页切换到“外部付费 - MiniMax API”，确认 MiniMax 音色下拉框可选择男声和女声。
+- 在设置页切换到“云端 - MiniMax API”，确认 MiniMax 音色下拉框可选择男声和女声。
 - 在 AI 配音页确认音色列表跟随 MiniMax 后端切换。
 - 选择一个男声试听，确认请求日志中的 `voice_id` 是真实 MiniMax voice_id。
 - 手动输入一个自定义 voice_id，保存设置后确认 `.env` 中保存的是该 ID。
@@ -1522,35 +1575,6 @@ git diff --check -- README.md README_en.md .agents/skills
 - `python scripts/qa_series.py` 为 11/11 PASS：完整解码、1080x1920 H.264、AAC、持续黑场和封面尺寸检查均通过。
 - 第 3 至第 12 期逐期抽取中段画面进行视觉检查，画作长方形上下边界一致，中心均为 960px，未与进度条、字幕或底栏重叠。
 - 居中参数和视觉证据记录在项目 `docs/qa_recenter/recenter_qa.md`。
-## 2026-08-12：付费支持无密钥环境预检与结构化申请
-
-### 更新内容
-
-- 新增 `src/support_preflight.py`，生成 JSON 与 Markdown 环境报告，覆盖 Python、FFmpeg/FFprobe、关键依赖、仓库文件、磁盘空间和目录可写性。
-- 新增 `SUPPORT_REQUEST.md` 中英文申请模板，把服务档位、输入、输出、授权样例、日期和第三方费用偏好结构化。
-- README 中英文版及 `SERVICES.md` 增加预检命令和申请入口。
-- `.gitignore` 排除 `videohub_support_report*.json` 与 `videohub_support_report*.md`，避免机器环境信息进入版本库。
-
-### 设计思路
-
-QuickStart 的首次沟通成本主要来自无法复现的环境描述。预检只做本地、可审计检查，不联网、不扫描媒体、不调用付费 API；凭据只报告“是否配置”，不读取到输出。路径只保留 `<repo>` / `<home>` 后缀或可执行文件名。
-
-目录可写性通过 3 秒硬超时子进程探测，防止权限异常或文件系统问题让整个客户报告无响应。预检失败仍输出完整报告，并使用非零退出码提醒客户处理 FAIL 项。
-
-### 验证结果
-
-- `python -B -m unittest discover -s tests -p 'test_support_preflight.py' -v`：5/5 PASS。
-- 沙箱账户真实运行：24 PASS、2 FAIL；正确识别仓库与 workspace 不可写，未卡住。
-- 普通 Windows 用户权限真实运行：26 PASS、0 WARN、0 FAIL，readiness 为 `ready`。
-- 用当前 `.env` 值做哨兵扫描：报告中的密钥值泄露数为 0。
-- `git check-ignore` 确认两类生成报告均被忽略；`git diff --check` 通过。
-
-### 已知边界
-
-- 预检不验证第三方 API 余额、账号权限、网络可达性、GPU 性能或特定素材兼容性。
-- `ready` 只表示本地基础检查通过，不代表自动接单或承诺某个处理速度。
-- 客户发送报告前仍应自行打开复核，不应附带 `.env` 或任何密钥文件。
-
 ## 2026-08-21：README 作品展示短样片
 
 ### 更新内容
@@ -1634,3 +1658,41 @@ GitHub 仓库 `blob` 地址返回 HTML 文件查看页；`raw.githubusercontent.
 
 - 受保护视频仍取决于账号自身的观看权限，登录成功不代表拥有全部内容权限。
 - 蔻享若调整接口、签名算法或页面结构，下载器和扩展内容脚本需要同步更新。
+
+## 2026-08-31：抖音 F2 主解析与 DLPanda 回退
+
+### 更新内容
+
+- 新增统一解析链：单视频先调用 F2 `fetch_one_video`，失败后按 DLPanda 当前 CSRF + `t0ken` 表单协议回退。
+- 移除活动路径对 `src/douyin.py` 页面正则解析的依赖；保留 `DouyinVdExtractor` 类名只用于兼容既有调用方。
+- GUI 解析线程现在会传入 Cookie 配置，下载线程复用已解析信息，避免同一作品重复请求和临时媒体地址过期。
+- 下载使用 `.part` 临时文件和原子替换，拒绝 HTML 错误页；DLPanda CDN 请求不发送抖音 Cookie，也不发送会触发 403 的 Referer。
+- CLI、错误提示和 Douyin skill 文档改为 F2 主解析 + DLPanda 回退；`requirements.txt` 固定 `f2==0.0.1.7` 和其兼容的 `httpx==0.27.2`。
+
+### 验证结果
+
+- `python -m pytest tests/test_douyin_providers.py -q`：6/6 PASS，覆盖 F2 归一化、provider 回退、DLPanda 动态令牌、Cookie 隔离、解析结果复用和失败清理。
+- 新增解析器与下载兼容层通过 Ruff 的 E/F/I 检查；相关 Python 文件通过 `py_compile`。
+- 近期公开作品真实冒烟：当前 Anaconda 环境中的 F2 因 `protobuf` 版本不匹配失败后，DLPanda 自动接管并成功下载 788,371 字节 MP4；FFprobe 识别时长 7.614 秒、容器为 MP4。
+- 实测确认 DLPanda 返回的签名 CDN 地址在带 DLPanda Referer 时返回 403、无 Referer 时返回 200，代码和测试均已固化该要求。
+
+### 已知边界
+
+- 当前活动 Anaconda 环境仍是历史依赖混装状态，F2 会失败并回退；重新按更新后的依赖文件创建或同步干净环境后，F2 才能成为实际首选来源。
+- DLPanda 是第三方公开链接回退，页面结构或令牌协议变化时需要更新；私密、好友可见或受限作品不能依赖该回退。
+- 本次未提交、未推送，也未改动用户已有的 `idle_queue.json` 和未跟踪桌面构建目录。
+
+## 2026-08-31：Python 3.11 与 F2 干净环境修复
+
+- 用户按依赖文件新建 Python 3.11 `VideoHubClean` 环境后，发现 `youtube_transcriber.py` 三处 f-string 在表达式内包含反斜杠，只能被 Python 3.12 解析。现改为先规范化字幕路径，再构造 ASS/subtitles 过滤器。
+- F2 在干净环境成功导入后，首次真实接口调用因 VideoHub 请求头错误声明支持 Brotli，收到压缩正文后发生 UTF-8 解码失败。F2 provider 现在移除手工 `Accept-Encoding`，让 httpx 只协商当前环境真正支持的编码。
+- F2 0.0.1.7 默认启用无密钥 Bark 通知并产生 HTTP 405；VideoHub 的元数据调用现在显式关闭该无关通知。
+- 验证：Python 3.11 成功编译 107 个已跟踪 Python 文件；`main.py` 在 offscreen 模式实际启动到 12 个标签页与本地 API 服务；6 项 provider 测试通过；近期公开作品真实返回 `provider=f2`，没有触发 DLPanda 回退或 Bark 错误。
+
+## 2026-08-31：Git 临时文件与本机构建产物隔离
+
+- 扩充 `.gitignore`，覆盖仓库内 pip/npm/uv/pnpm 缓存、`.venv-*` 环境、Ruff/Python 缓存、凭据与 Cookie、本地数据库附属文件、部分下载文件、安装包及 Tauri/PyInstaller 构建产物。
+- 把运行输出目录改为仓库根目录锚定规则，避免 `/douyin/` 这类名称误伤 `src/douyin/` 新源码；保留 `requirements*.txt`、桌面端未来真实源码和已有界面/文档图片资源可被 Git 发现。
+- 对桌面构建目录采用子目录级规则：忽略 `dist`、`node_modules`、Rust `target`、sidecar、工具 resources 和自动生成 icons，但未把整个 `desktop/` 永久屏蔽。
+- 已将 `idle_queue.json` 和 12 个历史 `.pyc` 从 Git 索引移除，文件仍保留在本机。以后它们会被忽略，不再进入提交。
+- 验证：当前约 12.5 GiB 的缓存、虚拟环境和桌面构建内容均不出现在普通 `git status`；`git ls-files -ci --exclude-standard` 返回空；未跟踪列表只剩需要评审的源码/依赖/测试文件。

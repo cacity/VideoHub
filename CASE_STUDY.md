@@ -2,7 +2,7 @@
 
 ## 11 期授权艺术内容系列工作流
 
-这是一个用于验证 VideoHub 系列生产能力的内部案例，不代表 11 个付费客户项目，也不披露任何客户数据。
+这是一个用于验证 VideoHub 系列生产能力的内部案例，不包含第三方客户数据。
 
 ### 目标
 
@@ -27,24 +27,22 @@
 3. 对单期修改时复用没有变化的中间资产；
 4. 在发布前检查成片、字幕、封面与发布包是否齐全。
 
-这类流程对应 [Creator Series Workflow](./SERVICES.md#2-creator-series-workflow--usd-999)，固定价格 USD 999，使用客户拥有权利的三个样例完成配置、验收和交接。
-
 ### 限制
 
-- 不声称这些文件产生了特定播放量、收入或客户增长。
-- 不处理客户无权下载、剪辑或发布的内容。
-- 第三方 TTS、模型、字体、音乐与托管费用不包含在服务价格中。
+- 不声称这些文件产生了特定播放量或增长结果。
+- 只处理使用者有权下载、剪辑或发布的内容。
+- 第三方 TTS、模型、字体、音乐与托管服务需要由使用者自行配置并确认授权。
 
 ---
 
 ## English summary
 
-This internal case validates a repeatable series workflow; it does not represent 11 paid client engagements and contains no client data.
+This internal case validates a repeatable series workflow and contains no third-party client data.
 
 - 11 indexed episodes, each with a vertical final video, SRT subtitles, chapters, and release copy.
 - Four primary cover formats per episode—9:16, 3:4, 4:3, and 16:9—for 44 covers in total.
 - Episode durations range from about 61.6 to 72.9 seconds.
 - The repository index and per-episode folders provide the evidence. Extra `*_final.mp4` files are retained re-renders, so the indexed delivery count remains 11.
 
-The case demonstrates specification freezing, reusable local processing, consistent deliverable folders, selective rework, and pre-release QA. A comparable three-sample setup is offered as the [USD 999 Creator Series Workflow](./SERVICES.md#2-creator-series-workflow--usd-999), using only content the customer is authorized to process.
+The case demonstrates specification freezing, reusable local processing, consistent deliverable folders, selective rework, and pre-release QA, using only content the operator is authorized to process.
 

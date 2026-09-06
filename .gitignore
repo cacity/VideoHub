@@ -1,15 +1,25 @@
 # 本地计划和方案文档（不上传GitHub）
-plans/
-local_docs/
+/plans/
+/local_docs/
 *.plan.md
 *.design.md
 videohub_support_report*.json
 videohub_support_report*.md
+
+# 密钥、Cookie 与本机凭据
 .env
-.env.local
-.env.development
-.env.test
-.env.production
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*credentials*.json
+*secrets*.json
+*cookies*.json
+cookies.txt
+*.pem
+*.key
+*.pfx
+*.p12
 
 # Python 相关
 __pycache__/
@@ -29,7 +39,18 @@ coverage.xml
 *.log
 .mypy_cache
 .pytest_cache
+.ruff_cache/
+.pyre/
+.pytype/
+.nox/
 .hypothesis
+.ipynb_checkpoints/
+
+# 仓库内包管理器缓存
+/.pip-cache/
+/.npm-cache/
+/.uv-cache/
+/.pnpm-store/
 
 # Python 打包相关
 *.egg-info/
@@ -38,57 +59,70 @@ build/
 .eggs/
 *.egg
 MANIFEST
+wheelhouse/
 
 # 工作目录和数据文件 - 所有用户生成的内容
 # 统一挂在 workspace/ 目录下，避免误提交到Git仓库
-workspace/
-pretrained_models/
-outputs/
-youtube/
-youtube_audio/
-twitter/
-bilibili/
-instagram/
-douyin/
-live/
-koushare/
-koushare_downloads/
+/workspace/
+/pretrained_models/
+/outputs/
+/youtube/
+/youtube_audio/
+/twitter/
+/bilibili/
+/instagram/
+/douyin/
+/live/
+/koushare/
+/koushare_downloads/
 .gstack/
 .claude/
-website/
+/.codex/
+/website/
 # 公共网站原型仍保持本地；仅提交影视解说时间线编辑器的最小前端源码。
-frontend/*
-!frontend/package.json
-!frontend/package-lock.json
-!frontend/tsconfig.app.json
-!frontend/vite.config.ts
-!frontend/story-editor.html
-!frontend/src/
-frontend/src/*
-!frontend/src/story-editor.tsx
-!frontend/src/story-editor.css
-downloads/
+/frontend/*
+!/frontend/package.json
+!/frontend/package-lock.json
+!/frontend/tsconfig.app.json
+!/frontend/vite.config.ts
+!/frontend/story-editor.html
+!/frontend/src/
+/frontend/src/*
+!/frontend/src/story-editor.tsx
+!/frontend/src/story-editor.css
+/downloads/
 .claude/
 CLAUDE.md
 AGENTS.md
-douyin_downloads/
-videos/
-videos_with_subtitles/
-demo_downloads/
-transcripts/
-subtitles/
-native_subtitles/
-summaries/
-logs/
-outputs/
-pretrained_models/
+/douyin_downloads/
+/videos/
+/videos_with_subtitles/
+/demo_downloads/
+/transcripts/
+/subtitles/
+/native_subtitles/
+/summaries/
+/logs/
 
 # 用户配置和临时文件
 *.txt
 !README.txt
-!requirements.txt
+!requirements*.txt
 idle_queue.json
 downloaded_videos.json
+*.pid
+*.pid.lock
+*.lock.tmp
+*.retry
+*.crash
+*.dmp
+*.stackdump
+*.prof
+*.trace
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db-journal
 
 # IDE和编辑器文件
 .vscode/
@@ -104,6 +138,15 @@ Thumbs.db
 !ffmpeg/ffmpeg.exe
 !ffmpeg/ffprobe.exe
 chromedriver.exe
+*.msi
+*.msix
+*.appx
+*.appxbundle
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.AppImage
 *.tmp
 *.temp
 
@@ -127,6 +170,11 @@ chromedriver.exe
 !docs/assets/showcase/*.jpg
 !docs/assets/showcase/*.mp4
 
+# 代码库自带的界面/扩展图片资源
+!chrome_extension/icons/*.png
+!icons/*.png
+!docs/assets/series-ops-kit/*.png
+
 # 备份文件
 *.backup
 *.bak
@@ -141,11 +189,16 @@ chromedriver.exe
 
 # Node.js 相关（如果有）
 node_modules/
+.vite/
+.vite-temp/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
 # Python 虚拟环境
+.venv/
+.venv-*/
 venv/
 env/
 ENV/
@@ -157,8 +210,10 @@ venv.bak/
 *.qrc~
 
 # 特定工作目录和文件
-templates/
-icons/
+/templates/*
+!/templates/default.txt
+/icons/*
+!/icons/*.png
 chrome_extension/manifest.json.backup
 extension_checklist.md
 install_extension_guide.html
@@ -168,6 +223,20 @@ install_extension_guide.html
 *.ytdl
 *.part-Frag*
 *.m3u8
+*.crdownload
+*.download
+*.aria2
+
+# 桌面端/Tauri/PyInstaller 本机构建产物
+/desktop/dist/
+/desktop/node_modules/
+/desktop/src-tauri/target/
+/desktop/src-tauri/binaries/
+/desktop/src-tauri/resources/
+/desktop/src-tauri/icons/
+/desktop/src-tauri/gen/
+/VideoHub_*.wxs
+/ytdlp/
 
 # 特定媒体文件
 1.png

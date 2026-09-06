@@ -968,9 +968,9 @@ class WorkerThread(QThread):
                         self.update_signal.emit("❌ 无法获取抖音视频信息")
                         self.update_signal.emit("可能原因：")
                         self.update_signal.emit("1. 视频链接已失效或被删除")
-                        self.update_signal.emit("2. douyinVd 服务器暂时不可用")
-                        self.update_signal.emit("3. 网络连接问题")
-                        self.update_signal.emit("建议：尝试使用其他抖音链接或稍后重试")
+                        self.update_signal.emit("2. F2 解析失败且 DLPanda 回退不可用")
+                        self.update_signal.emit("3. 私密/受限制视频缺少有效 Cookie")
+                        self.update_signal.emit("建议：检查链接，或在抖音下载设置中填入有效 Cookie")
                         self.finished_signal.emit("抖音视频信息获取失败", False)
                         return
 
@@ -4335,22 +4335,22 @@ class MainWindow(QMainWindow):
         tts_backend_label = QLabel("TTS 类型和引擎:")
         self.tts_backend_combo = QComboBox()
         self.tts_backend_combo.addItems([
-            "本地免费 - Kokoro（默认）",
-            "本地免费 - CosyVoice SFT",
-            "本地免费 - CosyVoice Instruct",
-            "外部付费 - MiniMax API",
+            "本地 - Kokoro（默认）",
+            "本地 - CosyVoice SFT",
+            "本地 - CosyVoice Instruct",
+            "云端 - MiniMax API",
         ])
         self.apply_readable_combo_style(self.tts_backend_combo)
         current_tts_backend = os.getenv("TTS_BACKEND", "kokoro")
         current_cosyvoice_mode = os.getenv("COSYVOICE_TTS_MODE", "sft")
         if current_tts_backend == "minimax":
-            self.tts_backend_combo.setCurrentText("外部付费 - MiniMax API")
+            self.tts_backend_combo.setCurrentText("云端 - MiniMax API")
         elif current_tts_backend == "cosyvoice" and current_cosyvoice_mode == "instruct":
-            self.tts_backend_combo.setCurrentText("本地免费 - CosyVoice Instruct")
+            self.tts_backend_combo.setCurrentText("本地 - CosyVoice Instruct")
         elif current_tts_backend == "cosyvoice":
-            self.tts_backend_combo.setCurrentText("本地免费 - CosyVoice SFT")
+            self.tts_backend_combo.setCurrentText("本地 - CosyVoice SFT")
         else:
-            self.tts_backend_combo.setCurrentText("本地免费 - Kokoro（默认）")
+            self.tts_backend_combo.setCurrentText("本地 - Kokoro（默认）")
         tts_backend_layout.addWidget(tts_backend_label)
         tts_backend_layout.addWidget(self.tts_backend_combo)
         tts_layout.addLayout(tts_backend_layout)
@@ -4449,8 +4449,8 @@ class MainWindow(QMainWindow):
         tts_layout.addLayout(minimax_language_layout)
 
         tts_info = QLabel(
-            "Kokoro 和 CosyVoice 在本地运行，不按调用收费；MiniMax 使用外部付费 API，"
-            "按生成字符计费。试听和正式配音都会使用当前选择。"
+            "Kokoro 和 CosyVoice 在本地运行；MiniMax 通过外部 API 运行。"
+            "试听和正式配音都会使用当前选择。"
         )
         tts_info.setStyleSheet("color: #666; font-size: 11px;")
         tts_info.setWordWrap(True)
@@ -7732,7 +7732,11 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         # 创建解析线程
         is_user_profile = getattr(self, '_pending_douyin_url_is_user', False)
         self._pending_douyin_url_is_user = False  # 消费后重置
-        self.douyin_parse_thread = DouyinParseThread(url, is_user_profile=is_user_profile)
+        self.douyin_parse_thread = DouyinParseThread(
+            url,
+            is_user_profile=is_user_profile,
+            config=self.get_douyin_download_config(),
+        )
         self.douyin_parse_thread.result_signal.connect(self.on_douyin_info_parsed)
         self.douyin_parse_thread.finished_signal.connect(self.on_douyin_parse_finished)
         self.douyin_parse_thread.update_signal.connect(self.update_douyin_output)
@@ -7937,7 +7941,11 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         
         # 创建下载线程
         url = self.douyin_url_input.text().strip()
-        self.douyin_download_thread = DouyinDownloadThread(url, config)
+        self.douyin_download_thread = DouyinDownloadThread(
+            url,
+            config,
+            video_info=self.current_douyin_info,
+        )
         self.douyin_download_thread.progress_signal.connect(self.update_douyin_progress)
         self.douyin_download_thread.update_signal.connect(self.update_douyin_output)
         self.douyin_download_thread.result_signal.connect(self.on_douyin_download_finished)
@@ -8446,10 +8454,10 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                     return
                 self.dubbing_log_text.append(
                     f"TTS 引擎: MiniMax {params['minimax_model']}, "
-                    f"voice_id={params['minimax_voice_id']}（外部付费）"
+                    f"voice_id={params['minimax_voice_id']}（云端）"
                 )
             else:
-                self.dubbing_log_text.append("TTS 引擎: Kokoro（本地免费）")
+                self.dubbing_log_text.append("TTS 引擎: Kokoro（本地）")
 
             # 更新UI状态
             self.dubbing_start_button.setEnabled(False)
@@ -9199,10 +9207,11 @@ class DouyinParseThread(QThread):
     result_signal = pyqtSignal(object)
     finished_signal = pyqtSignal(bool, str)
 
-    def __init__(self, url, is_user_profile=False):
+    def __init__(self, url, is_user_profile=False, config=None):
         super().__init__()
         self.url = url
         self.is_user_profile = is_user_profile
+        self.config = config
         self.stopped = False
     
     def stop(self):
@@ -9257,8 +9266,7 @@ class DouyinParseThread(QThread):
                 self.finished_signal.emit(True, "检测到用户主页")
                 return
 
-            # 创建下载器，使用默认端口8080
-            downloader = DouyinDownloader(port="8080")
+            downloader = DouyinDownloader(self.config, port="8080")
             
             # 解析视频信息
             print(f"[线程] 调用 downloader.get_video_info({self.url})")
@@ -9279,7 +9287,10 @@ class DouyinParseThread(QThread):
                 print(f"[线程] 事件循环处理完成")
             else:
                 print(f"[线程] 视频信息为空，发出失败信号")
-                self.finished_signal.emit(False, "无法解析视频信息")
+                self.finished_signal.emit(
+                    False,
+                    downloader.last_error or "F2 与 DLPanda 均无法解析视频信息",
+                )
                 
         except Exception as e:
             if not self.stopped:
@@ -9296,10 +9307,11 @@ class DouyinDownloadThread(QThread):
     result_signal = pyqtSignal(object)
     finished_signal = pyqtSignal(bool, str)
     
-    def __init__(self, url, config):
+    def __init__(self, url, config, video_info=None):
         super().__init__()
         self.url = url
         self.config = config
+        self.video_info = video_info
         self.stopped = False
     
     def stop(self):
@@ -9400,7 +9412,11 @@ class DouyinDownloadThread(QThread):
                     self.progress_signal.emit(progress, message)
             
             # 下载视频
-            result = downloader.download_video(self.url, progress_callback)
+            result = downloader.download_video(
+                self.url,
+                progress_callback=progress_callback,
+                video_info=self.video_info,
+            )
             
             if self.stopped:
                 return

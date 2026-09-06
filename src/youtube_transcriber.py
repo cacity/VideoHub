@@ -110,6 +110,14 @@ VIDEO_LIST_FILE = os.path.join(LOGS_DIR, "downloaded_videos.json")
 TRANSLATION_VERBOSE = True
 GOOGLE_TRANSLATE_RATE_LIMITED = False
 GOOGLE_TRANSLATE_SKIP_NOTICE_SHOWN = False
+YOUTUBE_CLIENT_FALLBACK_ERRORS = (
+    "HTTP Error 403",
+    "Requested format is not available",
+)
+TIKTOK_WEB_FALLBACK_ERRORS = (
+    "Unable to extract universal data for rehydration",
+    "Unexpected response from webpage request",
+)
 
 SUPPORTED_TRANSLATION_LANGUAGES = {
     "zh-CN": "Simplified Chinese",
@@ -260,6 +268,165 @@ def _run_process_with_live_output(cmd, timeout_seconds):
     )
 
 
+def _is_youtube_url(url):
+    try:
+        hostname = (urlparse(url).hostname or "").lower()
+    except (TypeError, ValueError):
+        return False
+    return hostname in {"youtu.be", "youtube.com"} or hostname.endswith(".youtube.com")
+
+
+def _is_tiktok_url(url):
+    try:
+        hostname = (urlparse(url).hostname or "").lower()
+    except (TypeError, ValueError):
+        return False
+    return hostname == "tiktok.com" or hostname.endswith((".tiktok.com", ".tiktokv.com"))
+
+
+def _extract_tiktok_video_id(url):
+    match = re.search(r"/(?:video|embed(?:/v2)?|player/v1)/(\d+)", url)
+    return match.group(1) if match else None
+
+
+def _download_tiktok_embed_media(tiktok_url, output_dir, audio_only=False, proxy=None):
+    """Download a public TikTok post through TikTok's official embed metadata."""
+    if not _is_tiktok_url(tiktok_url):
+        raise ValueError("不是有效的 TikTok 链接")
+
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError:
+        curl_requests = None
+
+    proxy_url = proxy or os.getenv("PROXY") or os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+
+    def request(url, **kwargs):
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            **kwargs.pop("headers", {}),
+        }
+        options = {"timeout": 30, "headers": headers, **kwargs}
+        if curl_requests is not None:
+            options["impersonate"] = "chrome"
+            if proxy_url:
+                options["proxy"] = proxy_url
+            return curl_requests.get(url, **options)
+
+        if proxy_url:
+            options["proxies"] = {"http": proxy_url, "https": proxy_url}
+        return requests.get(url, **options)
+
+    video_id = _extract_tiktok_video_id(tiktok_url)
+    if not video_id:
+        redirect_response = request(tiktok_url, allow_redirects=True)
+        redirect_response.raise_for_status()
+        video_id = _extract_tiktok_video_id(str(redirect_response.url))
+    if not video_id:
+        raise RuntimeError("无法从 TikTok 链接中识别视频 ID")
+
+    embed_url = f"https://www.tiktok.com/embed/v2/{video_id}"
+    embed_response = request(embed_url)
+    embed_response.raise_for_status()
+    script_match = re.search(
+        r'<script[^>]+id=["\']__FRONTITY_CONNECT_STATE__["\'][^>]*>(.*?)</script>',
+        embed_response.text,
+        re.DOTALL,
+    )
+    if not script_match:
+        raise RuntimeError("TikTok 官方嵌入页中没有可用的视频元数据")
+
+    script_text = script_match.group(1)
+    try:
+        payload = json.loads(script_text)
+    except json.JSONDecodeError:
+        payload = json.loads(html.unescape(script_text))
+
+    source_data = payload.get("source", {}).get("data", {})
+    video_data = None
+    for value in source_data.values() if isinstance(source_data, dict) else ():
+        if isinstance(value, dict) and isinstance(value.get("videoData"), dict):
+            video_data = value["videoData"]
+            break
+    if not video_data:
+        raise RuntimeError("TikTok 官方嵌入页未返回该视频的数据")
+
+    item_info = video_data.get("itemInfos", {})
+    media_urls = item_info.get("video", {}).get("urls", [])
+    if not media_urls:
+        if video_data.get("imagePostInfo"):
+            raise RuntimeError("当前链接是 TikTok 图文作品，暂不支持按视频下载")
+        raise RuntimeError("TikTok 官方嵌入页未返回视频地址")
+
+    media_url = next((url for url in media_urls if isinstance(url, str) and url.startswith("https://")), None)
+    if not media_url:
+        raise RuntimeError("TikTok 官方嵌入页返回了无效的视频地址")
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    output_stem = f"TikTok_{video_id}"
+    final_path = Path(output_dir) / f"{output_stem}.{'mp3' if audio_only else 'mp4'}"
+    if final_path.exists() and final_path.stat().st_size > 0:
+        return {
+            "id": video_id,
+            "title": output_stem,
+            "ext": final_path.suffix.lstrip("."),
+            "filepath": str(final_path),
+        }
+
+    source_path = final_path if not audio_only else Path(output_dir) / f".{output_stem}.source.mp4"
+    part_path = source_path.with_suffix(source_path.suffix + ".part")
+    try:
+        media_response = request(
+            media_url,
+            headers={"Referer": embed_url},
+            stream=True,
+            timeout=60,
+        )
+        media_response.raise_for_status()
+        content_type = (media_response.headers.get("content-type") or "").lower()
+        if content_type and not (
+            content_type.startswith("video/") or content_type == "application/octet-stream"
+        ):
+            raise RuntimeError(f"TikTok CDN 返回了非视频内容: {content_type}")
+
+        with open(part_path, "wb") as output_file:
+            for chunk in media_response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    output_file.write(chunk)
+        if part_path.stat().st_size < 1024:
+            raise RuntimeError("TikTok CDN 返回的视频文件为空或不完整")
+        os.replace(part_path, source_path)
+
+        if audio_only:
+            audio_path = extract_audio_from_video(
+                str(source_path),
+                output_dir=output_dir,
+                output_stem=output_stem,
+            )
+            final_path = Path(audio_path)
+            try:
+                source_path.unlink()
+            except OSError:
+                pass
+    finally:
+        if part_path.exists():
+            try:
+                part_path.unlink()
+            except OSError:
+                pass
+
+    return {
+        "id": video_id,
+        "title": output_stem,
+        "ext": final_path.suffix.lstrip("."),
+        "filepath": str(final_path),
+    }
+
+
 def download_with_exe(
     youtube_url,
     exe_path,
@@ -342,6 +509,9 @@ def download_with_exe(
     cmd.extend(['--retries', '5'])
     cmd.extend(['--fragment-retries', '5'])
     cmd.extend(['--extractor-retries', '3'])
+    cmd.extend(['--file-access-retries', '3'])
+    cmd.extend(['--retry-sleep', 'http:exp=1:10'])
+    cmd.extend(['--retry-sleep', 'fragment:exp=1:10'])
     cmd.extend(['--concurrent-fragments', '4'])
     if not audio_only:
         cmd.extend(['--merge-output-format', 'mp4'])
@@ -354,6 +524,43 @@ def download_with_exe(
     # 执行下载
     timeout_seconds = max(60, int(os.getenv("YTDLP_DOWNLOAD_TIMEOUT_SECONDS", "1800")))
     result = _run_process_with_live_output(cmd, timeout_seconds)
+
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    if (
+        result.returncode != 0
+        and _is_youtube_url(youtube_url)
+        and any(marker in combined_output for marker in YOUTUBE_CLIENT_FALLBACK_ERRORS)
+    ):
+        fallback_cmd = [
+            *cmd[:-1],
+            '--extractor-args',
+            'youtube:player_client=web_embedded',
+            cmd[-1],
+        ]
+        print(
+            "检测到 YouTube 媒体服务器返回 403，正在改用 web_embedded 客户端"
+            "重新提取下载链接并续传..."
+        )
+        result = _run_process_with_live_output(fallback_cmd, timeout_seconds)
+        cmd = fallback_cmd
+
+    tiktok_fallback_error = None
+    if (
+        result.returncode != 0
+        and _is_tiktok_url(youtube_url)
+        and any(marker in combined_output for marker in TIKTOK_WEB_FALLBACK_ERRORS)
+    ):
+        print("yt-dlp 暂时无法解析 TikTok 页面，正在改用 TikTok 官方嵌入页下载...")
+        try:
+            return _download_tiktok_embed_media(
+                youtube_url,
+                output_dir,
+                audio_only=audio_only,
+                proxy=proxy,
+            )
+        except Exception as exc:
+            tiktok_fallback_error = str(exc)
+            print(f"TikTok 官方嵌入页回退失败: {tiktok_fallback_error}")
 
     print(f"命令返回码: {result.returncode}")
 
@@ -373,6 +580,22 @@ def download_with_exe(
                 f"yt-dlp.exe 仍然提示需要登录验证\n"
                 f"错误信息: {error_msg}\n"
                 f"\n💡 建议: 请确保 cookies 文件有效，或重新导出 cookies"
+            )
+
+        if _is_youtube_url(youtube_url) and 'HTTP Error 403' in error_msg:
+            raise Exception(
+                "yt-dlp.exe 下载失败: YouTube 默认客户端和 web_embedded 回退均返回 HTTP 403。\n"
+                "请先更新 yt-dlp.exe，并确认代理在网页解析与媒体下载期间使用同一出口 IP；"
+                "若视频需要登录，请更新 cookies。YouTube 持续要求 PO Token 时，"
+                "请按 yt-dlp 官方 PO Token Guide 配置 provider 插件。\n"
+                f"错误信息: {error_msg}"
+            )
+
+        if tiktok_fallback_error:
+            raise Exception(
+                "yt-dlp 和 TikTok 官方嵌入页回退均下载失败。\n"
+                f"嵌入页错误: {tiktok_fallback_error}\n"
+                f"yt-dlp 错误: {error_msg}"
             )
 
         raise Exception(f"yt-dlp.exe 下载失败: {error_msg}")
@@ -2408,7 +2631,7 @@ def download_youtube_video(
             }],
             'outtmpl': os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s'),
             'quiet': False,  # 显示下载进度和错误信息
-            'ignoreerrors': True,  # 忽略部分错误，尝试继续下载
+            'ignoreerrors': False,
             'noplaylist': True  # 确保只下载单个视频的音频而不是整个播放列表
         }
         expected_ext = "mp3"
@@ -2426,7 +2649,7 @@ def download_youtube_video(
             'merge_output_format': 'mp4',  # 确保输出为mp4
             'outtmpl': os.path.join(output_dir, '%(title).180B_%(id)s.%(ext)s'),
             'quiet': False,  # 显示下载进度和错误信息
-            'ignoreerrors': True,  # 忽略部分错误，尝试继续下载
+            'ignoreerrors': False,
             'noplaylist': True  # 确保只下载单个视频而不是整个播放列表
         }
         expected_ext = "mp4"
@@ -2503,10 +2726,41 @@ def download_youtube_video(
             return final_path
         else:
             # 使用 Python yt-dlp 库
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # 获取视频信息
-                print(f"正在获取视频信息...")
-                info = ydl.extract_info(youtube_url, download=True)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    print("正在获取视频信息...")
+                    info = ydl.extract_info(youtube_url, download=True)
+            except yt_dlp.utils.DownloadError as exc:
+                error_text = str(exc)
+                if (
+                    _is_tiktok_url(youtube_url)
+                    and any(marker in error_text for marker in TIKTOK_WEB_FALLBACK_ERRORS)
+                ):
+                    print("yt-dlp 暂时无法解析 TikTok 页面，正在改用 TikTok 官方嵌入页下载...")
+                    fallback_info = _download_tiktok_embed_media(
+                        youtube_url,
+                        output_dir,
+                        audio_only=audio_only,
+                        proxy=ydl_opts.get('proxy'),
+                    )
+                    fallback_path = fallback_info['filepath']
+                    log_downloaded_video(youtube_url, fallback_path, fallback_info)
+                    return fallback_path
+                if not (
+                    _is_youtube_url(youtube_url)
+                    and any(marker in error_text for marker in YOUTUBE_CLIENT_FALLBACK_ERRORS)
+                ):
+                    raise
+                print(
+                    "检测到 YouTube 媒体服务器返回 403，正在改用 web_embedded 客户端"
+                    "重新提取下载链接并续传..."
+                )
+                fallback_opts = dict(ydl_opts)
+                fallback_opts['extractor_args'] = {
+                    'youtube': {'player_client': ['web_embedded']},
+                }
+                with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+                    info = ydl.extract_info(youtube_url, download=True)
 
                 # 尝试从info中获取实际导出的文件扩展名，避免与预期扩展名不一致导致找不到文件
                 try:
@@ -3529,7 +3783,8 @@ def embed_subtitles_to_video(video_path, subtitle_path, output_dir=VIDEOS_WITH_S
             
             if subtitle_ext_lower == '.ass':
                 # 对于ASS字幕，直接使用ass文件过滤器
-                filter_param = f'ass={temp_subtitle_abs.replace("\\", "/")}'
+                temp_subtitle_filter_path = temp_subtitle_abs.replace('\\', '/')
+                filter_param = f'ass={temp_subtitle_filter_path}'
             else:
                 # 对于其他字幕格式，使用subtitles过滤器
                 if os.name == 'nt':  # Windows
@@ -3597,10 +3852,11 @@ def embed_subtitles_to_video(video_path, subtitle_path, output_dir=VIDEOS_WITH_S
                 
                 # 构建ffmpeg命令
                 subtitle_ext_lower = Path(subtitle_path).suffix.lower()
+                temp_subtitle_filter_path = temp_subtitle_abs.replace('\\', '/')
                 if subtitle_ext_lower == '.ass':
-                    filter_str = f"ass={temp_subtitle_abs.replace('\\', '/')}"
+                    filter_str = f"ass={temp_subtitle_filter_path}"
                 else:
-                    filter_str = f"subtitles={temp_subtitle_abs.replace('\\', '/')}"
+                    filter_str = f"subtitles={temp_subtitle_filter_path}"
                 
                 (
                     ffmpeg

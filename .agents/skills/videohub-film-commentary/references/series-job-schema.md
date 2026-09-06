@@ -97,11 +97,11 @@ API Key、Cookie、Token 和密码只能通过本地环境变量或未跟踪的 
 ## 执行
 
 ```powershell
-# 只检查素材、时长、音视频流和选段边界，不调用付费 TTS
+# 只检查素材、时长、音视频流和选段边界，不调用外部 TTS API
 python .agents/skills/videohub-film-commentary/scripts/run_series_commentary.py `
   "workspace/projectNNN_series" --episodes 1-12 --stage preflight
 
-# 生成并校验证据、剧情分析、剪辑计划和旁白计划，不调用付费 TTS
+# 生成并校验证据、剧情分析、剪辑计划和旁白计划，不调用外部 TTS API
 python .agents/skills/videohub-film-commentary/scripts/run_series_commentary.py `
   "workspace/projectNNN_series" --episodes 1-12 --stage prepare
 
