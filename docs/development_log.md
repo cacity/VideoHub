@@ -76,6 +76,28 @@ python -m py_compile main.py
 
 - MiniMax 等第三方 API 仍作为可选功能保留，使用者需要自行配置对应凭据。
 
+## 2026-08-26：移除 README 商业推广内容
+
+### 更新内容
+
+- 从中文 README 删除顶部付费支持入口、Series Ops Kit 意向验证、服务价格、购买和咨询文案。
+- 英文 README 同步删除对应的 paid setup、价格、购买、意向表单和 support request 内容。
+- 将两份 README 中用于技术说明的“付费模型 / paid API”措辞改为“外部服务 / external API”，保留 MiniMax、豆包 TTS 和 DeepSeek 等可选能力的本地凭据配置说明。
+
+### 设计与实现
+
+- 本次只清理 README 的用户可见商业推广，不删除现有功能代码、Issue 模板、历史文档或服务资料文件。
+- 中英文按相同段落边界同步修改，避免只清理一种语言后仍从另一语言暴露价格或购买入口。
+
+### 验证结果
+
+- 对 `README.md` 和 `README_en.md` 扫描付费、价格、购买、意向表单和 support request 关键词，用户可见商业推广匹配为 0。
+- `git diff --check` 通过；本次仅修改 Markdown 文档，不涉及运行时代码。
+
+### 已知边界
+
+- 仓库中的 `SERVICES.md`、`SERIES_OPS_KIT.md`、Issue 模板和历史开发记录仍然存在；本次范围仅为中英文 README。
+
 ## 2026-08-11：连续剧解说配置化生产与 README 更新
 
 ### 更新内容
