@@ -23,6 +23,37 @@ python -m py_compile main.py
 
 如果本次改动涉及新增 Python 模块，应把对应文件一起加入 `py_compile` 检查。
 
+## 2026-09-06：修复 YouTube 403 与 TikTok 页面解析失败
+
+### 更新内容
+
+- TikTok 在 `yt-dlp` 无法提取网页重建数据时，自动改用 TikTok 官方嵌入页元数据和媒体地址下载公开视频。
+- YouTube 遇到媒体服务器 `HTTP 403` 或默认格式不可用时，自动切换到 `web_embedded` 客户端重新提取地址并继续下载。
+- 增加文件访问重试和指数等待，关闭 Python `yt-dlp` 路径会隐藏真实失败的 `ignoreerrors`。
+- 桌面与完整依赖清单增加 `curl-cffi`，并把最低 `yt-dlp` 版本更新到 `2026.8.19`。
+- 中英文 README 在简介后增加本次修复说明和故障恢复边界。
+
+### 设计与实现
+
+- `src/youtube_transcriber.py` 集中识别 YouTube 与 TikTok URL，并让外部 `yt-dlp.exe` 和 Python `yt_dlp` 两条下载路径采用一致的回退规则。
+- TikTok 回退优先使用 `curl_cffi` 的 Chrome 请求模拟；未安装该可选依赖时继续支持 `requests`，代理配置在网页、嵌入页和媒体请求间保持一致。
+- TikTok 媒体先写入 `.part`，验证内容类型和最小文件大小后原子替换成最终文件；音频模式复用现有 FFmpeg 音频提取函数。
+- 错误信息区分默认下载失败、YouTube 双客户端均失败和 TikTok 双路径均失败，避免只显示不具备操作价值的底层异常。
+
+### 验证结果
+
+- `VideoHubClean` Python 3.11 环境执行 `tests/test_douyin_providers.py` 与 `tests/test_minimax_tts.py`：20 项通过。
+- `python -m py_compile src/youtube_transcriber.py`：通过。
+- `python -m pip check`：未发现损坏或冲突的依赖。
+- `git diff --check`：通过，仅有 Git 对工作区 LF/CRLF 转换的提示。
+- 包含同一代码改动的 PyQt6 单文件 EXE 已完成窗口启动、本地 API 和内置 `curl_cffi`/libcurl 资源检查；尚未进行干净 Windows 机器验收和 Authenticode 签名。
+
+### 已知边界
+
+- TikTok 官方嵌入页回退只处理可公开访问的视频作品，不处理图文、私密、区域限制或必须登录的内容。
+- YouTube `web_embedded` 回退不能绕过登录、地区、版权或平台授权限制；持续要求验证时仍需有效 Cookie、稳定代理或按 `yt-dlp` 官方说明配置 PO Token provider。
+- `pytest-asyncio` 仍提示未来默认 fixture loop scope 将变化，本次同步未修改该项全局测试配置。
+
 ## 2026-08-31：移除仓库商业化入口
 
 ### 更新内容

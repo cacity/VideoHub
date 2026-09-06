@@ -1,4 +1,5 @@
 import io
+import json
 import subprocess
 import sys
 import wave
@@ -241,11 +242,209 @@ def test_exe_download_command_is_resumable_and_bounded(monkeypatch, tmp_path):
     assert "--newline" in cmd
     assert "--retries" in cmd
     assert "--fragment-retries" in cmd
+    assert "--file-access-retries" in cmd
+    assert "--retry-sleep" in cmd
     assert "--cookies-from-browser" in cmd
     assert "--merge-output-format" in cmd
     assert "-k" not in cmd
     assert captured["timeout_seconds"] == 1800
     assert info["filepath"].endswith("sample_pZypOP-D7LU.mp4")
+
+
+@pytest.mark.parametrize(
+    "failure_message",
+    [
+        "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+        "ERROR: Requested format is not available",
+    ],
+)
+def test_exe_download_retries_youtube_client_errors_with_web_embedded(
+    monkeypatch, tmp_path, failure_message
+):
+    from src import youtube_transcriber
+
+    commands = []
+
+    def fake_run(cmd, timeout_seconds):
+        commands.append(cmd)
+        if len(commands) == 1:
+            return subprocess.CompletedProcess(
+                cmd,
+                1,
+                stdout=failure_message,
+                stderr="",
+            )
+        output = tmp_path / "sample_pZypOP-D7LU.webm"
+        output.write_bytes(b"audio")
+        return subprocess.CompletedProcess(cmd, 0, stdout="downloaded", stderr="")
+
+    monkeypatch.setattr(youtube_transcriber, "_run_process_with_live_output", fake_run)
+
+    info = youtube_transcriber.download_with_exe(
+        "https://www.youtube.com/watch?v=pZypOP-D7LU",
+        "yt-dlp.exe",
+        str(tmp_path),
+        audio_only=True,
+    )
+
+    assert len(commands) == 2
+    fallback = commands[1]
+    assert fallback[fallback.index("--extractor-args") + 1] == "youtube:player_client=web_embedded"
+    assert info["filepath"].endswith("sample_pZypOP-D7LU.webm")
+
+
+def test_tiktok_embed_fallback_downloads_official_media(monkeypatch, tmp_path):
+    from curl_cffi import requests as curl_requests
+    from src import youtube_transcriber
+
+    video_id = "7670715884314316053"
+    media_url = "https://v16m.tiktokcdn.com/video/example.mp4"
+    payload = {
+        "source": {
+            "data": {
+                f"/embed/v2/{video_id}": {
+                    "videoData": {
+                        "itemInfos": {
+                            "video": {"urls": [media_url]},
+                        },
+                    },
+                },
+            },
+        },
+    }
+    embed_html = (
+        '<script id="__FRONTITY_CONNECT_STATE__" type="application/json">'
+        f"{json.dumps(payload)}"
+        "</script>"
+    )
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, *, text="", content=b"", url=""):
+            self.text = text
+            self.content = content
+            self.url = url
+            self.headers = {
+                "content-type": "video/mp4" if content else "text/html",
+                "content-length": str(len(content)),
+            }
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size):
+            yield self.content
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        if url == f"https://www.tiktok.com/embed/v2/{video_id}":
+            return FakeResponse(text=embed_html, url=url)
+        if url == media_url:
+            return FakeResponse(content=b"0" * 2048, url=url)
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(curl_requests, "get", fake_get)
+    info = youtube_transcriber._download_tiktok_embed_media(
+        f"https://www.tiktok.com/@creator/video/{video_id}",
+        str(tmp_path),
+    )
+
+    output = tmp_path / f"TikTok_{video_id}.mp4"
+    assert output.read_bytes() == b"0" * 2048
+    assert info["filepath"] == str(output)
+    assert calls[1][1]["headers"]["Referer"] == f"https://www.tiktok.com/embed/v2/{video_id}"
+
+
+def test_tiktok_embed_fallback_uses_requests_without_curl_cffi(monkeypatch, tmp_path):
+    from src import youtube_transcriber
+
+    video_id = "7670715884314316053"
+    media_url = "https://v16m.tiktokcdn.com/video/example.mp4"
+    payload = {
+        "source": {
+            "data": {
+                f"/embed/v2/{video_id}": {
+                    "videoData": {"itemInfos": {"video": {"urls": [media_url]}}},
+                },
+            },
+        },
+    }
+    embed_html = (
+        '<script id="__FRONTITY_CONNECT_STATE__" type="application/json">'
+        f"{json.dumps(payload)}"
+        "</script>"
+    )
+
+    class FakeResponse:
+        def __init__(self, *, text="", content=b"", url=""):
+            self.text = text
+            self.content = content
+            self.url = url
+            self.headers = {
+                "content-type": "video/mp4" if content else "text/html",
+            }
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size):
+            yield self.content
+
+    def fake_get(url, **kwargs):
+        if url == f"https://www.tiktok.com/embed/v2/{video_id}":
+            return FakeResponse(text=embed_html, url=url)
+        if url == media_url:
+            return FakeResponse(content=b"0" * 2048, url=url)
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setitem(sys.modules, "curl_cffi", None)
+    monkeypatch.setattr(youtube_transcriber.requests, "get", fake_get)
+
+    info = youtube_transcriber._download_tiktok_embed_media(
+        f"https://www.tiktok.com/@creator/video/{video_id}",
+        str(tmp_path),
+    )
+
+    output = tmp_path / f"TikTok_{video_id}.mp4"
+    assert output.read_bytes() == b"0" * 2048
+    assert info["filepath"] == str(output)
+
+
+def test_exe_download_uses_tiktok_embed_fallback(monkeypatch, tmp_path):
+    from src import youtube_transcriber
+
+    video_id = "7670715884314316053"
+    output = tmp_path / f"TikTok_{video_id}.mp4"
+    output.write_bytes(b"video")
+    failure = subprocess.CompletedProcess(
+        ["yt-dlp.exe"],
+        1,
+        stdout="ERROR: Unable to extract universal data for rehydration",
+        stderr="",
+    )
+    monkeypatch.setattr(
+        youtube_transcriber,
+        "_run_process_with_live_output",
+        lambda cmd, timeout_seconds: failure,
+    )
+    monkeypatch.setattr(
+        youtube_transcriber,
+        "_download_tiktok_embed_media",
+        lambda *args, **kwargs: {
+            "id": video_id,
+            "title": f"TikTok_{video_id}",
+            "ext": "mp4",
+            "filepath": str(output),
+        },
+    )
+
+    info = youtube_transcriber.download_with_exe(
+        f"https://www.tiktok.com/@creator/video/{video_id}",
+        "yt-dlp.exe",
+        str(tmp_path),
+    )
+
+    assert info["filepath"] == str(output)
 
 
 def test_live_process_timeout_terminates_command():

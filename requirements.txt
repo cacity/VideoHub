@@ -6,7 +6,8 @@ PyQt6>=6.4.0,<7.0.0
 PyQt6-Qt6>=6.4.0,<7.0.0
 
 # Video Processing and Download
-yt-dlp>=2023.12.30
+yt-dlp>=2026.8.19
+curl-cffi>=0.15,<0.17
 openai-whisper>=20231117
 torch>=1.13.0,<3.0.0
 torchaudio>=0.13.0,<3.0.0
