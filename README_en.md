@@ -1,10 +1,37 @@
 # VideoHub
 
-**Current Version: v0.3.0**
+**Current Version: v0.5.0**
 
 English | [简体中文](./README.md)
 
 VideoHub is a local video processing and intelligent editing workbench built with **PyQt6**, supporting **YouTube, Twitter/X, Douyin/TikTok, Instagram, Bilibili**, and local media. Alongside downloading, audio extraction, Whisper transcription, bilingual subtitles, subtitle translation, **AI dubbing**, and LLM summaries, its project-level skills for Codex, Claude Code, DeepSeek, and compatible agents provide evidence-grounded story editing, film commentary, configuration-driven batch episode editing, beat-synced edits, multi-format covers, and complete publishing packages. The desktop application also includes batch processing, an idle-time queue, and portable series-directory projects so multi-episode work can run in stages, reuse intermediate assets, and remain editable.
+
+## v0.5.0: Resource Controls and Remembered Options
+
+This release keeps the computer responsive during long Whisper jobs and removes repeated setup work. See the [v0.5.0 release notes](./docs/release-v0.5.0.md) for the complete change list, upgrade behavior, verification, and known limits.
+
+### Whisper Resource Protection
+
+Audio transcription no longer consumes every available CPU thread or most GPU memory by default. Open `Settings -> Transcription Resources` to select:
+
+- **Eco**: approximately 30% of CPU threads and a default 40% GPU memory cap.
+- **Balanced (default)**: approximately 50% of CPU threads, a default 60% GPU memory cap, and lower process priority while Whisper runs.
+- **Performance**: approximately 80% of CPU threads and a default 85% GPU memory cap.
+- **CPU only**: leaves the GPU available to editing, 3D, or other AI applications.
+
+CPU thread and GPU memory limits can be overridden manually. VideoHub also serializes Whisper execution so multiple jobs cannot load models and stack resource usage at the same time. A GPU memory cap cannot guarantee a fixed CUDA compute percentage; choose CPU-only mode when the GPU must remain completely free.
+
+The same controls are available from the command line:
+
+```powershell
+python src/youtube_transcriber.py --audio example.mp3 --transcribe-only `
+  --resource-profile balanced --whisper-device auto `
+  --whisper-cpu-threads 6 --whisper-gpu-memory-percent 55
+```
+
+### Remembered Online-Video Options
+
+All eight checkboxes on the Online Video tab are saved immediately: full-video download, native-subtitle preference, transcription, subtitle generation, subtitle translation, subtitle embedding, article summary generation, and translation logs. VideoHub restores the same selections the next time it starts.
 
 ## Recent Fixes: More Reliable YouTube and TikTok Downloads
 

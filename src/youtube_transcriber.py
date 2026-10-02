@@ -17,6 +17,19 @@ import time
 from urllib.parse import urlparse, parse_qs
 
 try:
+    from .resource_policy import (
+        apply_whisper_resource_policy,
+        resolve_whisper_resource_policy,
+        whisper_execution_slot,
+    )
+except ImportError:
+    from resource_policy import (
+        apply_whisper_resource_policy,
+        resolve_whisper_resource_policy,
+        whisper_execution_slot,
+    )
+
+try:
     from .subtitle_utils import (
         ass_text_language_score,
         clean_ass_text,
@@ -794,48 +807,41 @@ if not os.path.exists(DEFAULT_TEMPLATE_PATH):
 
 def configure_cuda_for_whisper():
     """
-    配置CUDA环境以获得最佳Whisper性能
+    根据资源策略配置 Whisper，避免转录占满整机资源。
     :return: 设备名称 ("cuda" 或 "cpu")
     """
     try:
-        # 设置环境变量，避免某些CUDA相关问题
-        os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-        os.environ['CUDA_LAUNCH_BLOCKING'] = '0'  # 非阻塞CUDA调用
-        
-        # 检测CUDA可用性
-        if torch.cuda.is_available():
-            device = "cuda"
-            print(f"✓ CUDA 可用，将使用 GPU 加速")
-            print(f"  - CUDA 版本: {torch.version.cuda}")
-            print(f"  - GPU 数量: {torch.cuda.device_count()}")
-            print(f"  - 当前 GPU: {torch.cuda.get_device_name(0)}")
-            print(f"  - GPU 内存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
-            
-            # 清理GPU缓存
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                print("  - GPU 缓存已清理")
-            
-            # 设置内存分配策略
-            try:
-                torch.cuda.set_per_process_memory_fraction(0.8)  # 使用80%的GPU内存
-                print("  - GPU 内存分配限制设置为 80%")
-            except:
-                pass
-                
-        else:
-            device = "cpu"
-            print("⚠ CUDA 不可用，将使用 CPU 处理")
-            print("  - 建议安装支持CUDA的PyTorch版本以获得更好性能")
-            
-            # CPU优化设置
-            torch.set_num_threads(os.cpu_count())
-            print(f"  - CPU 线程数设置为: {os.cpu_count()}")
-            
-        return device
+        return apply_whisper_resource_policy(torch)
     except Exception as e:
         print(f"配置CUDA环境时出错: {str(e)}")
+        fallback_threads = max(1, min(4, (os.cpu_count() or 2) // 2))
+        torch.set_num_threads(fallback_threads)
+        print(f"  - 已回退到 CPU，线程数限制为: {fallback_threads}")
         return "cpu"
+
+
+def run_whisper_transcription(audio_path, model_size, device, whisper_params):
+    """Load and run Whisper inside the shared single-transcription slot."""
+
+    with whisper_execution_slot():
+        print(f"加载 {model_size} 模型...")
+        start_time = time.time()
+        model = whisper.load_model(model_size, device=device)
+        load_time = time.time() - start_time
+        print(f"模型加载完成，耗时: {load_time:.2f}秒")
+
+        try:
+            print("开始转录音频...")
+            transcribe_start = time.time()
+            result = model.transcribe(audio_path, **whisper_params)
+            transcribe_time = time.time() - transcribe_start
+            print(f"转录完成，耗时: {transcribe_time:.2f}秒")
+        finally:
+            del model
+            if device == "cuda":
+                torch.cuda.empty_cache()
+
+    return result, load_time, transcribe_time
 
 def get_optimal_whisper_params(device="cpu"):
     """
@@ -2940,6 +2946,10 @@ def extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR, output_stem=N
     :return: 提取的音频文件路径
     """
     try:
+        ffmpeg_threads = max(
+            1,
+            min(4, resolve_whisper_resource_policy().cpu_threads),
+        )
         # 创建输出目录
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         
@@ -2995,7 +3005,12 @@ def extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR, output_stem=N
                 (
                     ffmpeg
                     .input(video_path)
-                    .output(audio_path, acodec='libmp3lame', q=0)
+                    .output(
+                        audio_path,
+                        acodec='libmp3lame',
+                        q=0,
+                        threads=ffmpeg_threads,
+                    )
                     .run(quiet=False, overwrite_output=True, capture_stdout=True, capture_stderr=True)
                 )
                 print(f"音频提取完成: {audio_path}")
@@ -3011,6 +3026,7 @@ def extract_audio_from_video(video_path, output_dir=DOWNLOADS_DIR, output_stem=N
                 "ffmpeg",
                 "-i", video_path,
                 "-q:a", "0",
+                "-threads", str(ffmpeg_threads),
                 "-vn",
                 "-y",  # 覆盖输出文件
                 audio_path
@@ -3091,19 +3107,12 @@ def transcribe_audio_unified(
             whisper_params["language"] = source_language
             print(f"使用指定的源语言: {source_language}")
         
-        # 加载模型
-        print(f"加载 {model_size} 模型...")
-        start_time = time.time()
-        model = whisper.load_model(model_size, device=device)
-        load_time = time.time() - start_time
-        print(f"模型加载完成，耗时: {load_time:.2f}秒")
-        
-        # 转录音频（一次性完成）
-        print("开始转录音频...")
-        transcribe_start = time.time()
-        result = model.transcribe(audio_path, **whisper_params)
-        transcribe_time = time.time() - transcribe_start
-        print(f"转录完成，耗时: {transcribe_time:.2f}秒")
+        result, load_time, transcribe_time = run_whisper_transcription(
+            audio_path,
+            model_size,
+            device,
+            whisper_params,
+        )
         
         # 显示性能信息
         if 'segments' in result:
@@ -3329,19 +3338,12 @@ def transcribe_audio_to_text(audio_path, output_dir=TRANSCRIPTS_DIR, model_size=
         # 获取优化的参数
         whisper_params = get_optimal_whisper_params(device)
         
-        # 加载模型
-        print(f"加载 {model_size} 模型...")
-        start_time = time.time()
-        model = whisper.load_model(model_size, device=device)
-        load_time = time.time() - start_time
-        print(f"模型加载完成，耗时: {load_time:.2f}秒")
-        
-        # 转录音频
-        print("开始转录音频...")
-        transcribe_start = time.time()
-        result = model.transcribe(audio_path, **whisper_params)
-        transcribe_time = time.time() - transcribe_start
-        print(f"转录完成，耗时: {transcribe_time:.2f}秒")
+        result, load_time, transcribe_time = run_whisper_transcription(
+            audio_path,
+            model_size,
+            device,
+            whisper_params,
+        )
         
         # 显示性能信息
         if 'segments' in result:
@@ -3427,28 +3429,17 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
         whisper_params = get_optimal_whisper_params(device)
         whisper_params["task"] = "transcribe"  # 使用转录任务
         
-        # 加载模型
-        print(f"加载 {model_size} 模型...")
-        start_time = time.time()
-        try:
-            model = whisper.load_model(model_size, device=device)
-            load_time = time.time() - start_time
-            print(f"模型加载成功，耗时: {load_time:.2f}秒")
-        except Exception as e:
-            print(f"模型加载失败: {str(e)}")
-            raise
-        
         # 如果指定了源语言，添加language参数
         if source_language and source_language != "auto":
             whisper_params["language"] = source_language
             print(f"使用指定的源语言: {source_language}")
-        
-        # 转录音频
-        print("开始转录音频并生成字幕...")
-        transcribe_start = time.time()
-        result = model.transcribe(audio_path, **whisper_params)
-        transcribe_time = time.time() - transcribe_start
-        print(f"字幕转录完成，耗时: {transcribe_time:.2f}秒")
+
+        result, load_time, transcribe_time = run_whisper_transcription(
+            audio_path,
+            model_size,
+            device,
+            whisper_params,
+        )
         
         # 显示性能信息
         if 'segments' in result and result['segments']:
@@ -6176,6 +6167,16 @@ if __name__ == "__main__":
     parser.add_argument('--whisper-model', type=str, default='small', 
                       choices=['tiny', 'base', 'small', 'medium', 'large'],
                       help='Whisper模型大小，默认为small')
+    parser.add_argument('--resource-profile', type=str,
+                      choices=['eco', 'balanced', 'performance'],
+                      help='Whisper资源模式，默认读取WHISPER_RESOURCE_PROFILE或使用balanced')
+    parser.add_argument('--whisper-device', type=str,
+                      choices=['auto', 'cpu', 'cuda'],
+                      help='Whisper处理设备，默认自动选择')
+    parser.add_argument('--whisper-cpu-threads', type=int,
+                      help='Whisper CPU线程上限；0表示按资源模式自动计算')
+    parser.add_argument('--whisper-gpu-memory-percent', type=int,
+                      help='Whisper GPU显存上限百分比；0表示按资源模式自动计算')
     parser.add_argument('--no-stream', action='store_true', help='不使用流式输出')
     parser.add_argument('--summary-dir', type=str, default='summaries', help='文章保存目录，默认为summaries')
     parser.add_argument('--download-video', action='store_true', help='下载视频而不仅仅是音频（仅适用于YouTube）')
@@ -6203,6 +6204,21 @@ if __name__ == "__main__":
     
     # 解析命令行参数
     args = parser.parse_args()
+
+    if args.resource_profile:
+        os.environ["WHISPER_RESOURCE_PROFILE"] = args.resource_profile
+    if args.whisper_device:
+        os.environ["WHISPER_DEVICE"] = args.whisper_device
+    if args.whisper_cpu_threads is not None:
+        if args.whisper_cpu_threads < 0:
+            parser.error("--whisper-cpu-threads 不能小于0")
+        os.environ["WHISPER_CPU_THREADS"] = str(args.whisper_cpu_threads)
+    if args.whisper_gpu_memory_percent is not None:
+        if not 0 <= args.whisper_gpu_memory_percent <= 95:
+            parser.error("--whisper-gpu-memory-percent 必须在0到95之间")
+        os.environ["WHISPER_GPU_MEMORY_PERCENT"] = str(
+            args.whisper_gpu_memory_percent
+        )
     
     # 处理模板路径
     template_path = None

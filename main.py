@@ -57,6 +57,7 @@ from paths_config import (
     IDLE_QUEUE_FILE,
     LOCAL_YTDLP_DIR,
 )
+from ui_preferences import ONLINE_VIDEO_CHECKBOX_DEFAULTS, UIPreferences
 
 MINIMAX_VOICE_OPTIONS = [
     ("默认女声 - 少女", "female-shaonv"),
@@ -1875,6 +1876,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.worker_thread = None
+        self.ui_preferences = UIPreferences()
         
         # 初始化闲时任务相关变量
         self.idle_queue_file = IDLE_QUEUE_FILE  # 闲时队列持久化文件
@@ -2017,6 +2019,16 @@ class MainWindow(QMainWindow):
         value = combo.currentData()
         return value if value else default
 
+    def bind_persistent_checkbox(self, checkbox, preference_key):
+        """Restore a checkbox and save every later toggle immediately."""
+        default = ONLINE_VIDEO_CHECKBOX_DEFAULTS[preference_key]
+        checkbox.setChecked(self.ui_preferences.get_bool(preference_key, default))
+        checkbox.toggled.connect(
+            lambda checked, key=preference_key: self.ui_preferences.set_bool(
+                key, checked
+            )
+        )
+
     def create_youtube_tab(self):
         """创建YouTube视频选项卡"""
         tab = QWidget()
@@ -2043,17 +2055,34 @@ class MainWindow(QMainWindow):
         self.download_video_checkbox = QCheckBox("下载完整视频（而不仅是音频）")
         self.generate_subtitles_checkbox = QCheckBox("生成字幕文件")
         self.translate_checkbox = QCheckBox("翻译字幕")
-        self.translate_checkbox.setChecked(True)
         self.embed_subtitles_checkbox = QCheckBox("将字幕嵌入到视频中")
-        
+
         # 处理步骤选择
         self.prefer_native_subtitles_checkbox = QCheckBox("优先使用原生字幕（快速生成摘要）")
-        self.prefer_native_subtitles_checkbox.setChecked(True)  # 默认开启
         self.prefer_native_subtitles_checkbox.setToolTip("如果视频有原生字幕，直接使用字幕生成摘要，跳过音频下载和转录步骤")
         self.enable_transcription_checkbox = QCheckBox("执行转录（音频转文字）")
-        self.enable_transcription_checkbox.setChecked(True)  # 默认开启
         self.generate_article_checkbox = QCheckBox("生成文章摘要")
-        self.generate_article_checkbox.setChecked(True)  # 默认开启
+
+        persistent_checkboxes = [
+            (self.download_video_checkbox, "online_video/download_video"),
+            (
+                self.prefer_native_subtitles_checkbox,
+                "online_video/prefer_native_subtitles",
+            ),
+            (
+                self.enable_transcription_checkbox,
+                "online_video/enable_transcription",
+            ),
+            (
+                self.generate_subtitles_checkbox,
+                "online_video/generate_subtitles",
+            ),
+            (self.translate_checkbox, "online_video/translate_subtitles"),
+            (self.embed_subtitles_checkbox, "online_video/embed_subtitles"),
+            (self.generate_article_checkbox, "online_video/generate_article"),
+        ]
+        for checkbox, preference_key in persistent_checkboxes:
+            self.bind_persistent_checkbox(checkbox, preference_key)
         
         # 按照正确的处理流程排序：下载视频 -> 优先原生字幕 -> 执行转录/生成字幕 -> 嵌入视频 -> 生成摘要
         left_options.addWidget(self.download_video_checkbox)
@@ -2118,7 +2147,10 @@ class MainWindow(QMainWindow):
 
         # 翻译日志开关（仅影响字幕翻译等详细日志输出）
         self.show_translation_logs_checkbox = QCheckBox("显示翻译日志")
-        self.show_translation_logs_checkbox.setChecked(True)  # 默认保持原有行为：显示详细日志
+        self.bind_persistent_checkbox(
+            self.show_translation_logs_checkbox,
+            "online_video/show_translation_logs",
+        )
         right_options.addWidget(self.show_translation_logs_checkbox)
         right_options.addLayout(cookies_layout)
         right_options.addStretch()
@@ -4227,7 +4259,85 @@ class MainWindow(QMainWindow):
         """创建设置选项卡"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
+
+        # Whisper 转录资源控制
+        resource_group = CollapsibleGroupBox("转录资源设置", collapsed=False)
+        resource_layout = resource_group.content_layout
+
+        resource_profile_layout = QHBoxLayout()
+        resource_profile_label = QLabel("资源模式:")
+        self.whisper_resource_profile_combo = QComboBox()
+        self.whisper_resource_profile_combo.addItem("节能（约 30% CPU）", "eco")
+        self.whisper_resource_profile_combo.addItem("均衡（默认，约 50% CPU）", "balanced")
+        self.whisper_resource_profile_combo.addItem("高性能（约 80% CPU）", "performance")
+        current_resource_profile = os.getenv(
+            "WHISPER_RESOURCE_PROFILE", "balanced"
+        ).strip().lower()
+        profile_index = self.whisper_resource_profile_combo.findData(
+            current_resource_profile
+        )
+        self.whisper_resource_profile_combo.setCurrentIndex(
+            profile_index if profile_index >= 0 else 1
+        )
+        resource_profile_layout.addWidget(resource_profile_label)
+        resource_profile_layout.addWidget(self.whisper_resource_profile_combo)
+        resource_layout.addLayout(resource_profile_layout)
+
+        whisper_device_layout = QHBoxLayout()
+        whisper_device_label = QLabel("处理设备:")
+        self.whisper_device_combo = QComboBox()
+        self.whisper_device_combo.addItem("自动（有 CUDA 时使用 GPU）", "auto")
+        self.whisper_device_combo.addItem("仅 CPU（完全释放显卡）", "cpu")
+        self.whisper_device_combo.addItem("优先 CUDA GPU", "cuda")
+        current_whisper_device = os.getenv("WHISPER_DEVICE", "auto").strip().lower()
+        device_index = self.whisper_device_combo.findData(current_whisper_device)
+        self.whisper_device_combo.setCurrentIndex(
+            device_index if device_index >= 0 else 0
+        )
+        whisper_device_layout.addWidget(whisper_device_label)
+        whisper_device_layout.addWidget(self.whisper_device_combo)
+        resource_layout.addLayout(whisper_device_layout)
+
+        resource_limits_layout = QHBoxLayout()
+        cpu_threads_label = QLabel("CPU 线程上限:")
+        self.whisper_cpu_threads_spin = QSpinBox()
+        self.whisper_cpu_threads_spin.setRange(0, max(1, os.cpu_count() or 1))
+        self.whisper_cpu_threads_spin.setSpecialValueText("按模式自动")
+        try:
+            cpu_threads_value = int(os.getenv("WHISPER_CPU_THREADS", "0"))
+        except ValueError:
+            cpu_threads_value = 0
+        self.whisper_cpu_threads_spin.setValue(max(0, cpu_threads_value))
+
+        gpu_memory_label = QLabel("GPU 显存上限:")
+        self.whisper_gpu_memory_spin = QSpinBox()
+        self.whisper_gpu_memory_spin.setRange(0, 95)
+        self.whisper_gpu_memory_spin.setSuffix("%")
+        self.whisper_gpu_memory_spin.setSpecialValueText("按模式自动")
+        try:
+            gpu_memory_value = int(
+                os.getenv("WHISPER_GPU_MEMORY_PERCENT", "0")
+            )
+        except ValueError:
+            gpu_memory_value = 0
+        self.whisper_gpu_memory_spin.setValue(max(0, min(95, gpu_memory_value)))
+
+        resource_limits_layout.addWidget(cpu_threads_label)
+        resource_limits_layout.addWidget(self.whisper_cpu_threads_spin)
+        resource_limits_layout.addSpacing(20)
+        resource_limits_layout.addWidget(gpu_memory_label)
+        resource_limits_layout.addWidget(self.whisper_gpu_memory_spin)
+        resource_layout.addLayout(resource_limits_layout)
+
+        resource_hint = QLabel(
+            "均衡模式会保留 CPU 余量、降低任务进程优先级，并默认把 GPU 显存限制为 60%。"
+            "GPU 计算占用可能短时升高；运行 3D、AI 或剪辑软件时可选择“仅 CPU”。"
+            "同一时间最多运行一个 Whisper 转录任务。"
+        )
+        resource_hint.setWordWrap(True)
+        resource_hint.setStyleSheet("color: #666; font-size: 11px;")
+        resource_layout.addWidget(resource_hint)
+
         # API设置组
         api_group = CollapsibleGroupBox("API设置", collapsed=True)
         api_layout = api_group.content_layout
@@ -4883,6 +4993,7 @@ class MainWindow(QMainWindow):
         ytdlp_browse_btn.clicked.connect(self.browse_ytdlp_exe)
 
         # 添加到主布局
+        layout.addWidget(resource_group)
         layout.addWidget(api_group)
         layout.addWidget(subtitle_font_group)
         layout.addWidget(subtitle_style_group)
@@ -6290,6 +6401,17 @@ class MainWindow(QMainWindow):
 
     def save_settings(self):
         """保存设置"""
+        resource_profile = (
+            self.whisper_resource_profile_combo.currentData() or "balanced"
+        )
+        whisper_device = self.whisper_device_combo.currentData() or "auto"
+        whisper_cpu_threads = str(self.whisper_cpu_threads_spin.value())
+        whisper_gpu_memory_percent = str(self.whisper_gpu_memory_spin.value())
+        os.environ["WHISPER_RESOURCE_PROFILE"] = resource_profile
+        os.environ["WHISPER_DEVICE"] = whisper_device
+        os.environ["WHISPER_CPU_THREADS"] = whisper_cpu_threads
+        os.environ["WHISPER_GPU_MEMORY_PERCENT"] = whisper_gpu_memory_percent
+
         # 保存API密钥到环境变量
         os.environ["OPENAI_API_KEY"] = self.openai_api_key_input.text()
         os.environ["DEEPSEEK_API_KEY"] = self.deepseek_api_key_input.text()
@@ -6369,6 +6491,10 @@ class MainWindow(QMainWindow):
 
             # 更新API密钥、模型名称、Base URL、翻译方式和摘要生成设置
             new_keys = {
+                "WHISPER_RESOURCE_PROFILE": resource_profile,
+                "WHISPER_DEVICE": whisper_device,
+                "WHISPER_CPU_THREADS": whisper_cpu_threads,
+                "WHISPER_GPU_MEMORY_PERCENT": whisper_gpu_memory_percent,
                 "OPENAI_API_KEY": self.openai_api_key_input.text(),
                 "DEEPSEEK_API_KEY": self.deepseek_api_key_input.text(),
                 "OPENAI_MODEL": self.openai_model_input.text(),

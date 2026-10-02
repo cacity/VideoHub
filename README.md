@@ -1,10 +1,37 @@
 # 视频转录工具 (Video Hub)
 
-**当前版本: v0.4.0**
+**当前版本: v0.5.0**
 
 简体中文  | [English](./README_en.md)
 
 VideoHub 是一个基于 PyQt6 的本地视频处理与智能剪辑工作台，支持 **YouTube、Twitter/X、抖音/TikTok、Instagram、Bilibili** 等平台及本地媒体。除了视频下载、音频提取、Whisper 转录、双语字幕、字幕翻译、**AI 配音**和内容摘要，它还通过供 Codex、Claude Code、DeepSeek 等智能助手调用的项目级 Skills，提供基于字幕与画面证据的故事剪辑、影视解说、连续剧批量自动剪辑、音乐卡点、多画幅封面和完整发布包。桌面端同时支持批量处理、闲时队列和剧集目录项目化管理，让多集视频可以按统一配置分阶段处理、复用中间资源并持续调整。
+
+## v0.5.0：资源控制与选项记忆
+
+本次版本重点改善长时间转录时的电脑可用性，并减少重复配置。完整变更、升级说明和验证结果见 [v0.5.0 更新说明](./docs/release-v0.5.0.md)。
+
+### Whisper 转录资源保护
+
+音频转文字不再默认占满全部 CPU 和 GPU 显存。桌面端可在 `设置 -> 转录资源设置` 选择：
+
+- **节能**：约使用 30% CPU，GPU 显存上限默认 40%，适合边转录边办公。
+- **均衡（默认）**：约使用 50% CPU，GPU 显存上限默认 60%，并降低任务进程优先级。
+- **高性能**：约使用 80% CPU，GPU 显存上限默认 85%，适合空闲时批量处理。
+- **仅 CPU**：完全释放显卡给剪辑、3D 或其他 AI 软件；CPU 仍受所选模式限制。
+
+CPU 线程数和 GPU 显存比例都可以手动覆盖。同一进程最多执行一个 Whisper 转录任务，避免多个任务同时加载模型造成资源叠加。GPU 显存可以限制，但 CUDA 计算占用仍可能短时升高；需要完全避免占用显卡时应选择“仅 CPU”。
+
+命令行也支持相同配置：
+
+```powershell
+python src/youtube_transcriber.py --audio example.mp3 --transcribe-only `
+  --resource-profile balanced --whisper-device auto `
+  --whisper-cpu-threads 6 --whisper-gpu-memory-percent 55
+```
+
+### 在线视频处理选项记忆
+
+“在线视频”标签页的 8 个勾选项会在每次变化时自动保存，包括下载视频、优先原生字幕、执行转录、生成/翻译/嵌入字幕、生成文章摘要和显示翻译日志。关闭并重新打开 VideoHub 后会恢复上次选择，无需再次逐项勾选。
 
 ## 近期修复：YouTube 与 TikTok 下载稳定性
 
