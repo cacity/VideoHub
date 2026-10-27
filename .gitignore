@@ -86,10 +86,15 @@ wheelhouse/
 !/frontend/tsconfig.app.json
 !/frontend/vite.config.ts
 !/frontend/story-editor.html
+!/frontend/learning.html
 !/frontend/src/
 /frontend/src/*
 !/frontend/src/story-editor.tsx
 !/frontend/src/story-editor.css
+!/frontend/src/learning.tsx
+!/frontend/src/learning.css
+!/frontend/src/learning-api.ts
+!/frontend/src/learning-panel.tsx
 /downloads/
 .claude/
 CLAUDE.md

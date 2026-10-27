@@ -5,6 +5,8 @@ from __future__ import annotations
 import ctypes
 import os
 import threading
+import time
+from pathlib import Path
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Callable, Mapping, Optional
@@ -233,6 +235,45 @@ def apply_whisper_resource_policy(
 
 
 @contextmanager
+def _cross_process_whisper_slot(logger):
+    """Share the execution slot with the isolated learning transcription worker."""
+    path = Path(__file__).resolve().parents[1] / 'workspace' / 'logs' / 'whisper-execution.lock'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a+b') as handle:
+        if path.stat().st_size == 0:
+            handle.write(b'0')
+            handle.flush()
+        notified = False
+        while True:
+            try:
+                handle.seek(0)
+                if os.name == 'nt':
+                    import msvcrt
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as error:
+                if error.errno not in {11, 13, 35, 36}:
+                    raise
+                if not notified:
+                    logger('Another VideoHub process is transcribing; waiting for its resource slot.')
+                    notified = True
+                time.sleep(.1)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
 def whisper_execution_slot(logger: Callable[[str], None] = print):
     """Serialize Whisper model execution to prevent stacked CPU/GPU loads."""
 
@@ -242,7 +283,7 @@ def whisper_execution_slot(logger: Callable[[str], None] = print):
         _WHISPER_EXECUTION_LOCK.acquire()
     try:
         policy = resolve_whisper_resource_policy()
-        with temporary_process_priority(policy.process_priority):
+        with _cross_process_whisper_slot(logger), temporary_process_priority(policy.process_priority):
             yield
     finally:
         _WHISPER_EXECUTION_LOCK.release()

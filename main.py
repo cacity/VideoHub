@@ -1870,6 +1870,25 @@ class VoicePreviewThread(QThread):
             self.finished_signal.emit(False, "", str(exc))
 
 
+class LearningOpenThread(QThread):
+    """Launch/attach the learning service away from the Qt main thread."""
+
+    opened = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(self, path="", parent=None, directory=""):
+        super().__init__(parent)
+        self.path = path
+        self.directory = directory
+
+    def run(self):
+        try:
+            from learning_desktop import learning_url
+            self.opened.emit(learning_url(self.path, self.directory))
+        except Exception as exc:
+            self.failed.emit(str(exc) if isinstance(exc, ValueError) else "学习服务启动失败，请检查本地服务与依赖")
+
+
 class MainWindow(QMainWindow):
     """主窗口类"""
     
@@ -1955,6 +1974,7 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(youtube_tab, "在线视频")
         tab_widget.addTab(local_audio_tab, "本地音频")
         tab_widget.addTab(local_video_tab, "本地视频")
+        tab_widget.addTab(self.create_learning_tab(), "视频学习")
         tab_widget.addTab(local_text_tab, "本地文本")
         tab_widget.addTab(batch_tab, "批量处理")
         tab_widget.addTab(idle_queue_tab, "闲时队列")
@@ -1995,6 +2015,53 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.statusBar)
         self.statusBar.showMessage("就绪")
     
+    def create_learning_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        title = QLabel("视频学习：边看、边读、边问、边记")
+        title.setStyleSheet("font-size: 20px; font-weight: 600; padding: 18px 0;")
+        layout.addWidget(title)
+        description = QLabel(
+            "在本地网页中播放视频，切换原文、中文和双语字幕，按时间戳提问并保存笔记。\n"
+            "可以复用下载记录、已有字幕和剧集目录；无需重复下载。\n\n"
+            "播放和手动笔记无需 AI 密钥。使用 AI 时会向所选服务发送所需字幕和问题。\n"
+            "DeepSeek / Kimi 密钥沿用本机 .env；首次使用前请在 frontend 目录执行 npm run build。"
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
+        buttons = QHBoxLayout()
+        open_button = QPushButton("打开学习资料库")
+        choose_button = QPushButton("选择视频并开始学习")
+        project_button = QPushButton("打开视频工程目录（自动加载字幕）")
+        open_button.clicked.connect(lambda: self.open_learning_workspace())
+        choose_button.clicked.connect(self.choose_learning_video)
+        project_button.clicked.connect(self.choose_learning_project)
+        buttons.addWidget(open_button)
+        buttons.addWidget(choose_button)
+        buttons.addWidget(project_button)
+        layout.addLayout(buttons)
+        layout.addStretch()
+        return tab
+
+    def choose_learning_video(self):
+        path, _ = QFileDialog.getOpenFileName(self, "选择学习视频", "", "视频 (*.mp4 *.mkv *.webm *.mov *.m4v *.avi *.flv)")
+        if path:
+            self.open_learning_workspace(path)
+
+    def choose_learning_project(self):
+        directory = QFileDialog.getExistingDirectory(self, "选择视频和字幕所在的工程目录")
+        if directory:
+            self.open_learning_workspace(directory=directory)
+
+    def open_learning_workspace(self, path="", directory=""):
+        if getattr(self, "learning_open_thread", None) and self.learning_open_thread.isRunning():
+            self.statusBar.showMessage("正在打开视频学习，请稍候")
+            return
+        self.learning_open_thread = LearningOpenThread(path, self, directory)
+        self.learning_open_thread.opened.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
+        self.learning_open_thread.failed.connect(lambda message: QMessageBox.warning(self, "视频学习", message))
+        self.learning_open_thread.start()
+
     def create_translation_target_combo(self):
         combo = QComboBox()
         for label, code in [
@@ -2171,6 +2238,10 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.youtube_process_button)
         button_layout.addWidget(self.youtube_stop_button)
         button_layout.addWidget(self.youtube_idle_button)
+        self.youtube_learning_button = QPushButton("进入视频学习")
+        self.youtube_learning_button.setMinimumHeight(40)
+        self.youtube_learning_button.clicked.connect(self.learn_current_download)
+        button_layout.addWidget(self.youtube_learning_button)
         input_layout.addLayout(button_layout)
         
         layout.addWidget(input_group)
@@ -2791,6 +2862,9 @@ class MainWindow(QMainWindow):
         # 添加刷新按钮
         refresh_button = QPushButton("刷新历史记录")
         layout.addWidget(refresh_button)
+        learning_button = QPushButton("在视频学习中打开所选视频")
+        learning_button.clicked.connect(self.learn_selected_history)
+        layout.addWidget(learning_button)
         
         # 连接信号和槽
         refresh_button.clicked.connect(self.refresh_history)
@@ -5649,8 +5723,26 @@ class MainWindow(QMainWindow):
             
             item_text = f"{i}. {title}\n   URL: {url}\n   最后下载时间: {last_time}\n   文件路径: {file_path}"
             item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, video.get("file_path", ""))
             self.history_list.addItem(item)
     
+    def learn_selected_history(self):
+        item = self.history_list.currentItem()
+        path = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if path and os.path.isfile(path):
+            self.open_learning_workspace(path)
+        else:
+            self.statusBar.showMessage("请先选择仍保存在本机的下载视频")
+
+    def learn_current_download(self):
+        url = self.youtube_url_input.text().strip()
+        for video in reversed(list_downloaded_videos()):
+            path = video.get("file_path", "")
+            if video.get("url") == url and os.path.isfile(path) and Path(path).suffix.lower() in {".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi", ".flv"}:
+                self.open_learning_workspace(path)
+                return
+        self.open_learning_workspace()
+
     def refresh_templates(self):
         """刷新模板列表"""
         self.template_combo.clear()
@@ -7581,6 +7673,10 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
     def closeEvent(self, event):
         """关闭窗口时的事件处理"""
         # 保存闲时队列
+        if getattr(self, "learning_open_thread", None) and self.learning_open_thread.isRunning():
+            self.statusBar.showMessage("学习页面正在准备，请稍候再关闭窗口")
+            event.ignore()
+            return
         self.save_idle_queue()
         
         # 停止API服务器
@@ -9120,8 +9216,9 @@ class DownloadSubtitleThread(QThread):
             
             from youtube_transcriber import download_youtube_subtitles
             
-            # 创建输出目录（统一使用 workspace/native_subtitles）
-            output_dir = NATIVE_SUBTITLES_DIR
+            # Share the same per-video directory as the online download workflow.
+            from src.learning.downloads import project_directory
+            output_dir = str(project_directory(self.url) / "subtitles")
             os.makedirs(output_dir, exist_ok=True)
             
             print(f"开始下载字幕: URL={self.url}, 语言={self.language}")

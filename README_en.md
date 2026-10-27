@@ -4,7 +4,68 @@
 
 English | [简体中文](./README.md)
 
+The source version now includes a [local video learning workspace](docs/video_learning.md): turn downloaded or local videos into projects with readable subtitles, AI questions, and reusable notes. See the update below for the new features and fixes.
+
 VideoHub is a local video processing and intelligent editing workbench built with **PyQt6**, supporting **YouTube, Twitter/X, Douyin/TikTok, Instagram, Bilibili**, and local media. Alongside downloading, audio extraction, Whisper transcription, bilingual subtitles, subtitle translation, **AI dubbing**, and LLM summaries, its project-level skills for Codex, Claude Code, DeepSeek, and compatible agents provide evidence-grounded story editing, film commentary, configuration-driven batch episode editing, beat-synced edits, multi-format covers, and complete publishing packages. The desktop application also includes batch processing, an idle-time queue, and portable series-directory projects so multi-episode work can run in stages, reuse intermediate assets, and remain editable.
+
+## 2026-10-27 Update: Video Learning and Download Projects (Source Version)
+
+This update implements the first six stages of video learning and fixes extra player sidebars and scattered download assets. **Existing EXE releases do not include these additions. Restart an already running source desktop app to load the new download workflow.**
+
+### New Learning Features
+
+| Feature | What changed |
+| --- | --- |
+| Local learning page | A new desktop learning tab plus entry points from Online Video and download history; long-video seeking, playback speed, subtitle size, and saved progress. |
+| Multilingual subtitles | Independent source, Chinese, bilingual, or hidden modes for the overlay and scrolling transcript; search, timestamp seeking, sentence selection, and looping. Supports SRT, VTT, ASS, and SSA with multiple track versions. |
+| Video AI questions | DeepSeek/Kimi adapters use the current position, selected subtitles, or the whole video. Long transcripts receive complete chunk analysis before chapters and relevant source excerpts are used; timestamp citations link back to playback. |
+| Timestamped notes | Write notes, collect subtitle excerpts, save AI answers, add tags, edit, and export Markdown with timestamps and sources. |
+| Optional web search | Disabled by default; explicit search terms retrieve linked external sources. Chat and search providers can be selected independently. |
+| Learning preparation | Chapter outlines, library search, Whisper transcription when subtitles are missing, and browser previews for incompatible video encodings. |
+
+### One Video, One Project
+
+- **Automatic download projects**: YouTube single-video, batch, and playlist processing with full-video download enabled defaults to `workspace/learning/projects/<video-ID>/`. Video, subtitles, audio, transcripts, summaries, and subtitled renders stay together; repeat processing reuses an existing project.
+- **Directory import**: Put a video and several subtitle files in one folder, optionally using a `subtitles/` subfolder, then choose the project-directory import mode. Multiple-video folders require video selection and associate matching subtitle names only.
+- **Existing downloads**: Opening a download from history copies matching assets into a project while retaining the originals. Migrating an existing learning record retains its identity, notes, and progress; conflicting files with the same name are not silently overwritten.
+- **Portable media references**: `videohub_learning.json` stores relative paths so the folder can be moved and reopened. The learning page displays its project directory.
+
+```text
+workspace/learning/projects/<video-ID>/
+  video.mp4
+  subtitles/               # source, translated, and polished tracks
+  audio/                   # generated when requested
+  transcripts/
+  summaries/
+  videos_with_subtitles/
+  videohub_learning.json
+```
+
+### Fixes and Reliability
+
+- Size the entire player to the actual video aspect ratio, removing container-induced sidebars without cropping or stretching. Long filenames wrap instead of widening the page.
+- Split separate English/Chinese lines in bilingual SRT/VTT into tracks to avoid duplicate English. Prefer polished translations while retaining other versions.
+- Refresh project manifests for video-only downloads, native subtitles, Whisper, reused files, and failure exits. Fix the native-subtitle summary branch calling a nonexistent function.
+- Serialize Whisper across processes so the learning service and desktop cannot stack transcription jobs. Trim or discard automatic timestamps outside the video with a warning, while rejecting clearly invalid manually imported subtitles.
+- Load machine-learning modules lazily when starting the learning page.
+
+### Start and Verification
+
+After installing the existing Python dependencies and configuring FFmpeg, run from the repository root (building the frontend also requires Node.js/npm):
+
+```powershell
+cd frontend
+npm ci
+npm run build
+cd ..
+python -m src.learning_server
+```
+
+Open `http://127.0.0.1:8767/learn`, or build the frontend and run `python main.py` to use the learning tab. AI questions require `DEEPSEEK_API_KEY` or `MOONSHOT_API_KEY` in the local `.env`; `KIMI_API_KEY` is also accepted. Restart the learning service after configuration changes. Local playback and existing subtitles do not require a model key.
+
+Verification: **125 tests passed**, along with TypeScript/Vite build, Python compilation, learning-module static checks, and the 13-tab desktop check. A real 4K video was checked on wide and narrow viewports. DeepSeek chat, outlines, translation, and search were tested live; **Kimi adapters and error paths were tested, but live validation with a real key remains pending**. Download-branch regressions used mocked downloads; this fix was not verified by downloading another complete YouTube video.
+
+Chat, notes, and progress live in `workspace/learning/learning.sqlite3`, separately from media project manifests. Moving media to another computer does not transfer these records automatically; migrate the learning database or export notes. Cloud synchronization and visual understanding are not implemented. Automatic project output currently applies to the YouTube workflows above; dedicated downloads for other platforms and audio-only workflows retain their own paths. See the [video learning guide](./docs/video_learning.md) and [development log](./docs/development_log.md) for details.
 
 ## v0.5.0: Resource Controls and Remembered Options
 
@@ -193,6 +254,7 @@ Open `http://127.0.0.1:8766/story-editor`. MiniMax block regeneration and DeepSe
 | Film commentary | Combine third-person TTS narration with selected original dialogue and generate Douyin publishing assets. |
 | Visual timeline refinement | Refine clips, narration, source-audio windows, subtitles, volume, fades, and crossfades in a five-track local workbench, then render a saved revision. |
 | LLM summaries | Generate markdown summaries/articles from transcripts with customizable templates. |
+| Video learning (source version) | Project directories, synchronized bilingual transcripts, DeepSeek/Kimi questions, optional web search, timestamped notes, chapter outlines, and saved progress. See the [learning guide](./docs/video_learning.md). |
 | Batch processing | Process multiple URLs or local files in one run. |
 | Idle queue scheduling | Queue tasks during the day and let VideoHub execute them in a configured idle window. |
 | Browser extension | Add supported video pages directly to the local queue from Chrome/Edge. |
@@ -277,6 +339,7 @@ Main tabs in the GUI include:
 
 - **Online Video**
 - **Local Audio / Video**
+- **Video Learning** (source version)
 - **Batch Processing**
 - **Idle Queue**
 - **Live Recorder**
@@ -484,6 +547,10 @@ workspace/
   summaries/
   videos_with_subtitles/
   native_subtitles/
+  learning/
+    learning.sqlite3       # local notes, chat, and progress
+    cache/                 # generated previews and learning caches
+    projects/<video-ID>/   # video, subtitles, and related download assets
   douyin_downloads/
   twitter_downloads/
   bilibili_downloads/

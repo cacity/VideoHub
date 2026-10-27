@@ -119,3 +119,28 @@ def test_whisper_execution_slot_serializes_workers():
     second.join()
 
     assert entered == ["first-start", "first-end", "second-start", "second-end"]
+
+
+def test_whisper_execution_slot_serializes_processes(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    output = tmp_path / 'process-events.jsonl'
+    module_root = Path(resource_policy.__file__).parent
+    code = '''import sys,time
+sys.path.insert(0,sys.argv[1])
+from resource_policy import whisper_execution_slot
+with whisper_execution_slot(logger=lambda value: None):
+    with open(sys.argv[2], 'a') as f:
+        f.write(sys.argv[3] + '-start\\n'); f.flush()
+        time.sleep(.15)
+        f.write(sys.argv[3] + '-end\\n'); f.flush()
+'''
+    first = subprocess.Popen([sys.executable, '-c', code, str(module_root), str(output), 'first'])
+    second = subprocess.Popen([sys.executable, '-c', code, str(module_root), str(output), 'second'])
+    assert first.wait(timeout=15) == 0
+    assert second.wait(timeout=15) == 0
+    events = output.read_text().splitlines()
+    assert events in [['first-start', 'first-end', 'second-start', 'second-end'],
+                      ['second-start', 'second-end', 'first-start', 'first-end']]

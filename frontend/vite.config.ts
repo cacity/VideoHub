@@ -7,6 +7,10 @@ export default defineConfig({
     host: 'localhost',
     port: 5173,
     proxy: {
+      '/api/learning': {
+        target: 'http://127.0.0.1:8767',
+        changeOrigin: true,
+      },
       '/api/story-editor': {
         target: 'http://127.0.0.1:8766',
         changeOrigin: true,
@@ -20,9 +24,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: 'index.html',
-        studio: 'studio.html',
         storyEditor: 'story-editor.html',
+        learning: 'learning.html',
       },
     },
   },

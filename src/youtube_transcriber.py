@@ -5173,10 +5173,43 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
     :param prefer_native_subtitles: 是否优先使用原生字幕，默认为True
     :return: 总结文件的路径或字幕文件路径（根据设置而定）
     """
+    # Per-task output paths avoid mutating module globals used by other workers.
+    project_root = None
+    video_dir, audio_dir = VIDEOS_DIR, DOWNLOADS_DIR
+    native_dir, subtitle_dir = NATIVE_SUBTITLES_DIR, SUBTITLES_DIR
+    transcript_dir, rendered_dir = TRANSCRIPTS_DIR, VIDEOS_WITH_SUBTITLES_DIR
+    try:
+        from .learning.downloads import project_directory, bundle_download, update_history
+    except ImportError:
+        from learning.downloads import project_directory, bundle_download, update_history
+
+    def download_content(url, **kwargs):
+        result = download_youtube_video(url, **kwargs)
+        if project_root and not kwargs.get("audio_only", True):
+            result = str(bundle_download(Path(result), project_root, url))
+            log_downloaded_video(url, result)
+        return result
+
+    def summarize_native(text):
+        Path(transcript_dir).mkdir(parents=True, exist_ok=True)
+        text_path = Path(transcript_dir) / (Path(subtitle_file).stem + ".txt")
+        text_path.write_text(text, encoding="utf-8")
+        return summarize_text(str(text_path), model=model, api_key=api_key, base_url=base_url,
+                              stream=stream, output_dir=summary_dir, custom_prompt=custom_prompt,
+                              template_path=template_path)
+
     try:
         # 验证cookies文件
         valid_cookies_file = check_cookies_file(cookies_file)
         target_language = normalize_target_language(target_language)
+        if download_video:
+            project_root = project_directory(youtube_url)
+            project_root.mkdir(parents=True, exist_ok=True)
+            video_dir, audio_dir = str(project_root), str(project_root / "audio")
+            native_dir = subtitle_dir = str(project_root / "subtitles")
+            transcript_dir, rendered_dir = str(project_root / "transcripts"), str(project_root / "videos_with_subtitles")
+            summary_dir = str(project_root / "summaries")
+            print(f"视频学习工程: {project_root}")
         
         # 0. 优先检查原生字幕（如果启用了此选项，且需要生成文章或字幕/翻译）
         native_subtitle_text = None
@@ -5216,7 +5249,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
 
                         subtitle_files = download_youtube_subtitles(
                             youtube_url,
-                            output_dir=NATIVE_SUBTITLES_DIR,
+                            output_dir=native_dir,
                             languages=manual_langs,
                             download_auto=False,
                             cookies_file=valid_cookies_file
@@ -5244,7 +5277,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                                         subtitle_file,
                                         target_language=target_language,
                                         base_name=video_title_base,
-                                        output_dir=SUBTITLES_DIR,
+                                        output_dir=subtitle_dir,
                                         keep_lang_suffix=False,  # 与视频完全同名，只保留扩展名不同
                                         enable_translation_polish=enable_translation_polish,
                                     )
@@ -5262,9 +5295,9 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                                 if download_video:
                                     try:
                                         print("\n检测到用户勾选了“下载视频”，将同时下载/复用视频文件...")
-                                        video_file_for_native = download_youtube_video(
+                                        video_file_for_native = download_content(
                                             youtube_url,
-                                            output_dir=VIDEOS_DIR,
+                                            output_dir=video_dir,
                                             audio_only=False,
                                             cookies_file=valid_cookies_file,
                                         )
@@ -5273,16 +5306,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                                         print(f"⚠️ 使用原生字幕时下载视频失败: {str(e)}")
                                 if generate_article:
                                     print(f"\n直接使用原生字幕生成文章摘要...")
-                                    summary_path = generate_summary(
-                                        native_subtitle_text,
-                                        model,
-                                        api_key,
-                                        base_url,
-                                        stream,
-                                        summary_dir,
-                                        custom_prompt,
-                                        template_path
-                                    )
+                                    summary_path = summarize_native(native_subtitle_text)
                                     if summary_path:
                                         print(f"摘要已生成: {summary_path}")
                                         return summary_path
@@ -5319,7 +5343,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
 
                         subtitle_files = download_youtube_subtitles(
                             youtube_url,
-                            output_dir=NATIVE_SUBTITLES_DIR,
+                            output_dir=native_dir,
                             languages=auto_langs,
                             download_auto=True,
                             cookies_file=valid_cookies_file
@@ -5346,7 +5370,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                                         subtitle_file,
                                         target_language=target_language,
                                         base_name=video_title_base,
-                                        output_dir=SUBTITLES_DIR,
+                                        output_dir=subtitle_dir,
                                         keep_lang_suffix=False,
                                         enable_translation_polish=enable_translation_polish,
                                     )
@@ -5363,9 +5387,9 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                                 if download_video:
                                     try:
                                         print("\n检测到用户勾选了“下载视频”，将同时下载/复用视频文件...")
-                                        video_file_for_native = download_youtube_video(
+                                        video_file_for_native = download_content(
                                             youtube_url,
-                                            output_dir=VIDEOS_DIR,
+                                            output_dir=video_dir,
                                             audio_only=False,
                                             cookies_file=valid_cookies_file,
                                         )
@@ -5374,16 +5398,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
                                         print(f"⚠️ 使用原生字幕时下载视频失败: {str(e)}")
                                 if generate_article:
                                     print(f"\n直接使用自动字幕生成文章摘要...")
-                                    summary_path = generate_summary(
-                                        native_subtitle_text,
-                                        model,
-                                        api_key,
-                                        base_url,
-                                        stream,
-                                        summary_dir,
-                                        custom_prompt,
-                                        template_path
-                                    )
+                                    summary_path = summarize_native(native_subtitle_text)
                                     if summary_path:
                                         print(f"摘要已生成: {summary_path}")
                                         return summary_path
@@ -5408,30 +5423,34 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
             print("下载视频（最佳画质）...")
             try:
                 # 使用videos目录存储视频
-                file_path = download_youtube_video(youtube_url, output_dir=VIDEOS_DIR, audio_only=False, cookies_file=valid_cookies_file)
+                file_path = download_content(youtube_url, output_dir=video_dir, audio_only=False, cookies_file=valid_cookies_file)
                 print(f"视频已下载到: {file_path}")
                 
                 # 检查文件是否存在
                 if not os.path.exists(file_path):
                     raise Exception(f"下载的视频文件不存在: {file_path}")
                 
+                if not enable_transcription and not generate_article:
+                    print("仅下载视频完成（已建立学习工程）")
+                    return file_path
+
                 # 如果下载的是视频，我们需要提取音频
                 print("从视频中提取音频...")
                 try:
-                    audio_path = extract_audio_from_video(file_path, output_dir=DOWNLOADS_DIR)
+                    audio_path = extract_audio_from_video(file_path, output_dir=audio_dir)
                     print(f"音频已提取到: {audio_path}")
                 except Exception as e:
                     print(f"从视频提取音频失败: {str(e)}")
                     print("尝试直接下载音频作为备选方案...")
-                    audio_path = download_youtube_video(youtube_url, output_dir=DOWNLOADS_DIR, audio_only=True, cookies_file=valid_cookies_file)
+                    audio_path = download_content(youtube_url, output_dir=audio_dir, audio_only=True, cookies_file=valid_cookies_file)
             except Exception as e:
                 print(f"视频下载失败: {str(e)}")
                 print("尝试改为下载音频...")
-                audio_path = download_youtube_video(youtube_url, output_dir=DOWNLOADS_DIR, audio_only=True, cookies_file=valid_cookies_file)
+                audio_path = download_content(youtube_url, output_dir=audio_dir, audio_only=True, cookies_file=valid_cookies_file)
         else:
             print("仅下载音频...")
             # 使用downloads目录存储音频
-            audio_path = download_youtube_video(youtube_url, output_dir=DOWNLOADS_DIR, audio_only=True, cookies_file=valid_cookies_file)
+            audio_path = download_content(youtube_url, output_dir=audio_dir, audio_only=True, cookies_file=valid_cookies_file)
         
         # 如果只下载视频而不需要转录或生成文章，直接返回
         if not enable_transcription and not generate_article and download_video:
@@ -5454,8 +5473,8 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
 
             text_path, subtitle_path = transcribe_audio_unified(
                 audio_path,
-                output_dir=TRANSCRIPTS_DIR,
-                subtitle_dir=SUBTITLES_DIR,
+                output_dir=transcript_dir,
+                subtitle_dir=subtitle_dir,
                 model_size=whisper_model_size,
                 generate_subtitles=(generate_subtitles or embed_subtitles),
                 translate_to_chinese=translate_to_chinese,
@@ -5489,7 +5508,7 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
             video_with_subtitles = embed_subtitles_to_video(
                 video_path,
                 subtitle_path,
-                output_dir=VIDEOS_WITH_SUBTITLES_DIR
+                output_dir=rendered_dir
             )
             if video_with_subtitles:
                 print(f"带字幕的视频已生成: {video_with_subtitles}")
@@ -5568,6 +5587,18 @@ def process_youtube_video(youtube_url, model=None, api_key=None, base_url=None, 
         import traceback
         print(f"\n📋 详细错误信息:\n{traceback.format_exc()}")
         return None
+    finally:
+        if project_root:
+            # Refresh on every exit, including native-subtitle early returns and errors.
+            try:
+                candidates = [p for p in project_root.iterdir() if p.is_file() and p.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv"}]
+                if len(candidates) == 1:
+                    video = bundle_download(candidates[0], project_root, youtube_url)
+                    update_history(youtube_url, video)
+                    print(f"学习工程已保存: {project_root}")
+            except (OSError, ValueError) as error:
+                print(f"⚠️ 学习工程整理失败，已下载文件仍保留: {error}")
+
 
 def cleanup_files(directories_to_clean=None, dry_run=False):
     """
