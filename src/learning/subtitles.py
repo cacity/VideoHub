@@ -89,8 +89,9 @@ def parse(content: str, suffix: str = ".srt", role: str = "source") -> list[dict
     paired = [languages(row["text"]) for row in rows]
     if paired and sum(bool(a and b) for a, b in paired) >= max(1, len(paired) / 2):
         rows = [
-            {**row, "text": "\n".join(parts[1 if role == "target" else 0])} if all(parts) else row
+            {**row, "text": "\n".join(parts[1 if role == "target" else 0])}
             for row, parts in zip(rows, paired)
+            if parts[1 if role == "target" else 0]
         ]
     return normalize(rows)
 

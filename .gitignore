@@ -95,6 +95,14 @@ wheelhouse/
 !/frontend/src/learning.css
 !/frontend/src/learning-api.ts
 !/frontend/src/learning-panel.tsx
+!/frontend/src/learning-resize.tsx
+!/frontend/src/learning-shortcuts.ts
+!/frontend/tests/
+/frontend/tests/*
+!/frontend/tests/learning-captions.test.cjs
+!/frontend/tests/learning-shortcuts.test.cjs
+!/frontend/tests/learning-chat.test.cjs
+!/frontend/tests/learning-player.test.cjs
 /downloads/
 .claude/
 CLAUDE.md

@@ -8,6 +8,18 @@ The source version now includes a [local video learning workspace](docs/video_le
 
 VideoHub is a local video processing and intelligent editing workbench built with **PyQt6**, supporting **YouTube, Twitter/X, Douyin/TikTok, Instagram, Bilibili**, and local media. Alongside downloading, audio extraction, Whisper transcription, bilingual subtitles, subtitle translation, **AI dubbing**, and LLM summaries, its project-level skills for Codex, Claude Code, DeepSeek, and compatible agents provide evidence-grounded story editing, film commentary, configuration-driven batch episode editing, beat-synced edits, multi-format covers, and complete publishing packages. The desktop application also includes batch processing, an idle-time queue, and portable series-directory projects so multi-episode work can run in stages, reuse intermediate assets, and remain editable.
 
+## 2026-10-28 Update: Separate Subtitle Languages and Learning Styles (Source Version)
+
+- **Web-assisted question submission**: enabling web search no longer requires a separate query. A blank query uses the first 128 characters of the question; optional terms override it. The composer previews the query and shows submission status or errors beside the draft, preserving failed submissions for retry. Search receives query text only.
+- **Learning shortcuts**: `F` toggles fullscreen, `C` / `X` change speed by 0.1×, `S` hides/restores overlay subtitles, Space toggles playback, arrows seek five seconds, and `M` toggles mute. Letter commands support Chinese IMEs outside text editors and remain active after adjusting selects or range inputs; controls retain Space and arrow navigation. Text entry and the import dialog remain protected. Expand help below the player for a button that focuses the player. Speed is saved within 0.25–3×; subtitles restore that video's last visible mode in the current page session. Refresh after building the frontend to load these shortcuts.
+- New transcription and bilingual translation outputs include plain source and target SRT files, identified by `.source.en.` / `.target.zh-CN.` (using the actual language codes). Existing mixed SRT/VTT/ASS assets remain available for rendering.
+- Opening existing learning material creates separate language copies under the project's `subtitles/learning_tracks/`, falling back to the local learning store for standalone videos or unwritable folders. Original assets, citations, notes, and playback progress are retained; content changes create new files.
+- Source and target selectors list matching roles. Expand **字幕文件与样式** below the player to download each language and set font, size, colors, background, line spacing, weight, shadow, and top/bottom position. Styles are saved per video and shared by normal/fullscreen overlays without changing subtitle files.
+
+See the [development log](./docs/development_log.md) for verification. Automated browser access was blocked by policy, so the new settings panel has not received visual acceptance testing. Restart a running source desktop app to load the backend changes; existing EXE releases are unchanged.
+
+Shortcut follow-up: the user confirmed `C / X / S / F` working in Edge. All 19 frontend tests pass, including mounted-page DOM event tests. Optional keyboard diagnostics remain under shortcut help; editor text is redacted and diagnostics are not uploaded. This does not verify the subtitle style panel's appearance.
+
 ## 2026-10-27 Update: Video Learning and Download Projects (Source Version)
 
 This update implements the first six stages of video learning and fixes extra player sidebars and scattered download assets. **Existing EXE releases do not include these additions. Restart an already running source desktop app to load the new download workflow.**
@@ -43,6 +55,8 @@ workspace/learning/projects/<video-ID>/
 
 ### Fixes and Reliability
 
+- **Single-line library and resizable layout**: each library item stays on one line, with ellipsis and a full-title/progress tooltip. Drag the sidebar boundaries to change their widths, or drag below the player to resize it while preserving the source aspect ratio. Sizes survive refresh; double-click a handle to reset it, and narrow screens constrain the layout automatically.
+- **Fullscreen subtitles and compact layout**: use the player's top-right fullscreen button, double-click the video, or press `F` while the player is focused to fullscreen both video and subtitles; use `Esc` / `F` to exit. Titles use 16px text (15px on narrow screens). The library and learning assistant can be collapsed independently from the header, with saved layout preferences and unsent drafts retained.
 - Size the entire player to the actual video aspect ratio, removing container-induced sidebars without cropping or stretching. Long filenames wrap instead of widening the page.
 - Split separate English/Chinese lines in bilingual SRT/VTT into tracks to avoid duplicate English. Prefer polished translations while retaining other versions.
 - Refresh project manifests for video-only downloads, native subtitles, Whisper, reused files, and failure exits. Fix the native-subtitle summary branch calling a nonexistent function.
@@ -63,7 +77,11 @@ python -m src.learning_server
 
 Open `http://127.0.0.1:8767/learn`, or build the frontend and run `python main.py` to use the learning tab. AI questions require `DEEPSEEK_API_KEY` or `MOONSHOT_API_KEY` in the local `.env`; `KIMI_API_KEY` is also accepted. Restart the learning service after configuration changes. Local playback and existing subtitles do not require a model key.
 
-Verification: **125 tests passed**, along with TypeScript/Vite build, Python compilation, learning-module static checks, and the 13-tab desktop check. A real 4K video was checked on wide and narrow viewports. DeepSeek chat, outlines, translation, and search were tested live; **Kimi adapters and error paths were tested, but live validation with a real key remains pending**. Download-branch regressions used mocked downloads; this fix was not verified by downloading another complete YouTube video.
+Caption tail compatibility: captions ending up to five seconds after the video are bounded to its end when every cue starts inside the video. An expandable notice explains the adjustment, and original files remain intact. Larger overruns and cues starting after the video still fail validation. A real 59-minute project was imported with all 10 subtitle tracks.
+
+Caption overlay fix: each selected language track follows its own clock and displays its latest active cue. Overlapping platform captions no longer repeat the same translation or show the next translation early. The full transcript and alternative tracks remain available. All four normal overlay modes and fullscreen Chinese were checked on a real video; refresh the page to use the fix.
+
+Cumulative verification: **131 backend tests and 3 frontend tests passed**; TypeScript/Vite build, Python compilation, and static checks passed. Earlier verification covered the 13-tab desktop and wide/narrow layouts with a real 4K video. DeepSeek chat, outlines, translation, and search were tested live; **Kimi adapters and error paths were tested, but live validation with a real key remains pending**. Download-branch regressions used mocked downloads; this fix was not verified by downloading another complete YouTube video.
 
 Chat, notes, and progress live in `workspace/learning/learning.sqlite3`, separately from media project manifests. Moving media to another computer does not transfer these records automatically; migrate the learning database or export notes. Cloud synchronization and visual understanding are not implemented. Automatic project output currently applies to the YouTube workflows above; dedicated downloads for other platforms and audio-only workflows retain their own paths. See the [video learning guide](./docs/video_learning.md) and [development log](./docs/development_log.md) for details.
 

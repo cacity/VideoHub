@@ -261,6 +261,7 @@ class Assistant:
                 "updated": now(),
             }
             self.store.save_tracks(video_id, {"target": payload})
+            self.service.detail(video_id)  # Persist the separate plain SRT before completing the job.
             return {"translated": len(rows)}
 
         return self.jobs.start(video_id, "translation", work)

@@ -149,6 +149,17 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     def add_track(video_id):
         return jsonify(service.add_track(video_id, body()))
 
+    @app.get("/api/learning/videos/<video_id>/subtitle-file")
+    def subtitle_file(video_id):
+        role = request.args.get("role", "")
+        if role not in {"source", "target"}:
+            raise ValueError("字幕角色无效")
+        video = service.detail(video_id)
+        track = video["tracks"].get(role)
+        if not track:
+            raise ValueError("尚未导入该语言字幕")
+        return send_file(track["path"], as_attachment=True, download_name=Path(track["path"]).name, mimetype="application/x-subrip")
+
     @app.get("/api/learning/videos/<video_id>/subtitle-candidates")
     def candidates(video_id):
         return jsonify(tracks=subtitle_candidates(service.store.video(video_id)["path"]))

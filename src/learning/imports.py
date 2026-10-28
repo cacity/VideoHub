@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from .media import VIDEO_EXTENSIONS
+from .project import classify
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -78,19 +78,16 @@ def subtitle_candidates(video_path: str, root: Path = REPO_ROOT) -> list[dict]:
             if full in seen:
                 continue
             seen.add(full)
-            target = bool(
-                re.search(
-                    r"(?:^|[_. -])(zh(?:[-_]?(?:cn|tw|hans|hant))?|google|polished|translated|translation)(?:$|[_. -])",
-                    path.stem,
-                    re.I,
-                )
-            )
+            try:
+                role, language = classify(path)
+            except (ValueError, OSError, UnicodeError):
+                continue
             result.append(
                 {
                     "path": full,
                     "name": path.name,
-                    "role": "target" if target else "source",
-                    "language": "zh-CN" if target else "en",
+                    "role": role,
+                    "language": language,
                 }
             )
             if len(result) >= 80:
