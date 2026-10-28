@@ -17,6 +17,11 @@ import time
 from urllib.parse import urlparse, parse_qs
 
 try:
+    from .subtitle_tracks import save_language_tracks
+except ImportError:
+    from subtitle_tracks import save_language_tracks
+
+try:
     from .resource_policy import (
         apply_whisper_resource_policy,
         resolve_whisper_resource_policy,
@@ -3302,6 +3307,7 @@ def transcribe_audio_unified(
                         escaped_translated = translated_text.replace('\\', '\\\\').replace('{', '\\{').replace('}', '\\}')
                         ass_file.write(f"Dialogue: 0,{format_timestamp_ass(start_time)},{format_timestamp_ass(end_time)},Secondary,,0,0,0,,{escaped_translated}\n")
             
+            save_language_tracks(subtitle_rows, srt_path, final_source_language, target_language)
             subtitle_path = srt_path  # 返回主要的字幕文件路径
             print(f"字幕文件已保存:")
             print(f"  SRT: {srt_path}")
@@ -3667,6 +3673,7 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
                     # 写入翻译
                     ass_file.write(f"Dialogue: 0,{start_formatted},{end_formatted},Secondary,,0,0,0,,{escaped_translated}\n")
         
+        save_language_tracks(subtitle_rows, srt_path, final_source_language, target_language)
         print(f"字幕文件已创建: \nSRT: {srt_path}\nVTT: {vtt_path}\nASS: {ass_path}")
         
         # 清理GPU缓存

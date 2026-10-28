@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowUp, BookmarkPlus, Check, ChevronRight, Download, Globe, ListTree, MessageCircle, NotebookPen, Settings2, Square, Sparkles, Pencil, Trash2 } from 'lucide-react';
-import { api, activeJob, time, Video, Cue, Providers, Study, Job, Message, Note, Citation, WebSource } from './learning-api';
+import { api, sendChat, resolveSearchQuery, activeJob, time, Video, Cue, Providers, Study, Job, Message, Note, Citation, WebSource } from './learning-api';
 
-type Props = { video: Video; position: number; selected: Cue | null; providers: Providers;
+type Props = { video: Video; position: number; selected: Cue | null; providers: Providers; collapsed: boolean; resizeHandle: React.ReactNode;
   seek: (value: number) => void; refresh: () => Promise<void>; report: (message: string) => void };
 
-export function LearningPanel({ video, position, selected, providers, seek, refresh, report }: Props) {
+export function LearningPanel({ video, position, selected, providers, seek, refresh, report, collapsed, resizeHandle }: Props) {
   const [tab, setTab] = useState('chat');
   const [study, setStudy] = useState<Study>({ messages: [], notes: [], outline: [], active_job: null });
   const [job, setJob] = useState<Job | null>(null);
@@ -18,6 +18,8 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
   const [searchProvider, setSearchProvider] = useState('deepseek');
   const [searchQuery, setSearchQuery] = useState('');
   const [starting, setStarting] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
+  const pendingSubmission = useRef(false);
   const [noteText, setNoteText] = useState('');
   const [noteTags, setNoteTags] = useState('');
   const [editing, setEditing] = useState<Note | null>(null);
@@ -56,13 +58,23 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
   }, [job?.id]);
   useEffect(() => { const box = tail.current?.parentElement; if (box) box.scrollTop = box.scrollHeight; }, [study.messages.length, job?.text]);
   const start = async (kind: string, text = question) => {
+    if (pendingSubmission.current || activeJob(job)) return;
+    pendingSubmission.current = true;
+    setSubmissionError(''); report('');
     setStarting(true);
     try {
       const data = { provider, model, kind, whisper_model: whisperModel, question: text, time: position, scope,
         cue_ids: selected ? [selected.id] : [], search, search_provider: searchProvider, search_query: searchQuery };
-      const value = await api<Job>('/videos/' + video.id + (kind === 'chat' ? '/chat' : '/prepare'), 'POST', data);
-      setJob(value); if (kind === 'chat') { setQuestion(''); await reload(); }
-    } catch (e) { report((e as Error).message); } finally { setStarting(false); }
+      const value = kind === 'chat' ? await sendChat(video.id, data) : await api<Job>('/videos/' + video.id + '/prepare', 'POST', data);
+      setJob(value);
+      if (kind === 'chat') {
+        setQuestion('');
+        await reload().catch(() => setSubmissionError('问题已提交，暂时无法刷新历史记录；请查看任务进度，无需重复发送。'));
+      }
+    } catch (e) {
+      const message = e instanceof TypeError ? '无法连接学习服务，请确认本机程序仍在运行后重试' : (e as Error).message;
+      setSubmissionError(message); report(message);
+    } finally { pendingSubmission.current = false; setStarting(false); }
   };
   const stop = () => job && api<Job>('/jobs/' + job.id + '/cancel', 'POST', {}).then(setJob).catch(e => report(e.message));
   const noteAction = async (action: () => Promise<unknown>) => {
@@ -89,7 +101,8 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
     {message.usage?.total_tokens != null && <small className="usage">本次回答 {message.usage.total_tokens} tokens（不含结构分析与搜索）</small>}
     {message.role === 'assistant' && message.status === 'finished' && <button className="save-answer" disabled={noteBusy} onClick={() => void noteAction(async () => { await api('/videos/' + video.id + '/notes', 'POST', { answer_id: message.id }); setTab('notes'); })}><BookmarkPlus size={12}/>存为笔记</button>}
   </article>;
-  return <aside className="study-panel">
+  return <aside className="study-panel" id="learning-assistant" hidden={collapsed}>
+    {resizeHandle}
     <div className="panel-tabs">{[['chat','AI 对话',MessageCircle],['notes','笔记',NotebookPen],['outline','大纲',ListTree]].map(([id,label,Icon]) => {
       const TabIcon = Icon as typeof MessageCircle; return <button key={String(id)} className={tab === id ? 'current-tab' : ''} onClick={() => setTab(String(id))}><TabIcon size={16}/>{String(label)}</button>;
     })}</div>
@@ -97,16 +110,19 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
     {settings && <div className="model-settings"><label>模型名称<input aria-label="模型名称" value={model} onChange={e => { const next = { ...models, [provider]: e.target.value }; setModels(next); localStorage.setItem('videohub.learning.models', JSON.stringify(next)); }}/></label><p>密钥从本机 .env 读取。DeepSeek：DEEPSEEK_API_KEY；Kimi：MOONSHOT_API_KEY。修改后重启服务。</p><p>启用 AI 会向所选服务发送问题和所需字幕；启用联网只向搜索服务发送你填写的检索词。</p></div>}
     {!providers[provider]?.configured && <div className="configuration-hint">{providers[provider]?.error || (provider === 'deepseek' ? 'DeepSeek' : 'Kimi') + ' 尚未配置密钥'}。播放、字幕和手动笔记仍可使用。</div>}
     {job && <div className={'job-card ' + job.status}><div><Sparkles size={14}/><span>{job.message}</span>{activeJob(job) && <button onClick={() => void stop()}><Square size={11}/>停止</button>}</div><progress max="100" value={job.progress}/>{job.warnings?.map(w => <p className="warning" key={w}>{w}</p>)}</div>}
+    {tab !== 'chat' && submissionError && <p className="panel-submission-error" role="alert">{submissionError}</p>}
     {tab === 'chat' && <><div className="messages">{!study.messages.length && !job?.text && <div className="chat-welcome"><div className="assistant-symbol"><Sparkles size={22}/></div><h3>不明白的地方，随时问</h3><p>助教会结合当前字幕与视频结构回答，<br/>引用可以直接回到原片。</p><div className="quick-prompts">{['这里是什么意思？','用一个例子解释当前概念','梳理视频的主要观点'].map(q => <button disabled={working} key={q} onClick={() => void start('chat', q)}>{q}<ChevronRight size={14}/></button>)}</div></div>}
       {study.messages.map(answer)}
       {job?.kind === 'chat' && activeJob(job) && job.text && <article className="message assistant streaming"><div className="message-label">学习助教 <span className="streaming-dot"/></div><div className="message-text">{job.text.replace(/\[cue:[^\]]+\]/g, '')}</div></article>}
       <div ref={tail}/></div>
-      <form className="chat-composer" onSubmit={e => { e.preventDefault(); void start('chat'); }}>
+      <form className="chat-composer" aria-busy={starting} onSubmit={e => { e.preventDefault(); void start('chat'); }}>
         <div className="context-label"><span>当前 {time(position)}</span>{selected && <span>已选一句字幕</span>}</div>
+        {submissionError && <p className="composer-error" role="alert">{submissionError}</p>}
+        {starting && <p className="composer-status" role="status">正在提交问题，请稍候…</p>}
         <label className="scope"><input type="checkbox" checked={scope === 'full'} onChange={e => setScope(e.target.checked ? 'full' : 'current')}/>允许引用全片 <small>关闭后仅看至当前进度</small></label>
         <textarea aria-label="向视频提问" rows={3} placeholder={selected ? '围绕选中的这句话提问…' : '提问，或点击左侧字幕选择一句话…'} value={question} onChange={e => setQuestion(e.target.value)} maxLength={1500}/>
-        <div className="composer-actions"><label className={'search-toggle ' + (search ? 'enabled' : '')}><input type="checkbox" checked={search} onChange={e => setSearch(e.target.checked)}/><Globe size={14}/>联网补充</label><button className="primary send" aria-label="发送问题" disabled={working || !question.trim()}><ArrowUp size={18}/></button></div>
-        {search && <div className="search-config"><select aria-label="搜索服务" value={searchProvider} onChange={e => setSearchProvider(e.target.value)}><option value="deepseek">DeepSeek 搜索</option><option value="kimi">Kimi 搜索</option></select><input aria-label="联网检索词" placeholder="填写要搜索的概念（最多128字）" maxLength={128} value={searchQuery} onChange={e => setSearchQuery(e.target.value)}/></div>}
+        <div className="composer-actions"><label className={'search-toggle ' + (search ? 'enabled' : '')}><input type="checkbox" checked={search} onChange={e => setSearch(e.target.checked)}/><Globe size={14}/>联网补充</label><button type="submit" className="primary send" aria-label="发送问题" disabled={working || !question.trim()}><ArrowUp size={18}/>{starting ? '提交中…' : '发送'}</button></div>
+        {search && <div className="search-config"><select aria-label="搜索服务" value={searchProvider} onChange={e => setSearchProvider(e.target.value)}><option value="deepseek">DeepSeek 搜索</option><option value="kimi">Kimi 搜索</option></select><input aria-label="联网检索词" aria-describedby="learning-search-hint" placeholder="可选：留空使用当前问题检索" maxLength={128} value={searchQuery} onChange={e => setSearchQuery(e.target.value)}/><p id="learning-search-hint">仅发送检索词，不附带视频字幕或笔记；留空时使用问题前128字。可填写具体概念以提高准确性。</p>{question.trim() && <p className="search-query-preview">本次检索：{resolveSearchQuery(question, searchQuery)}</p>}</div>}
       </form></>}
     {tab === 'outline' && <div className="outline"><div className="panel-section-head"><h3>视频章节</h3><button disabled={working} onClick={() => void start('analysis')}><Sparkles size={13}/>生成大纲</button></div>
       {(job?.outline || study.outline).map((c, i) => <button className="chapter" key={i} onClick={() => seek(c.start)}><time>{time(c.start)}</time><strong>{c.title}</strong><p>{c.summary}</p></button>)}

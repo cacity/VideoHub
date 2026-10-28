@@ -117,7 +117,7 @@ def list_series_videos(project_root: str | Path) -> list[Path]:
 
 
 def _strip_subtitle_variant(stem: str) -> str:
-    value = stem
+    value = re.sub(r"\.(?:source|target)\.[a-zA-Z-]+\.[a-f0-9]{20}$", "", stem)
     changed = True
     while changed:
         changed = False
@@ -145,6 +145,11 @@ def normalize_asset_stem(stem: str) -> str:
 
 def subtitle_role(path: str | Path) -> str:
     stem = Path(path).stem.casefold()
+    separate = re.search(r"\.(source|target)\.[a-z-]+\.[a-f0-9]{20}$", stem)
+    if separate:
+        if separate[1] == "source":
+            return "source"
+        return "polished" if "polished" in stem else "translated"
     if re.search(r"(?:^|[_ .-])polished$", stem):
         return "polished"
     if re.search(r"(?:^|[_ .-])(google|translated|translation)$", stem):

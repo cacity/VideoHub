@@ -111,6 +111,90 @@ def test_alignment_uses_time_instead_of_line_order():
     assert result[0]["id"] == subtitles.parse(SRT)[0]["id"]
 
 
+def test_playback_tracks_keep_independent_clocks_and_exclude_alternatives(workspace):
+    app, client, headers, video = workspace
+    source = (
+        "1\n00:00:30,240 --> 00:00:36,320\nexterior, interior\n\n"
+        "2\n00:00:32,880 --> 00:00:38,399\ndetails? Some stories"
+    )
+    target = (
+        "1\n00:00:25,919 --> 00:00:33,280\n外观、内饰有哪些细节？\n\n"
+        "2\n00:00:33,839 --> 00:00:39,239\n有些内容只在这里呈现。"
+    )
+    service = app.config["LEARNING_SERVICE"]
+    detail = service.register(video["path"], tracks=[
+        {"content": source, "role": "source"},
+        {"content": target, "role": "target"},
+        {"content": source.replace("exterior, interior", "alternative track"), "role": "source"},
+    ])
+    assert len(detail["available_tracks"]) == 3
+    playback = detail["playback_cues"]
+    assert playback["source"] == subtitles.parse(source)
+    assert playback["target"] == subtitles.parse(target, role="target")
+    # The transcript may relate several translations to a source cue, but
+    # the overlay must not show a later translation ahead of its own clock.
+    assert len([c for c in playback["target"] if c["start"] <= 33 < c["end"]]) == 1
+    assert "有些内容" in detail["cues"][0]["translation"]
+    assert not any("alternative" in c["text"] for rows in playback.values() for c in rows)
+    key = next(t["key"] for t in detail["available_tracks"] if t["key"].startswith("available-"))
+    switched = client.post(
+        f"/api/learning/videos/{video['id']}/select-track", headers=headers, json={"key": key, "role": "source"}
+    ).json
+    assert switched["playback_cues"]["source"][0]["text"] == "alternative track"
+    assert switched["playback_cues"]["target"] == playback["target"]
+
+
+def test_target_only_playback_does_not_duplicate_track_as_source(workspace):
+    _, client, headers, video = workspace
+    result = client.post(
+        f"/api/learning/videos/{video['id']}/subtitles", headers=headers,
+        json={"role": "target", "language": "zh-CN", "content": SRT.replace("Hello, world.", "你好，世界。")},
+    ).json
+    assert result["playback_cues"]["source"] == []
+    assert result["playback_cues"]["target"][0]["text"] == "你好，世界。"
+    assert result["cues"][0]["translation"] == "你好，世界。"
+
+
+def test_bilingual_import_creates_downloadable_single_language_files_without_changing_version(workspace):
+    app, client, headers, video = workspace
+    service = app.config["LEARNING_SERVICE"]
+    mixed = "1\n00:00:01,250 --> 00:00:03,500\nHello.\n你好。\n"
+    source = service.prepare_track({"content": mixed, "role": "source", "language": "en"})
+    target = service.prepare_track({"content": mixed, "role": "target", "language": "zh-CN"})
+    service.store.save_tracks(video["id"], {"source": source, "target": target})
+    service.store.save_progress(video["id"], {"time": 12, "font": 20, "rate": 1, "mode": "bilingual", "overlay": "target"})
+    import hashlib
+    expected_version = hashlib.sha256((source["hash"] + "|" + target["hash"]).encode()).hexdigest()
+    detail = client.get(f"/api/learning/videos/{video['id']}").json
+    assert detail["subtitle_version"] == expected_version and detail["progress"]["time"] == 12
+    for role, wanted, unwanted in [("source", "Hello.", "你好"), ("target", "你好。", "Hello")]:
+        track = detail["tracks"][role]
+        assert f".{role}." in Path(track["path"]).name and track["separate_file"]
+        response = client.get(detail["subtitle_urls"][role])
+        content = response.data.decode("utf-8")
+        assert wanted in content and unwanted not in content and "00:00:01,250" in content
+        assert response.status_code == 200 and "attachment" in response.headers["Content-Disposition"]
+    assert client.get(f"/api/learning/videos/{video['id']}/subtitle-file?role=../../file").status_code == 400
+    again = client.get(f"/api/learning/videos/{video['id']}").json
+    assert again["subtitle_version"] == detail["subtitle_version"] and again["tracks"] == detail["tracks"]
+
+
+def test_subtitle_style_persists_without_modifying_cues_and_rejects_css_values(workspace):
+    _, client, headers, video = workspace
+    route = f"/api/learning/videos/{video['id']}"
+    before = client.get(route).json
+    style = {"font_family": "serif", "source_color": "#123456", "target_color": "#abcdef", "background": 0.6,
+             "position": "top", "bold": True, "outline": False, "line_height": 1.8}
+    response = client.put(route + "/progress", headers=headers, json={"style": style, "font": 28, "time": 10})
+    assert response.status_code == 200 and response.json["style"] == style
+    detail = client.get(route).json
+    assert detail["progress"]["style"] == style and detail["progress"]["font"] == 28
+    assert detail["cues"] == before["cues"] and detail["subtitle_version"] == before["subtitle_version"]
+    for patch in [{"source_color": "url(secret)"}, {"font_family": "anything"}, {"font_family": []}, {"background": "nan"}, {"bold": "yes"}, {"position": "fixed"}, {"position": {}}, {"extra_css": "red"}]:
+        assert client.put(route + "/progress", headers=headers, json={"style": patch}).status_code == 400
+    assert client.get(route).json["progress"]["style"] == style
+
+
 def test_local_security_and_registered_media_range(workspace):
     app, client, headers, video = workspace
     assert client.get("/api/learning/session", headers={"Origin": "https://evil.example"}).status_code == 403
@@ -554,3 +638,56 @@ def test_manual_track_overrun_is_rejected_and_optional_ai_config_cannot_break_pl
     response = client.get("/api/learning/session")
     assert response.status_code == 200 and response.json["providers"]["deepseek"]["error"]
     assert client.get(f"/api/learning/videos/{video['id']}").status_code == 200
+
+
+def test_project_accepts_lingering_platform_captions_without_changing_originals(workspace, tmp_path):
+    import shutil
+
+    app, client, headers, video = workspace
+    root = tmp_path / "platform-project"
+    root.mkdir()
+    shutil.copy2(video["path"], root / "lesson.mp4")
+    content = (
+        SRT + "\n3\n00:00:54,490 --> 00:01:01,770\non the EV side\n"
+        "\n4\n00:00:58,650 --> 00:01:01,770\nrecent SUV reviews\n"
+    )
+    original = root / "lesson.en-orig.srt"
+    original.write_text(content, encoding="utf-8")
+    (root / "lesson.zh.srt").write_text("1\n00:00:58,650 --> 00:00:59,900\n更多评测\n", encoding="utf-8")
+    before = original.read_bytes()
+    imported = client.post("/api/learning/imports/project", headers=headers, json={"directory": str(root)})
+    assert imported.status_code == 200, imported.json
+    detail = imported.json["video"]
+    assert detail["has_source"] and detail["has_target"]
+    assert len(detail["available_tracks"]) == 2
+    assert [c["end"] for c in detail["cues"][-2:]] == [60, 60]
+    assert [c["text"] for c in detail["cues"][-2:]] == ["on the EV side", "recent SUV reviews"]
+    assert "1.77" in detail["subtitle_warnings"][0] and "2 条" in detail["subtitle_warnings"][0]
+    assert original.read_bytes() == before
+    reloaded = client.get(f"/api/learning/videos/{detail['id']}").json
+    assert reloaded["subtitle_warnings"] == detail["subtitle_warnings"]
+    assert reloaded["subtitle_version"] == detail["subtitle_version"]
+    again = client.post("/api/learning/imports/project", headers=headers, json={"directory": str(root)}).json["video"]
+    assert again["id"] == detail["id"] and again["subtitle_version"] == detail["subtitle_version"]
+    assert len(app.config["LEARNING_SERVICE"].store.videos()) == 2
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "accepted"),
+    [(59, "00:01:05,000", True), (59, "00:01:05,001", False), (60, "00:01:01,000", False)],
+)
+def test_manual_subtitle_tail_tolerance_keeps_mismatch_guard(workspace, start, end, accepted):
+    _, client, headers, video = workspace
+    before = client.get(f"/api/learning/videos/{video['id']}").json
+    result = client.post(
+        f"/api/learning/videos/{video['id']}/subtitles",
+        headers=headers,
+        json={"content": f"1\n00:{start // 60:02}:{start % 60:02},000 --> {end}\nlast words"},
+    )
+    if accepted:
+        assert result.status_code == 200
+        assert result.json["cues"][0]["start"] == start and result.json["cues"][0]["end"] == 60
+        assert result.json["subtitle_warnings"]
+    else:
+        assert result.status_code == 400 and "字幕超出视频时长" in result.json["error"]
+        assert client.get(f"/api/learning/videos/{video['id']}").json == before

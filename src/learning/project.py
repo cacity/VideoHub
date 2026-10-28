@@ -32,6 +32,17 @@ def signature(path: Path) -> str:
 
 def classify(path: Path) -> tuple[str, str]:
     name = path.stem.lower()
+    explicit = re.search(r"\.(source|target)\.([a-z]{2}(?:-[a-z]{2,4})?|auto)(?:\.|$)", name)
+    if explicit:
+        role, language = explicit.groups()
+        return role, {"zh-cn": "zh-CN", "zh-tw": "zh-TW"}.get(language, language)
+    # A language suffix is stronger evidence than words in the video title.
+    suffix = re.search(r"(?:^|[_. -])(zh(?:[-_]?(?:cn|tw|hans|hant))?|en(?:-orig)?|ja|ko|fr|de|es)$", name)
+    if suffix:
+        language = suffix.group(1)
+        if language.startswith("zh"):
+            return "target", "zh-TW" if language.endswith(("tw", "hant")) else "zh-CN"
+        return "source", language.replace("-orig", "")
     if re.search(
         r"(?:^|[_. -])(?:zh(?:[-_]?(?:cn|tw|hans|hant))?|cn|google|polished|translated)(?:$|[_. -])|中文|简体|繁体",
         name,
@@ -133,12 +144,14 @@ def inspect_project(directory: str, video_path: str = "") -> dict:
     tracks.sort(
         key=lambda t: (
             t["role"],
+            0 if re.search(r"\.(?:source|target)\.", Path(t["path"]).name) else 1,
             t["language"] != "en",
             "bilingual" in Path(t["path"]).stem.lower() or "双语" in Path(t["path"]).stem,
             (0 if "polished" in Path(t["path"]).stem.lower() else 2 if "google" in Path(t["path"]).stem.lower() else 1)
             if t["role"] == "target"
             else 0,
             {".srt": 0, ".vtt": 1, ".ass": 2, ".ssa": 3}[Path(t["path"]).suffix.lower()],
+            -Path(t["path"]).stat().st_mtime_ns if re.search(r"\.(?:source|target)\.", Path(t["path"]).name) else 0,
             t["path"],
         )
     )

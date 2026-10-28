@@ -4,10 +4,47 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 from pathlib import Path
 
 from . import media, subtitles
 from .store import Store, encode, new_id, now
+
+try:
+    from ..subtitle_tracks import snapshot_track
+except ImportError:
+    from subtitle_tracks import snapshot_track
+
+DEFAULT_SUBTITLE_STYLE = {
+    "font_family": "sans",
+    "source_color": "#ffffff",
+    "target_color": "#f3f1cd",
+    "background": 0,
+    "position": "bottom",
+    "bold": False,
+    "outline": True,
+    "line_height": 1.5,
+}
+
+
+def subtitle_style(value: dict) -> dict:
+    if not isinstance(value, dict) or set(value) - DEFAULT_SUBTITLE_STYLE.keys():
+        raise ValueError("字幕样式格式无效")
+    style = {**DEFAULT_SUBTITLE_STYLE, **value}
+    if (
+        not isinstance(style["font_family"], str) or style["font_family"] not in {"sans", "serif", "mono"}
+        or not isinstance(style["position"], str) or style["position"] not in {"bottom", "top"}
+    ):
+        raise ValueError("字幕字体或位置无效")
+    for key in ("source_color", "target_color"):
+        if not isinstance(style[key], str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", style[key]):
+            raise ValueError("字幕颜色须为六位十六进制颜色")
+    for key in ("bold", "outline"):
+        if not isinstance(style[key], bool):
+            raise ValueError("字幕描边/粗体设置无效")
+    style["background"] = min(0.9, max(0, finite(style["background"], "字幕背景")))
+    style["line_height"] = min(2, max(1.1, finite(style["line_height"], "字幕行距")))
+    return style
 
 
 def finite(value, name: str = "时间") -> float:
@@ -104,15 +141,45 @@ class LearningService:
 
     @staticmethod
     def validate_track(track: dict, duration: float):
-        if max(c["end"] for c in track["cues"]) > duration + 1:
-            raise ValueError("字幕超出视频时长，请检查是否选错文件")
-        if max(c["end"] for c in track["cues"]) > duration:
-            track["cues"], _ = subtitles.bound_transcription(track["cues"], duration)
-            track["hash"] = hashlib.sha256(encode(track["cues"]).encode()).hexdigest()
+        end = max(c["end"] for c in track["cues"])
+        if end <= duration:
+            return
+        # Platform captions can linger briefly after the final video frame.
+        # Only shorten cues that actually begin inside the video; a later cue
+        # or a substantial overrun still indicates a potentially wrong file.
+        if end > duration + 5 or any(c["start"] >= duration for c in track["cues"]):
+            name = Path(track["path"]).name or "所选字幕"
+            raise ValueError(f"{name}：字幕超出视频时长 {end - duration:.2f} 秒，请检查是否选错文件")
+        track["cues"], changed = subtitles.bound_transcription(track["cues"], duration)
+        track["hash"] = hashlib.sha256(encode([track["role"], track["language"], track["cues"]]).encode()).hexdigest()
+        name = Path(track["path"]).name or "所选字幕"
+        track["timing_warning"] = (
+            f"{name}：片尾延长 {end - duration:.2f} 秒，已将 {changed} 条字幕的结束时间对齐至片尾；原文件未改动。"
+        )
 
     def detail(self, video_id: str) -> dict:
         video = self.store.video(video_id)
         tracks = self.store.tracks(video_id)
+        changed = {}
+        for key, track in tracks.items():
+            if (
+                track.get("separate_file")
+                and f".{track['role']}." in Path(track["path"]).name
+                and Path(track["path"]).is_file()
+            ):
+                continue
+            original = track.get("original_path", track["path"])
+            fallback = self.store.root / "subtitles" / video_id
+            folder = Path(video["project_root"]) / "subtitles" / "learning_tracks" if video.get("project_root") else fallback
+            name = Path(original).stem or "subtitles"
+            try:
+                path = snapshot_track(track["cues"], folder, name, track["role"], track["language"])
+            except OSError:
+                path = snapshot_track(track["cues"], fallback, name, track["role"], track["language"])
+            changed[key] = {**track, "path": str(path), "original_path": original, "separate_file": True}
+        if changed:
+            self.store.save_tracks(video_id, changed)
+            tracks.update(changed)
         source = tracks.get("source", {}).get("cues", [])
         target = tracks.get("target", {}).get("cues", [])
         cues = (
@@ -121,16 +188,28 @@ class LearningService:
             else [{**cue, "translation": cue["text"], "translation_ids": [cue["id"]]} for cue in target]
         )
         version = hashlib.sha256("|".join(tracks[r]["hash"] for r in sorted(tracks)).encode()).hexdigest()
+        progress = self.store.progress(video_id)
         return {
             **video,
             "tracks": {r: {k: v for k, v in t.items() if k != "cues"} for r, t in tracks.items()},
             "available_tracks": [
-                {"key": r, "name": Path(t["path"]).name or t["language"], "language": t["language"], "role": t["role"]}
+                {
+                    "key": r, "name": Path(t.get("original_path") or t["path"]).name,
+                    "path": t["path"], "language": t["language"], "role": t["role"],
+                }
                 for r, t in tracks.items()
             ],
             "cues": cues,
+            # Transcript alignment is many-to-many. Playback must use each
+            # selected track's own clock, rather than repeat aligned text.
+            "playback_cues": {"source": source, "target": target},
+            "subtitle_urls": {
+                role: f"/api/learning/videos/{video_id}/subtitle-file?role={role}"
+                for role in ("source", "target") if tracks.get(role)
+            },
             "subtitle_version": version,
-            "progress": self.store.progress(video_id),
+            "subtitle_warnings": list(dict.fromkeys(t["timing_warning"] for t in tracks.values() if t.get("timing_warning"))),
+            "progress": {**progress, "style": subtitle_style(progress.get("style", {}))},
             "media_url": f"/api/learning/videos/{video_id}/media",
             "has_source": bool(source),
             "has_target": bool(target),
@@ -146,7 +225,7 @@ class LearningService:
         old = tracks.get(role)
         additions = {role: {**tracks[key], "role": role}}
         if old:
-            backup_key = "available-" + hashlib.sha256((old["path"] + old["role"]).encode()).hexdigest()[:20]
+            backup_key = "available-" + hashlib.sha256((old.get("original_path", old["path"]) + old["role"]).encode()).hexdigest()[:20]
             additions[backup_key] = old
         self.store.save_tracks(video_id, additions)
         return self.detail(video_id)
@@ -165,6 +244,10 @@ class LearningService:
     def progress(self, video_id: str, value: dict):
         video = self.store.video(video_id)
         previous = self.store.progress(video_id)
+        if "style" in value:
+            if not isinstance(value["style"], dict):
+                raise ValueError("字幕样式格式无效")
+            previous["style"] = subtitle_style({**previous.get("style", {}), **value["style"]})
         previous.update({k: v for k, v in value.items() if k in {"time", "rate", "mode", "overlay", "font"}})
         previous["time"] = min(video["duration"], max(0, finite(previous["time"])))
         previous["rate"] = min(3, max(0.25, finite(previous["rate"], "倍速")))
