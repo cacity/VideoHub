@@ -18,10 +18,11 @@ try:
     from .learning.providers import capabilities
     from .learning.notes import NoteConflict, save_note, markdown
     from .learning.search import search_web
-    from .learning.imports import recent_downloads, directory_assets, subtitle_candidates
+    from .learning.imports import recent_downloads, directory_assets
     from .learning.preparation import start_preview, start_transcription
     from .learning.project import import_project
     from .learning.downloads import import_download
+    from .learning.mindmap import latest_key, as_markdown
 except ImportError:
     from learning.service import LearningService
     from learning import media
@@ -29,10 +30,11 @@ except ImportError:
     from learning.providers import capabilities
     from learning.notes import NoteConflict, save_note, markdown
     from learning.search import search_web
-    from learning.imports import recent_downloads, directory_assets, subtitle_candidates
+    from learning.imports import recent_downloads, directory_assets
     from learning.preparation import start_preview, start_transcription
     from learning.project import import_project
     from learning.downloads import import_download
+    from learning.mindmap import latest_key, as_markdown
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA = REPO_ROOT / "workspace" / "learning"
@@ -72,7 +74,7 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "same-origin"
-        if request.path.startswith("/api/"):
+        if request.path.startswith("/api/") or request.path in {"/", "/learn"}:
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -95,7 +97,7 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
 
     @app.get("/api/learning/session")
     def session():
-        return jsonify(token=token, providers=capabilities())
+        return jsonify(token=token, providers=capabilities(), features={"mindmap": True})
 
     def body():
         value = request.get_json(silent=True)
@@ -162,7 +164,7 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
 
     @app.get("/api/learning/videos/<video_id>/subtitle-candidates")
     def candidates(video_id):
-        return jsonify(tracks=subtitle_candidates(service.store.video(video_id)["path"]))
+        return jsonify(tracks=service.subtitle_candidates(video_id))
 
     @app.post("/api/learning/videos/<video_id>/select-track")
     def select_track(video_id):
@@ -190,6 +192,7 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
             messages=service.store.list_items("messages", video_id),
             notes=service.store.list_items("notes", video_id),
             outline=outline,
+            mindmap=service.store.cache(latest_key(video)),
             active_job=next((j for j in jobs if j["status"] in {"queued", "running", "cancelling"}), None),
         )
 
@@ -224,12 +227,29 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     def chat(video_id):
         return jsonify(assistant.start_chat(video_id, body())), 202
 
+    @app.get("/api/learning/videos/<video_id>/mindmap/export")
+    def export_mindmap(video_id):
+        video = service.detail(video_id)
+        value = service.store.cache(latest_key(video))
+        if not value:
+            raise KeyError("请先生成当前字幕版本的脑图")
+        kind = request.args.get("format", "markdown")
+        if kind not in {"markdown", "json"}:
+            raise ValueError("支持Markdown或JSON导出")
+        return Response(
+            json.dumps(value, ensure_ascii=False, indent=2) if kind == "json" else as_markdown(value, video),
+            content_type="application/json; charset=utf-8" if kind == "json" else "text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="videohub-mindmap.{"json" if kind == "json" else "md"}"'},
+        )
+
     @app.post("/api/learning/videos/<video_id>/prepare")
     def prepare(video_id):
         data = body()
         kind = data.get("kind", "analysis")
         if kind == "analysis":
             job = assistant.start_analysis(video_id, data)
+        elif kind == "mindmap":
+            job = assistant.start_mindmap(video_id, data)
         elif kind == "translation":
             job = assistant.start_translation(video_id, data)
         elif kind == "preview":

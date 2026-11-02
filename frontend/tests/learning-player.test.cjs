@@ -3,9 +3,13 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { resolve } = require('node:path');
 const ts = require('typescript');
-const { JSDOM } = require('jsdom');
+const { JSDOM, VirtualConsole } = require('jsdom');
 
 let dom, root, act, media;
+let sessionGeneration = 0;
+let blockLaterKeyHandlers = false;
+let subtitleCandidates = [];
+const subtitleSelections = [];
 const savedProgress = [];
 const detail = {
   id: 'fixture', title: 'Synthetic lesson', duration: 60, width: 1280, height: 720,
@@ -19,7 +23,13 @@ const detail = {
 
 before(async () => {
   // Local DOM emulation only: never navigate or fetch an actual application page.
-  dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://unit.test/learn?video=fixture' });
+  dom = new JSDOM(readFileSync(resolve(__dirname, '../learning.html'), 'utf8'), {
+    url: 'https://unit.test/learn?video=fixture', runScripts: 'dangerously',
+  });
+  // Reproduce a handler added after the native bootstrap but before the App.
+  dom.window.addEventListener('keydown', event => {
+    if (blockLaterKeyHandlers) event.stopImmediatePropagation();
+  }, true);
   for (const name of ['window', 'document', 'HTMLElement', 'Event', 'KeyboardEvent', 'localStorage', 'location', 'history']) globalThis[name] = dom.window[name];
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator });
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -42,16 +52,34 @@ before(async () => {
   globalThis.fetch = async (url, options = {}) => {
     const route = String(url).replace('/api/learning', '');
     let data;
-    if (route === '/session') data = { token: 'synthetic-token', providers: {} };
+    if (route === '/session') data = { token: 'synthetic-token-' + sessionGeneration, providers: {} };
     else if (route === '/videos') data = { videos: [detail] };
     else if (route === '/videos/fixture') data = structuredClone(detail);
-    else if (route.endsWith('/subtitle-candidates')) data = { tracks: [] };
+    else if (route.endsWith('/subtitle-candidates')) data = { tracks: subtitleCandidates };
+    else if (route.endsWith('/select-track') || route.endsWith('/subtitles')) {
+      const request = JSON.parse(options.body);
+      subtitleSelections.push({ route, ...request });
+      if (request.key) {
+        const chosen = detail.available_tracks.find(t => t.key === request.key);
+        detail.tracks[request.role] = { ...chosen };
+        detail.available_tracks = detail.available_tracks.map(t => t.key === request.role ? { ...chosen, key: request.role } : t);
+      }
+      detail.subtitle_version += '-updated';
+      data = structuredClone(detail);
+    }
     else if (route.endsWith('/study')) data = { messages: [], notes: [], outline: [], active_job: null };
-    else if (route.endsWith('/progress')) { data = JSON.parse(options.body); savedProgress.push(data); }
+    else if (route.endsWith('/progress')) {
+      assert.equal(options.headers['X-Learning-Token'], 'synthetic-token-' + sessionGeneration);
+      data = JSON.parse(options.body); savedProgress.push(data); detail.progress = structuredClone(data);
+    }
     else throw new Error('Unexpected isolated request: ' + route);
     return { ok: true, json: async () => data };
   };
+  const markdownModule = await import('react-markdown');
+  const gfmModule = await import('remark-gfm');
   for (const suffix of ['.ts', '.tsx']) require.extensions[suffix] = (module, filename) => {
+    const original = module.require.bind(module);
+    module.require = name => name === 'react-markdown' ? { __esModule: true, ...markdownModule } : name === 'remark-gfm' ? { __esModule: true, ...gfmModule } : original(name);
     const result = ts.transpileModule(readFileSync(filename, 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.React, esModuleInterop: true },
     });
@@ -75,6 +103,7 @@ after(async () => {
 
 async function press(target, key, code = '', extra = {}) {
   const event = new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...extra });
+  if (extra.timeStamp !== undefined) Object.defineProperty(event, 'timeStamp', { value: extra.timeStamp });
   await act(async () => target.dispatchEvent(event));
   return event;
 }
@@ -93,7 +122,7 @@ test('mounted App executes speed and subtitle keys after explicitly focusing the
   assert.equal(document.querySelector('[aria-label="画面字幕"]').value, 'off');
   await press(document.activeElement, 's', 'KeyS');
   assert.equal(document.querySelector('[aria-label="画面字幕"]').value, 'bilingual');
-  assert.ok(savedProgress.some(p => p.rate === 1.1));
+  assert.ok(savedProgress.some(p => p.rate === 1), 'subsequent preference changes include the latest speed');
 });
 
 test('mounted App invokes fullscreen and handles IME keys while fullscreen', async () => {
@@ -136,4 +165,251 @@ test('mounted diagnostics distinguish prevented events and redact editor keystro
   assert.match(text, /文字输入（不记录内容）/);
   assert.ok(!text.includes('KeyC'));
   assert.equal(media.playbackRate, 1.2);
+});
+
+test('mounted App applies held speed keys and rapid presses immediately, saving only the final burst value', async () => {
+  const previousWrites = savedProgress.length;
+  media.playbackRate = 1;
+  await press(media, 'c', 'KeyC', { timeStamp: 100 });
+  await press(media, 'c', 'KeyC', { repeat: true, timeStamp: 600 });
+  const skipped = await press(media, 'c', 'KeyC', { repeat: true, timeStamp: 630 });
+  assert.equal(skipped.defaultPrevented, true);
+  await press(media, 'c', 'KeyC', { repeat: true, timeStamp: 780 });
+  assert.equal(media.playbackRate, 1.3, 'holding C continues to raise the speed');
+  await act(async () => {
+    for (const timeStamp of [790, 800, 810]) {
+      const event = new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'timeStamp', { value: timeStamp });
+      media.dispatchEvent(event);
+    }
+  });
+  assert.equal(media.playbackRate, 1.6, 'all distinct presses work even in one React batch');
+  assert.equal(document.querySelector('[aria-label="播放倍速"]').value, '1.6');
+  assert.equal(savedProgress.length, previousWrites, 'UI and media do not wait for network writes');
+  await act(async () => new Promise(resolve => setTimeout(resolve, 300)));
+  assert.equal(savedProgress.length, previousWrites + 1);
+  assert.equal(savedProgress.at(-1).rate, 1.6);
+});
+
+test('held speed/seek work fullscreen; held toggles do not flicker and remain protected while editing', async () => {
+  await press(media, 'f', 'KeyF', { timeStamp: 1000 });
+  assert.equal(document.fullscreenElement?.id, 'learning-player');
+  await press(media, 'f', 'KeyF', { repeat: true, timeStamp: 1500 });
+  assert.equal(document.fullscreenElement?.id, 'learning-player', 'holding F must not exit immediately');
+  await press(media, 'Process', 'KeyX', { timeStamp: 1600, keyCode: 229, isComposing: true });
+  await press(media, 'Process', 'KeyX', { repeat: true, timeStamp: 2100, keyCode: 229, isComposing: true });
+  assert.equal(media.playbackRate, 1.4);
+  const beforeSeek = media.currentTime;
+  await press(media, 'ArrowRight', 'ArrowRight', { timeStamp: 2200 });
+  await press(media, 'ArrowRight', 'ArrowRight', { repeat: true, timeStamp: 2700 });
+  assert.equal(media.currentTime, beforeSeek + 10);
+  const oldMode = document.querySelector('[aria-label="画面字幕"]').value;
+  await press(media, 's', 'KeyS', { timeStamp: 2800 });
+  const newMode = document.querySelector('[aria-label="画面字幕"]').value;
+  assert.notEqual(newMode, oldMode);
+  await press(media, 's', 'KeyS', { repeat: true, timeStamp: 3300 });
+  assert.equal(document.querySelector('[aria-label="画面字幕"]').value, newMode);
+  await press(media, 's', 'KeyS', { timeStamp: 3310 });
+  assert.equal(document.querySelector('[aria-label="画面字幕"]').value, oldMode);
+  const textarea = document.querySelector('[aria-label="向视频提问"]');
+  textarea.focus();
+  const typing = await press(textarea, 'c', 'KeyC', { repeat: true, timeStamp: 4000 });
+  assert.equal(typing.defaultPrevented, false);
+  assert.equal(media.playbackRate, 1.4);
+  await press(media, 'f', 'KeyF', { timeStamp: 4100 });
+  assert.equal(document.fullscreenElement, null);
+});
+
+test('pending burst speed is flushed on pagehide and cannot be lost before the debounce finishes', async () => {
+  const previousWrites = savedProgress.length;
+  await press(media, 'x', 'KeyX', { timeStamp: 5000 });
+  await press(media, 'x', 'KeyX', { repeat: true, timeStamp: 5500 });
+  assert.equal(media.playbackRate, 1.2);
+  assert.equal(savedProgress.length, previousWrites);
+  await act(async () => window.dispatchEvent(new Event('pagehide')));
+  assert.equal(savedProgress.at(-1).rate, 1.2);
+  assert.equal(savedProgress.length, previousWrites + 1);
+  await act(async () => new Promise(resolve => setTimeout(resolve, 300)));
+  assert.equal(savedProgress.length, previousWrites + 1, 'flush cancels the delayed duplicate write');
+});
+
+test('reopening the App after service restarts binds keys once and renews the session without enabling shortcuts manually', async () => {
+  const entry = resolve(__dirname, '../src/learning.tsx');
+  for (let restart = 0; restart < 3; restart++) {
+    await act(async () => root.unmount());
+    sessionGeneration++;
+    delete require.cache[entry];
+    await act(async () => require(entry));
+    media = document.querySelector('video');
+    await act(async () => media.dispatchEvent(new Event('loadedmetadata')));
+    const startingRate = media.playbackRate;
+    const mode = document.querySelector('[aria-label="画面字幕"]').value;
+    await press(media, 'c', 'KeyC');
+    assert.equal(media.playbackRate, Math.round((startingRate + .1) * 100) / 100, 'one press must execute exactly once after reopening');
+    await press(media, 'x', 'KeyX');
+    assert.equal(media.playbackRate, startingRate);
+    await press(media, 's', 'KeyS');
+    assert.notEqual(document.querySelector('[aria-label="画面字幕"]').value, mode);
+    await press(media, 's', 'KeyS');
+    assert.equal(document.querySelector('[aria-label="画面字幕"]').value, mode);
+    await press(media, 'f', 'KeyF');
+    assert.equal(document.fullscreenElement?.id, 'learning-player');
+    await press(media, 'f', 'KeyF');
+    assert.equal(document.fullscreenElement, null);
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    assert.equal(savedProgress.at(-1).rate, startingRate);
+  }
+});
+
+test('the native entry still executes player commands when a later listener stops further dispatch', async () => {
+  const rate = media.playbackRate;
+  const panel = document.getElementById('learning-self-check');
+  panel.open = true;
+  blockLaterKeyHandlers = true;
+  try {
+    await press(media, 'c', 'KeyC');
+    assert.equal(media.playbackRate, Math.round((rate + .1) * 100) / 100);
+    await press(media, 'x', 'KeyX');
+    assert.equal(media.playbackRate, rate);
+    await press(media, 's', 'KeyS');
+    assert.equal(document.querySelector('[aria-label="画面字幕"]').value, 'off');
+    await press(media, 's', 'KeyS');
+    assert.equal(document.querySelector('[aria-label="画面字幕"]').value, 'bilingual');
+    await press(media, 'f', 'KeyF');
+    assert.equal(document.fullscreenElement?.id, 'learning-player');
+    await press(media, 'f', 'KeyF');
+    assert.equal(document.fullscreenElement, null);
+    const textarea = document.querySelector('[aria-label="向视频提问"]');
+    await press(textarea, 'c', 'KeyC');
+    assert.equal(media.playbackRate, rate, 'early entry must still preserve typing');
+  } finally { blockLaterKeyHandlers = false; panel.open = false; }
+});
+
+test('native self-check remains usable without React and reports bootstrap, keys, and redacted errors', async () => {
+  const html = readFileSync(resolve(__dirname, '../learning.html'), 'utf8');
+  const scriptErrors = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on('jsdomError', error => scriptErrors.push(error));
+  const isolated = new JSDOM(html, { url: 'https://unit.test/learn?video=private-id', runScripts: 'dangerously', virtualConsole });
+  const win = isolated.window;
+  try {
+    const panel = win.document.getElementById('learning-self-check');
+    const report = win.document.getElementById('learning-self-report');
+    assert.match(report.textContent, /等待学习页启动/);
+    panel.open = true;
+    win.document.dispatchEvent(new win.CustomEvent('videohub:learning-runtime', {
+      detail: { app: '已启动', listener: '已绑定', player: '已挂载' },
+    }));
+    win.document.body.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'c', code: 'KeyC', bubbles: true }));
+    win.document.body.dispatchEvent(new win.KeyboardEvent('keyup', { key: 'c', code: 'KeyC', bubbles: true }));
+    await new Promise(resolve => win.setTimeout(resolve, 0));
+    assert.match(report.textContent, /按下：KeyC/);
+    assert.match(report.textContent, /松开：KeyC/);
+    assert.match(report.textContent, /快捷键监听：已绑定/);
+    assert.ok(!report.textContent.includes('private-id'), 'video IDs and query strings must not enter the report');
+    const input = win.document.createElement('textarea');
+    win.document.body.append(input);
+    input.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'secret', code: 'KeyC', bubbles: true }));
+    await new Promise(resolve => win.setTimeout(resolve, 0));
+    assert.match(report.textContent, /输入区（已省略内容）/);
+    assert.ok(!report.textContent.includes('secret'));
+    win.dispatchEvent(new win.ErrorEvent('error', { message: 'private question', error: new win.TypeError('private question') }));
+    assert.match(report.textContent, /脚本错误：TypeError/);
+    assert.ok(!report.textContent.includes('private question'));
+    let copied = '';
+    Object.defineProperty(win.navigator, 'clipboard', { value: { writeText: async value => { copied = value; } } });
+    win.document.getElementById('learning-copy-report').click();
+    await new Promise(resolve => win.queueMicrotask(resolve));
+    assert.equal(copied, report.textContent);
+    await new Promise(resolve => win.setTimeout(resolve, 0));
+    assert.deepEqual(scriptErrors, []);
+  } finally { win.close(); }
+});
+
+test('a focused player recovers a delivered keyup when keydown is absent, without doubling normal presses or intercepting typing', async () => {
+  const wrap = document.getElementById('learning-player');
+  const release = async (target, key, code, extra = {}) => {
+    const event = new KeyboardEvent('keyup', { key, code, bubbles: true, cancelable: true, ...extra });
+    await act(async () => target.dispatchEvent(event));
+    return event;
+  };
+  await act(async () => { window.dispatchEvent(new Event('blur')); wrap.focus(); });
+  const rate = media.playbackRate;
+  await release(wrap, 'c', 'KeyC');
+  assert.equal(media.playbackRate, Math.round((rate + .1) * 100) / 100);
+  await release(wrap, 'x', 'KeyX');
+  assert.equal(media.playbackRate, rate);
+  await release(wrap, 'Process', 'KeyC', { keyCode: 229, isComposing: true });
+  assert.equal(media.playbackRate, Math.round((rate + .1) * 100) / 100);
+  await release(wrap, 'X', '');
+  assert.equal(media.playbackRate, rate, 'keyup fallback also handles missing physical codes and case');
+  const original = document.querySelector('[aria-label="画面字幕"]').value;
+  await release(wrap, 's', 'KeyS');
+  assert.notEqual(document.querySelector('[aria-label="画面字幕"]').value, original);
+  await release(wrap, 's', 'KeyS');
+  assert.equal(document.querySelector('[aria-label="画面字幕"]').value, original);
+  await release(wrap, 'f', 'KeyF');
+  assert.equal(document.fullscreenElement?.id, 'learning-player');
+  await release(wrap, 'f', 'KeyF');
+  assert.equal(document.fullscreenElement, null);
+  const position = media.currentTime;
+  await release(wrap, 'ArrowRight', '');
+  assert.equal(media.currentTime, Math.min(60, position + 5));
+  await release(wrap, 'ArrowLeft', '');
+  assert.equal(media.currentTime, position);
+  await press(wrap, 'c', 'KeyC');
+  const afterDown = media.playbackRate;
+  await release(wrap, 'c', 'KeyC');
+  assert.equal(media.playbackRate, afterDown, 'normal down/up pair must execute only once');
+  const textarea = document.querySelector('[aria-label="向视频提问"]');
+  await act(async () => textarea.focus());
+  const typing = await release(textarea, 'c', 'KeyC');
+  assert.equal(typing.defaultPrevented, false);
+  assert.equal(media.playbackRate, afterDown);
+  await act(async () => wrap.focus());
+  await release(wrap, 'c', 'KeyC', { ctrlKey: true });
+  assert.equal(media.playbackRate, afterDown, 'modifier shortcuts remain protected');
+  await press(textarea, 'x', 'KeyX');
+  await release(wrap, 'x', 'KeyX');
+  assert.equal(media.playbackRate, afterDown, 'rejected typing must not be retried on keyup after a focus change');
+  await act(async () => window.dispatchEvent(new Event('blur')));
+  await release(wrap, 'x', 'KeyX');
+  assert.equal(media.playbackRate, afterDown, 'losing the window focus disables release recovery until reactivation');
+});
+
+test('subtitle versions in the actual App select one track per role, reuse bilingual files and open translation even with the assistant collapsed', async () => {
+  await act(async () => root.unmount());
+  detail.tracks = { source: { language: 'en', path: '/source.srt', hash: 'source-v1' }, target: { language: 'zh-CN', path: '/target.srt' } };
+  detail.available_tracks = [
+    { key: 'source', name: 'lesson.en.srt', role: 'source', language: 'en', path: '/source.srt' },
+    { key: 'available-v2', name: 'lesson.en.vtt', role: 'source', language: 'en', path: '/source.vtt', hash: 'source-v2' },
+    { key: 'target', name: 'lesson.google.srt', role: 'target', language: 'zh-CN', path: '/target.srt' },
+  ];
+  subtitleCandidates = [
+    { name: 'lesson.bilingual.ass', path: '/mixed.ass', role: 'source', language: 'en', format: 'ASS', bilingual: true },
+    { name: 'lesson.bilingual.ass', path: '/mixed.ass', role: 'target', language: 'zh-CN', format: 'ASS', bilingual: true },
+  ];
+  localStorage.setItem('videohub.learning.layout', JSON.stringify({ assistant: true }));
+  const entry = resolve(__dirname, '../src/learning.tsx');
+  delete require.cache[entry];
+  await act(async () => require(entry));
+  assert.equal(document.getElementById('learning-assistant').hidden, true);
+  const translate = [...document.querySelectorAll('.transcript-toolbar button')].find(b => b.textContent === '翻译已有字幕');
+  await act(async () => translate.click());
+  assert.equal(document.getElementById('learning-assistant').hidden, false);
+  assert.ok(document.querySelector('.translation-setup'));
+  const versions = document.querySelector('.subtitle-versions');
+  versions.open = true;
+  const sourceSelect = document.querySelector('[aria-label="选择原文轨道"]');
+  assert.equal(sourceSelect.options.length, 2);
+  assert.ok(!sourceSelect.textContent.includes('google'), 'Chinese versions never appear as source options');
+  await act(async () => { sourceSelect.value = 'available-v2'; sourceSelect.dispatchEvent(new Event('change', { bubbles: true })); });
+  assert.equal(subtitleSelections.at(-1).key, 'available-v2');
+  assert.match(document.querySelector('.translation-setup').textContent, /lesson.en.vtt/);
+  const files = [...document.querySelectorAll('.subtitle-file-list button')];
+  assert.equal(files.length, 2, 'one bilingual file exposes two distinct language actions');
+  await act(async () => files.find(b => b.textContent.startsWith('用作译文')).click());
+  assert.equal(subtitleSelections.at(-1).path, '/mixed.ass');
+  assert.equal(subtitleSelections.at(-1).role, 'target');
+  assert.equal(document.querySelectorAll('video').length, 1, 'switching subtitles does not remount the player');
 });

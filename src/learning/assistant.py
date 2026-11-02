@@ -201,10 +201,30 @@ class Assistant:
 
         return self.jobs.start(video_id, "chat", work)
 
+    def start_mindmap(self, video_id: str, data: dict):
+        from .mindmap import build_mindmap, latest_key
+        video = self.service.detail(video_id)
+        if not video["has_source"]:
+            raise ValueError("请先导入原文字幕或生成转写，再生成全片脑图")
+        provider = self.provider(data)
+
+        def work(cancelled, update):
+            result = build_mindmap(self, video, provider, cancelled, update, data.get("force") is True)
+            if cancelled.is_set():
+                raise InterruptedError()
+            if self.service.detail(video_id)["subtitle_version"] != video["subtitle_version"]:
+                raise ValueError("字幕已改变，请重新生成脑图")
+            self.store.save_cache(latest_key(video), result)
+            return {"mindmap": result, "outline": result["chapters"], "subtitle_version": video["subtitle_version"]}
+
+        return self.jobs.start(video_id, "mindmap", work)
+
     def start_translation(self, video_id: str, data: dict):
         video = self.service.detail(video_id)
         if not video["has_source"]:
             raise ValueError("请先导入或转写原文字幕")
+        if data.get("source_hash") and data["source_hash"] != video["tracks"]["source"]["hash"]:
+            raise ValueError("原文字幕已改变，请重新确认翻译版本")
         provider = self.provider(data)
 
         def work(cancelled, update):
@@ -259,8 +279,9 @@ class Assistant:
                 "cues": normalize(rows),
                 "hash": hashlib.sha256(encode(rows).encode()).hexdigest(),
                 "updated": now(),
+                "label": f"AI翻译 · {provider.name} / {provider.model}",
             }
-            self.store.save_tracks(video_id, {"target": payload})
+            self.service.replace_track(video_id, payload)
             self.service.detail(video_id)  # Persist the separate plain SRT before completing the job.
             return {"translated": len(rows)}
 

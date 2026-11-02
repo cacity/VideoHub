@@ -4,10 +4,98 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
+    <meta name="videohub-learning-build" content="__VIDEOHUB_LEARNING_BUILD__" />
     <title>VideoHub · 视频学习</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" translate="no"></div>
+    <details id="learning-self-check" style="position:fixed;right:12px;bottom:12px;z-index:1000;max-width:min(380px,90vw);padding:8px 12px;border:1px solid #cbd9cd;border-radius:8px;background:#f7faf6;color:#294938;font:12px/1.6 sans-serif">
+      <summary style="cursor:pointer">页面自检</summary>
+      <pre id="learning-self-report" tabindex="0" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:45vh;overflow:auto"></pre>
+      <button type="button" id="learning-copy-report">复制诊断</button>
+    </details>
+    <script>
+      // This check deliberately runs before, and independently of, React.
+      (() => {
+        const panel = document.getElementById('learning-self-check');
+        const output = document.getElementById('learning-self-report');
+        let shortcutHandler = null;
+        const pressed = new Set();
+        let releaseRecovery = false;
+        const keyId = event => /^(?:Key[FCXSM]|Space|ArrowLeft|ArrowRight)$/.test(event.code) ? event.code
+          : ({ f: 'KeyF', c: 'KeyC', x: 'KeyX', s: 'KeyS', m: 'KeyM', ' ': 'Space', arrowleft: 'ArrowLeft', arrowright: 'ArrowRight' })[event.key?.toLowerCase?.()] || '';
+        const inPlayer = target => !!target?.closest?.('#learning-player');
+        window.addEventListener('pointerdown', event => { releaseRecovery = inPlayer(event.target); }, true);
+        window.addEventListener('focusin', event => { releaseRecovery = inPlayer(event.target); }, true);
+        const reset = () => { pressed.clear(); releaseRecovery = false; };
+        window.addEventListener('blur', reset);
+        window.addEventListener('pagehide', reset);
+        const state = { app: '等待学习页启动', listener: '未确认', player: '未确认', down: '未检测', up: '未检测', decision: '未检测', execution: '未执行', error: '无' };
+        const render = () => {
+          const build = document.querySelector('meta[name="videohub-learning-build"]').content;
+          output.textContent = `页面版本：${build}\n页面：${location.origin}${location.pathname}\n应用：${state.app}\n快捷键监听：${state.listener}\n播放器：${state.player}\n按下：${state.down}\n松开：${state.up}\n处理判断：${state.decision}\n执行结果：${state.execution}\n脚本错误：${state.error}\n\n展开后点击视频，再按 C。仅本页临时显示，不上传；文字输入内容不记录。`;
+        };
+        document.addEventListener('videohub:learning-runtime', event => { Object.assign(state, event.detail); render(); });
+        document.addEventListener('videohub:shortcut-bind', event => {
+          if (typeof event.detail?.handler !== 'function') return;
+          shortcutHandler = event.detail.handler;
+          event.detail.connected = true;
+        });
+        document.addEventListener('videohub:shortcut-unbind', event => {
+          if (shortcutHandler === event.detail?.handler) shortcutHandler = null;
+        });
+        window.addEventListener('error', event => {
+          state.error = event.error?.name || (event.target?.tagName === 'SCRIPT' ? '脚本资源加载失败' : '脚本异常');
+          render();
+        }, true);
+        window.addEventListener('unhandledrejection', event => { state.error = event.reason?.name || '异步脚本异常'; render(); });
+        const detect = kind => event => {
+          if (!panel.open) return;
+          const target = event.target;
+          const editing = target?.isContentEditable || target?.closest?.('input,textarea,[contenteditable],[role="textbox"],[role="combobox"]');
+          const known = /^(?:Key[FCXSM]|Space|ArrowLeft|ArrowRight)$/.test(event.code);
+          const letter = /^[fcxsmFCXSM]$/.test(event.key);
+          const label = editing ? '输入区（已省略内容）' : known ? event.code : letter ? event.key.toUpperCase() : '其他按键';
+          // A timer inspects after the full native dispatch. A microtask can
+          // run between browser callbacks and report defaultPrevented too early.
+          setTimeout(() => { state[kind] = label + (event.defaultPrevented ? '；已拦截默认行为' : '；未拦截默认行为'); render(); }, 0);
+        };
+        const detectDown = detect('down');
+        window.addEventListener('keydown', event => {
+          const key = keyId(event);
+          if (key) pressed.add(key);
+          state.decision = shortcutHandler ? '已送往播放器' : '尚未注册播放器处理器';
+          state.execution = '未执行';
+          try { if (shortcutHandler) shortcutHandler(event); }
+          finally { detectDown(event); }
+        }, { capture: true, passive: false });
+        const detectUp = detect('up');
+        window.addEventListener('keyup', event => {
+          const key = keyId(event);
+          const hadDown = key ? pressed.delete(key) : false;
+          // Some native controls/IME/other listeners can withhold keydown but
+          // still deliver keyup. Recover only in the explicitly active player.
+          if (key && !hadDown && releaseRecovery && inPlayer(event.target) && shortcutHandler) {
+            state.decision = '按下事件未送达，使用松开事件补偿';
+            state.execution = '未执行';
+            shortcutHandler(event);
+            state.decision = '松开补偿：' + state.decision;
+          }
+          detectUp(event);
+        }, true);
+        panel.addEventListener('toggle', render);
+        document.getElementById('learning-copy-report').addEventListener('click', async () => {
+          render();
+          try { await navigator.clipboard.writeText(output.textContent); }
+          catch {
+            const selection = window.getSelection();
+            const range = document.createRange(); range.selectNodeContents(output);
+            selection.removeAllRanges(); selection.addRange(range);
+          }
+        });
+        render();
+      })();
+    </script>
     <script type="module" src="/src/learning.tsx"></script>
   </body>
 </html>

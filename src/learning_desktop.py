@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+import secrets
+from urllib.parse import urlencode
 
 import requests
 
@@ -32,8 +34,11 @@ def learning_url(path: str = "", directory: str = "") -> str:
             except (OSError, SystemExit):
                 raise ValueError("8767 端口已被其他程序占用，请先释放端口，或用独立学习服务配置其他端口") from None
             threading.Thread(target=_server.serve_forever, name="learning-http", daemon=True).start()
+        # Each desktop opening must create a fresh page/session, including
+        # when the browser still has a tab from before a service restart.
+        launch = secrets.token_hex(8)
         if not path and not directory:
-            return BASE_URL + "/learn"
+            return BASE_URL + "/learn?" + urlencode({"launch": launch})
         session = requests.get(BASE_URL + "/api/learning/session", timeout=3).json()
         endpoint = "/imports/project" if directory else "/videos"
         result = requests.post(
@@ -49,4 +54,4 @@ def learning_url(path: str = "", directory: str = "") -> str:
             if data.get("needs_selection"):
                 raise ValueError("目录中有多个视频，请在网页“导入视频 → 视频工程”中选择本次学习的视频")
             data = data["video"]
-        return BASE_URL + "/learn?video=" + data["id"]
+        return BASE_URL + "/learn?" + urlencode({"video": data["id"], "launch": launch})

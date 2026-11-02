@@ -12,6 +12,138 @@ from src.learning_server import create_app
 SRT = "\ufeff1\n00:00:00,500 --> 00:00:03,000\nHello, world.\n\n2\n00:00:04,000 --> 00:00:08,000\nLearning takes practice.\n"
 
 
+def test_existing_subtitle_translation_retains_versions_and_survives_restart(workspace):
+    app, client, headers, video = workspace
+    service = app.config["LEARNING_SERVICE"]
+    route = "/api/learning/videos/" + video["id"]
+    app.config["LEARNING_ASSISTANT"].provider_factory = FakeProvider
+    source = client.post(route + "/subtitles", headers=headers, json={"content": SRT, "role": "source", "language": "en"}).json
+    original_path = source["tracks"]["source"]["path"]
+    original_bytes = Path(original_path).read_bytes()
+    old = client.post(route + "/subtitles", headers=headers, json={"role": "target", "content": SRT.replace("Hello, world.", "第一版译文。"), "language": "zh-CN"}).json
+    old_path = old["tracks"]["target"]["path"]
+    service.progress(video["id"], {"time": 27, "rate": 1.3})
+    service.store.save_item("notes", video["id"], {"id": "retained-note", "text": "Keep"})
+    bad = client.post(route + "/prepare", headers=headers, json={"kind": "translation", "source_hash": "stale"})
+    assert bad.status_code == 400 and "原文字幕已改变" in bad.json["error"]
+    response = client.post(route + "/prepare", headers=headers, json={"kind": "translation", "source_hash": source["tracks"]["source"]["hash"]})
+    assert response.status_code == 202
+    job = wait_job(client, response.json["id"])
+    assert job["status"] == "finished", job
+    translated = client.get(route).json
+    assert translated["tracks"]["source"]["path"] == original_path
+    assert Path(original_path).read_bytes() == original_bytes
+    assert translated["playback_cues"]["target"][0]["start"] == 0.5
+    assert translated["progress"]["time"] == 27 and translated["progress"]["rate"] == 1.3
+    assert service.store.list_items("notes", video["id"])[0]["text"] == "Keep"
+    previous = next(t for t in translated["available_tracks"] if t["key"].startswith("available-") and t["path"] == old_path)
+    assert "AI翻译" in next(t for t in translated["available_tracks"] if t["key"] == "target")["label"]
+    restarted_app = create_app(service.store.root)
+    restarted = restarted_app.test_client()
+    restarted_headers = {"X-Learning-Token": restarted.get("/api/learning/session").json["token"]}
+    selected = restarted.post(route + "/select-track", headers=restarted_headers, json={"role": "target", "key": previous["key"]})
+    assert selected.json["tracks"]["target"]["path"] == old_path
+    assert selected.json["cues"][0]["translation"] == "第一版译文。"
+    # Current + historical files can be found even with generic snapshot names.
+    files = restarted.get(route + "/subtitle-candidates").json["tracks"]
+    assert {original_path, old_path, translated["tracks"]["target"]["path"]} <= {f["path"] for f in files}
+    assert restarted.post(route + "/select-track", headers=restarted_headers, json={"role": "source", "key": "target"}).status_code == 400
+    exported = restarted.get(route + "/subtitle-file?role=target")
+    assert "第一版译文" in exported.data.decode("utf-8")
+    exported.close()
+
+
+def test_imported_versions_keep_selected_tracks_and_distinct_edits(workspace):
+    app, client, headers, video = workspace
+    service = app.config["LEARNING_SERVICE"]
+    vid = video["id"]
+    a = service.add_track(vid, {"role": "source", "content": SRT, "language": "en"})
+    b = service.add_track(vid, {"role": "source", "content": SRT.replace("Hello", "Hi"), "language": "en"})
+    old = next(t for t in b["available_tracks"] if t["path"] == a["tracks"]["source"]["path"])
+    service.select_track(vid, {"role": "source", "key": old["key"]})
+    # Merely registering/reopening the video must not reset the chosen version.
+    again = service.register(video["path"], tracks=[{"role": "source", "content": SRT.replace("Hello", "New"), "language": "en"}])
+    assert again["tracks"]["source"]["path"] == a["tracks"]["source"]["path"]
+    assert again["subtitle_version"] == a["subtitle_version"]
+    texts = [t["cues"][0]["text"] for t in service.store.tracks(vid).values()]
+    assert {"Hello, world.", "Hi, world.", "New, world."} <= set(texts)
+
+
+@pytest.mark.parametrize("outcome", ["failure", "cancelled", "source-changed"])
+def test_incomplete_translation_keeps_previous_version(workspace, outcome):
+    app, client, headers, video = workspace
+    service = app.config["LEARNING_SERVICE"]
+    vid = video["id"]
+    service.add_track(vid, {"role": "source", "content": SRT, "language": "en"})
+    before = service.add_track(vid, {"role": "target", "content": SRT.replace("Hello, world.", "保留旧译文。"), "language": "zh-CN"})
+
+    class Incomplete(FakeProvider):
+        def complete(self, messages, cancelled, max_tokens=1200):
+            if outcome == "failure":
+                raise ValueError("模拟翻译失败")
+            if outcome == "cancelled":
+                cancelled.set()
+            else:
+                service.add_track(vid, {"role": "source", "content": SRT.replace("Hello", "Changed"), "language": "en"})
+            return super().complete(messages, cancelled, max_tokens)
+
+    app.config["LEARNING_ASSISTANT"].provider_factory = Incomplete
+    route = "/api/learning/videos/" + vid
+    response = client.post(route + "/prepare", headers=headers, json={"kind": "translation"})
+    job = wait_job(client, response.json["id"])
+    assert job["status"] == ("cancelled" if outcome == "cancelled" else "failed"), job
+    assert client.get(route).json["tracks"]["target"]["path"] == before["tracks"]["target"]["path"]
+
+
+def test_learning_html_is_not_stored_across_restarts(tmp_path, monkeypatch):
+    from src import learning_server
+
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "learning.html").write_text("<html>fresh learning page</html>", encoding="utf-8")
+    monkeypatch.setattr(learning_server, "FRONTEND_DIST", frontend)
+    for _ in range(2):
+        client = create_app(tmp_path / "store").test_client()
+        for route in ("/", "/learn", "/learn?launch=fresh"):
+            response = client.get(route)
+            assert response.status_code == 200
+            assert response.headers["Cache-Control"] == "no-store"
+            response.close()
+
+
+@pytest.mark.parametrize("mode", ["library", "video", "project"])
+def test_desktop_open_gets_fresh_url_without_disclosing_session_token(monkeypatch, mode):
+    from src import learning_desktop
+    from urllib.parse import parse_qs, urlparse
+
+    class Reply:
+        ok = True
+
+        def __init__(self, data):
+            self.data = data
+
+        def json(self):
+            return self.data
+
+    def get(url, **kwargs):
+        return Reply({"service": "videohub-learning"} if url.endswith("/health") else {"token": "private-session"})
+
+    def post(url, **kwargs):
+        assert kwargs["headers"]["X-Learning-Token"] == "private-session"
+        return Reply({"video": {"id": "test-id"}} if url.endswith("/imports/project") else {"id": "test-id"})
+
+    monkeypatch.setattr(learning_desktop.requests, "get", get)
+    monkeypatch.setattr(learning_desktop.requests, "post", post)
+    options = {"path": "test.mp4"} if mode == "video" else {"directory": "project"} if mode == "project" else {}
+    urls = [learning_desktop.learning_url(**options) for _ in range(2)]
+    assert urls[0] != urls[1]
+    for url in urls:
+        query = parse_qs(urlparse(url).query)
+        assert "private-session" not in url
+        assert len(query["launch"][0]) == 16
+        assert query.get("video") == (["test-id"] if mode != "library" else None)
+
+
 def test_download_import_keeps_progress_and_notes(workspace, monkeypatch, tmp_path):
     from src.learning import downloads
 
@@ -405,6 +537,158 @@ def test_long_context_covers_all_chunks_without_silent_loss(tmp_path):
     assert updates[-1]["coverage"]["completed"] == updates[-1]["coverage"]["total"]
     picked = select_context(cues, "topic-99", 990, [cues[-1]["id"]], 4000)
     assert cues[-1]["id"] in {c["id"] for c in picked}
+
+
+class MindmapProvider(FakeProvider):
+    def complete(self, messages, cancelled, max_tokens=1200):
+        if "一张中文脑图" not in messages[-1]["content"]:
+            return super().complete(messages, cancelled, max_tokens)
+        import re
+        self.calls.append(messages)
+        indices = [int(i) for i in re.findall(r"^(\d+)\. ", messages[-1]["content"], re.M)]
+        return json.dumps({"organization": "topics", "explanation": "多个话题，按主题归纳，不推断因果。",
+                           "root": {"label": "视频学习", "summary": "主题概览", "children": [
+                               {"label": f"主题{i}", "summary": "来自字幕的主题", "chapter_indices": [i]}
+                               for i in indices]}}, ensure_ascii=False), {"total_tokens": 23}
+
+
+def test_mindmap_generation_coverage_cache_export_restart_and_version(workspace):
+    app, client, headers, video = with_ai(workspace)
+    assistant = app.config["LEARNING_ASSISTANT"]
+    assistant.provider_factory = MindmapProvider
+    vid = video["id"]
+    endpoint = f"/api/learning/videos/{vid}"
+    assert client.get("/api/learning/session").json["features"]["mindmap"] is True
+    assert client.get(endpoint + "/study").json["mindmap"] is None
+    assert client.get(endpoint + "/mindmap/export").status_code == 404
+    assert client.post(endpoint + "/prepare", json={"kind": "mindmap"}).status_code == 403
+    created = client.post(endpoint + "/prepare", headers=headers, json={"kind": "mindmap"})
+    assert created.status_code == 202
+    finished = wait_job(client, created.json["id"])
+    assert finished["status"] == "finished", finished
+    value = finished["result"]["mindmap"]
+    assert value["organization"] == "topics" and value["coverage"]["cues"] == 2
+    assert value["root"]["start"] == .5 and value["root"]["end"] == 8
+    assert value["root"]["chapter_indices"] == [0]
+    study = client.get(endpoint + "/study").json
+    assert study["mindmap"] == value and len(study["outline"]) == 1
+    count = len(FakeProvider.calls)
+    again = client.post(endpoint + "/prepare", headers=headers, json={"kind": "mindmap"})
+    assert wait_job(client, again.json["id"])["status"] == "finished"
+    assert len(FakeProvider.calls) == count
+    regenerated = client.post(endpoint + "/prepare", headers=headers, json={"kind": "mindmap", "force": True})
+    assert wait_job(client, regenerated.json["id"])["status"] == "finished"
+    assert len(FakeProvider.calls) == count + 1, "reuse chapter cache but regenerate the semantic map"
+    markdown = client.get(endpoint + "/mindmap/export")
+    assert markdown.status_code == 200 and "attachment" in markdown.headers["Content-Disposition"]
+    assert f"/learn?video={vid}&t=0.500" in markdown.text
+    assert client.get(endpoint + "/mindmap/export?format=json").json["root"]["label"] == "视频学习"
+    assert client.get(endpoint + "/mindmap/export?format=html").status_code == 400
+    restarted = create_app(assistant.store.root).test_client()
+    assert restarted.get(endpoint + "/study").json["mindmap"] is not None
+    for i in range(31):
+        assistant.store.save_job({"id": f"later-{i}", "video_id": vid, "kind": "chat", "status": "finished"})
+    assert client.get(endpoint + "/study").json["mindmap"] is not None, "map is durable beyond the recent-job window"
+    client.post(endpoint + "/subtitles", headers=headers, json={"content": SRT.replace("Hello", "Changed")})
+    assert client.get(endpoint + "/study").json["mindmap"] is None
+    assert client.get(endpoint + "/mindmap/export").status_code == 404
+
+
+def test_mindmap_failure_preserves_last_valid_result_and_requires_source(workspace):
+    app, client, headers, video = workspace
+    vid = video["id"]
+    endpoint = f"/api/learning/videos/{vid}"
+    assert client.post(endpoint + "/prepare", headers=headers, json={"kind": "mindmap"}).status_code == 400
+    app, client, headers, video = with_ai(workspace)
+    assistant = app.config["LEARNING_ASSISTANT"]
+    assistant.provider_factory = MindmapProvider
+    request = client.post(endpoint + "/prepare", headers=headers, json={"kind": "mindmap"})
+    assert wait_job(client, request.json["id"])["status"] == "finished"
+    before = client.get(endpoint + "/study").json["mindmap"]
+
+    class Invalid(MindmapProvider):
+        def complete(self, messages, cancelled, max_tokens=1200):
+            if "一张中文脑图" in messages[-1]["content"]:
+                return '{"organization":"logical","explanation":"test","root":{"label":"bad","chapter_indices":[999]}}', None
+            return super().complete(messages, cancelled, max_tokens)
+
+    assistant.provider_factory = Invalid
+    request = client.post(endpoint + "/prepare", headers=headers, json={"kind": "mindmap", "force": True})
+    result = wait_job(client, request.json["id"])
+    assert result["status"] == "failed" and "不存在的字幕章节" in result["message"]
+    assert client.get(endpoint + "/study").json["mindmap"] == before
+
+
+def test_mindmap_long_video_reads_every_original_chunk(workspace):
+    app, client, headers, video = with_ai(workspace)
+    from src.learning.store import Store
+    from src.learning.mindmap import build_mindmap
+    from types import SimpleNamespace
+    cues = subtitles.normalize([{"start": i * 10, "end": i * 10 + 8,
+                                 "text": f"topic-{i} " + "learning " * 60} for i in range(100)])
+    detail = {"id": "demo", "subtitle_version": "v1", "cues": cues}
+    store = Store(app.config["LEARNING_SERVICE"].store.root / "map-fixture")
+    assistant = SimpleNamespace(store=store, service=SimpleNamespace(detail=lambda _: detail))
+    provider = MindmapProvider()
+    FakeProvider.calls = []
+    result = build_mindmap(assistant, detail, provider, threading.Event(), lambda **_: None)
+    assert result["coverage"]["cues"] == 100 and result["coverage"]["parts"] > 1
+    supplied = "\n".join(m[-1]["content"] for m in FakeProvider.calls[:-1])
+    assert all(f"[cue:{c['id']}]" in supplied for c in cues)
+    assert result["root"]["end"] == cues[-1]["end"]
+    assert len(result["root"]["chapter_indices"]) == result["coverage"]["parts"]
+
+
+@pytest.mark.parametrize("invalid", ["missing", "invented", "bool", "deep", "many"])
+def test_mindmap_rejects_missing_evidence_and_unbounded_trees(invalid):
+    from src.learning.mindmap import validate_tree
+    outline = [{"start": 0, "end": 1}, {"start": 2, "end": 3}]
+    root = {"label": "主题", "chapter_indices": [0, 1]}
+    if invalid == "missing":
+        root["chapter_indices"] = [0]
+    elif invalid == "invented":
+        root["chapter_indices"] = [0, 1, 999]
+    elif invalid == "bool":
+        root["chapter_indices"] = [False, True]
+    elif invalid == "many":
+        root["children"] = [{"label": "一", "chapter_indices": [0]} for _ in range(100)]
+    else:
+        for _ in range(6):
+            root = {"label": "深层", "children": [root]}
+    with pytest.raises(ValueError):
+        validate_tree({"organization": "logical", "explanation": "测试", "root": root}, outline)
+
+
+def test_mindmap_cancellation_and_subtitle_change_do_not_publish(workspace):
+    app, client, headers, video = with_ai(workspace)
+    assistant = app.config["LEARNING_ASSISTANT"]
+    vid = video["id"]
+    endpoint = f"/api/learning/videos/{vid}"
+
+    class Changing(MindmapProvider):
+        def complete(self, messages, cancelled, max_tokens=1200):
+            result = super().complete(messages, cancelled, max_tokens)
+            if "一张中文脑图" in messages[-1]["content"]:
+                assistant.service.add_track(vid, {"content": SRT.replace("Hello", "Changed")})
+            return result
+
+    assistant.provider_factory = Changing
+    request = client.post(endpoint + "/prepare", headers=headers, json={"kind": "mindmap"})
+    result = wait_job(client, request.json["id"])
+    assert result["status"] == "failed" and "字幕在生成过程中已改变" in result["message"]
+    assert client.get(endpoint + "/study").json["mindmap"] is None
+
+    class Cancelling(MindmapProvider):
+        def complete(self, messages, cancelled, max_tokens=1200):
+            result = super().complete(messages, cancelled, max_tokens)
+            if "一张中文脑图" in messages[-1]["content"]:
+                cancelled.set()
+            return result
+
+    assistant.provider_factory = Cancelling
+    request = client.post(endpoint + "/prepare", headers=headers, json={"kind": "mindmap"})
+    assert wait_job(client, request.json["id"])["status"] == "cancelled"
+    assert client.get(endpoint + "/study").json["mindmap"] is None
 
 
 def test_cancellation_and_recovery(workspace):
