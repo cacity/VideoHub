@@ -53,26 +53,39 @@ def directory_assets(path: str) -> list[dict]:
     return result
 
 
-def subtitle_candidates(video_path: str, root: Path = REPO_ROOT) -> list[dict]:
+def subtitle_candidates(
+    video_path: str, root: Path = REPO_ROOT, *, project_root: Path | None = None,
+    snapshot_folders: list[Path] | None = None,
+) -> list[dict]:
+    from .subtitles import read_track
     try:
         from ..series_project import normalize_asset_stem
     except ImportError:
         from series_project import normalize_asset_stem
-    video = Path(video_path)
-    directories = {
-        video.parent,
-        video.parent / "subtitles",
-        root / "workspace" / "subtitles",
-        root / "workspace" / "native_subtitles",
-    }
+    video = Path(video_path).resolve()
+    # Shared folders must match the video name. A single-video project and its
+    # dedicated snapshot folders may also contain renamed/truncated versions.
+    directories = {p.resolve(): False for p in (
+        video.parent, video.parent / "subtitles",
+        root / "workspace" / "subtitles", root / "workspace" / "native_subtitles",
+    )}
+    if project_root and project_root.is_dir():
+        project_root = project_root.resolve()
+        videos = [p.resolve() for p in project_root.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS]
+        directories[(project_root / "subtitles" / "learning_tracks").resolve()] = False
+        if videos == [video]:
+            for folder in (project_root, project_root / "subtitles", project_root / "subtitles" / "learning_tracks"):
+                directories[folder.resolve()] = True
+    for folder in snapshot_folders or []:
+        directories[folder.resolve()] = True
     result, seen = [], set()
-    for directory in sorted(directories):
+    for directory, dedicated in sorted(directories.items()):
         if not directory.is_dir():
             continue
-        for path in directory.iterdir():
+        for path in sorted(directory.iterdir()):
             if path.suffix.lower() not in {".srt", ".vtt", ".ass", ".ssa"} or not path.is_file():
                 continue
-            if normalize_asset_stem(path.stem) != normalize_asset_stem(video.stem):
+            if not dedicated and normalize_asset_stem(path.stem) != normalize_asset_stem(video.stem):
                 continue
             full = str(path.resolve())
             if full in seen:
@@ -80,16 +93,18 @@ def subtitle_candidates(video_path: str, root: Path = REPO_ROOT) -> list[dict]:
             seen.add(full)
             try:
                 role, language = classify(path)
+                source = read_track(path, "source")["cues"]
+                target = read_track(path, "target")["cues"]
+                mixed = source != target
+                modified = path.stat().st_mtime
             except (ValueError, OSError, UnicodeError):
                 continue
-            result.append(
-                {
-                    "path": full,
-                    "name": path.name,
-                    "role": role,
-                    "language": language,
-                }
-            )
+            roles = [("source", "en"), ("target", "zh-CN")] if mixed else [(role, language)]
+            for role, language in roles:
+                result.append({
+                    "path": full, "name": path.name, "role": role, "language": language,
+                    "format": path.suffix[1:].upper(), "bilingual": mixed, "modified": modified,
+                })
             if len(result) >= 80:
                 return result
     return sorted(result, key=lambda r: (r["role"], r["name"]))

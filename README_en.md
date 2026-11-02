@@ -1,12 +1,64 @@
 # VideoHub
 
-**Current Version: v0.5.0**
+**Current Version: v0.6.0 (Source Version)**
 
 English | [简体中文](./README.md)
 
 The source version now includes a [local video learning workspace](docs/video_learning.md): turn downloaded or local videos into projects with readable subtitles, AI questions, and reusable notes. See the update below for the new features and fixes.
 
 VideoHub is a local video processing and intelligent editing workbench built with **PyQt6**, supporting **YouTube, Twitter/X, Douyin/TikTok, Instagram, Bilibili**, and local media. Alongside downloading, audio extraction, Whisper transcription, bilingual subtitles, subtitle translation, **AI dubbing**, and LLM summaries, its project-level skills for Codex, Claude Code, DeepSeek, and compatible agents provide evidence-grounded story editing, film commentary, configuration-driven batch episode editing, beat-synced edits, multi-format covers, and complete publishing packages. The desktop application also includes batch processing, an idle-time queue, and portable series-directory projects so multi-episode work can run in stages, reuse intermediate assets, and remain editable.
+
+## v0.6.0: Video Learning, Mind Maps, and Subtitle Versions
+
+Updated November 2, 2026. This version consolidates recent learning features and fixes. See the [v0.6.0 release notes](./docs/release-v0.6.0.md) and [learning guide](./docs/video_learning.md) for usage, upgrades, and verification limits.
+
+| Feature | Changes in this version |
+| --- | --- |
+| Learning projects | A browser learning workspace with desktop entry points. Import one video and multiple subtitles as a directory project; YouTube video downloads create projects automatically, and older downloads can be reused. |
+| Playback and layout | Subtitles remain visible in player fullscreen. Resize sidebars and player height while keeping the video aspect ratio; collapse sidebars and display library titles on one line. |
+| Languages and styles | Separate source and Chinese files; source/target/bilingual/hidden modes, scrolling transcripts, search, seeking, sentence loops, and configurable subtitle fonts, sizes, colors, and backgrounds. |
+| Translate existing captions | Select an existing English version and confirm DeepSeek/Kimi translation to a separate Chinese SRT without downloading or transcribing again. |
+| Subtitle versions | Find SRT/VTT/ASS/SSA files in projects, legacy shared folders, and learning snapshots. Reuse bilingual files by language, retain older imports/translations, and select source/target versions independently. |
+| AI video assistant | DeepSeek/Kimi answers use the full transcript, current progress, or a selected sentence, with clickable timestamp citations. Blank web queries use the question; submission errors preserve the draft. |
+| Notes, chapters, and mind maps | Save timestamped notes, excerpts, and AI answers. Generate chapters and full-video maps with collapse, zoom, seeking, and Markdown/JSON exports. |
+| Markdown and shortcuts | Render Markdown in completed/streaming AI responses and notes. Use F for fullscreen, C/X for ±0.1× speed, S for subtitles, and other player shortcuts, with repeated-key handling and page diagnostics. |
+
+Fixes include duplicated captions, false rejection of small end-of-video caption overruns, and subtitle selection reverting before submission. Subtitles, notes, progress, and preferences remain local; AI actions use the configured service.
+
+**Upgrade: restart source VideoHub, then Ctrl+F5 the learning page. Existing EXEs do not update automatically; no new installer or GitHub Release was created.** Verification before pushing includes 38 frontend tests, 69 learning-related backend tests, and the TypeScript/Vite build. Models were substituted in tests; real translation/map quality and new UI visuals remain unverified. The latest user confirmation covers recovered C speed control; other shortcuts and stability after another restart still need current user confirmation.
+
+The entries below retain individual changes and their verification at the time.
+
+## 2026-11-02 Update: Translate Existing Subtitles and Select Versions (Source Version)
+
+- Click **翻译已有字幕** beside the transcript, check the selected source version and DeepSeek/Kimi configuration, then start translation. No repeated download or transcription is needed. Chinese captions are saved separately, with progress, cancellation, and error feedback.
+- Expand **字幕版本** to choose source and target versions independently. Discovery includes project files, shared legacy subtitle folders, and learning snapshots in SRT/VTT/ASS/SSA. Bilingual files offer separate language actions. Rescan to find newly added files; names, formats, dates, and paths help distinguish versions.
+- Replacing/importing captions and translating again retain older versions. Reopening a project preserves the chosen tracks, playback progress, and notes. Fixed a selector that could revert before its asynchronous request read the selected value.
+- All 38 frontend and 66 learning-related backend tests pass; a subsequent four-test translation run also covers newly added failure, cancellation, and changed-source cases. Production build passes; real AI translation and browser visuals remain to be checked. **Restart source VideoHub, then Ctrl+F5.** Existing EXE builds need repackaging.
+
+## 2026-11-02 Update: Keyup Recovery for Player Shortcuts (Source Version)
+
+The user's report showed C keyup arriving without keydown. After clicking/focusing the player, a missing keydown can now recover once on keyup. Normal down/up pairs execute once; editors, modifiers, and dialogs retain their protections. Losing window focus clears recovery. If all keydown events are withheld, each release recovers one step rather than simulating continuous holds. All 35 frontend tests and the build pass. Ctrl+F5 and click the player; no service restart is needed for this frontend update. The user confirmed C speed control recovered in Edge; other keys and another restart remain unconfirmed.
+
+## 2026-11-02 Update: Video Mind Maps and Markdown Reading (Source Version)
+
+- A **脑图** tab follows chat, notes, and outline. It uses the selected DeepSeek/Kimi configuration to analyze every source-caption chunk and organize a semantic tree. Clearly structured material uses a logical map; loosely related material uses a topic map with an explanation.
+- Collapse branches, zoom from 50% to 180%, open a larger scrollable view, seek through timestamp links, and export Markdown/JSON. Maps are cached per subtitle version and model; changed subtitles invalidate the active map. Failed regeneration preserves the last valid map.
+- Completed and streaming answers and saved notes now render Markdown headings, lists, emphasis, quotes, tables, and code fences while retaining verified video references. Raw HTML and unsafe links do not execute; external images do not load automatically. Stored content is unchanged.
+- All 34 frontend and 57 learning/download/resource backend tests, the TypeScript/Vite build, and static checks pass. Model tests use substitutes; no paid AI request or new browser visual acceptance was performed. **Restart source VideoHub, then Ctrl+F5 the learning page to load the new backend.** Markdown can load with a refresh; an older service displays a restart hint in the map tab. Existing EXE builds are unchanged.
+
+## 2026-11-02 Update: Reopening and Independent Page Diagnostics (Source Version)
+
+- Desktop openings receive a fresh launch marker, and learning HTML uses `no-store`. These Python changes load after restarting the source desktop app; the running GUI was left in place.
+- An independent **页面自检** control at the bottom right reports the frontend build, app/player/listener state, keydown/keyup delivery, and script error types. Reports can be copied even without the main React UI. Input text, error messages, and query strings are omitted; reports stay in the page and are not uploaded.
+- A subsequent user report confirmed the new build receives KeyC down/up without script errors, while playback remains unchanged. Diagnostics and player commands now share the early HTML listener, with decision and dispatch results shown separately; a later listener cannot block delivery between the two.
+- All 28 frontend and 34 learning backend tests, the production build, and static checks pass. Coverage includes three reopenings with renewed sessions and an intervening stopImmediatePropagation handler (fails before the change, passes afterward). The user subsequently confirmed C speed control in Edge; X/S/F and another restart remain unconfirmed. No particular extension has been identified as the cause.
+
+## 2026-10-31 Update: Held and Repeated Learning Shortcuts (Source Version)
+
+- Hold `C` / `X` to adjust speed in 0.1× steps, or arrows to seek in five-second steps. Held repeats are limited to one action per 180 ms; separate rapid presses still apply individually.
+- Holding `F`, `S`, `M`, or Space toggles once until released and pressed again. Editors, import dialogs, and focused controls retain their protected keys.
+- Speed changes apply immediately and save the final burst value after 250 ms without further changes. Pause, switching lessons, or leaving the page flushes the pending value. All 24 frontend tests and the production build pass; these held-key changes still await user confirmation in Edge. Refresh the learning page to load the rebuilt assets; no service restart is needed.
 
 ## 2026-10-28 Update: Separate Subtitle Languages and Learning Styles (Source Version)
 

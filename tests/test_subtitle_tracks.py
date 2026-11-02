@@ -58,6 +58,36 @@ def test_incomplete_bilingual_cue_never_leaks_english_into_chinese():
     assert [c["text"] for c in parse(text, role="target")] == ["你好。"]
 
 
+def test_learning_discovery_finds_formats_bilingual_and_project_snapshots(tmp_path):
+    from src.learning.imports import subtitle_candidates
+
+    project = tmp_path / "project"
+    project.mkdir()
+    video = project / "A_long_lesson_title.mp4"
+    video.write_bytes(b"media")
+    srt = "1\n00:00:00,000 --> 00:00:02,000\nHello.\n"
+    (project / "renamed.en.srt").write_text(srt, encoding="utf-8")
+    (project / "lesson_bilingual.srt").write_text(srt.replace("Hello.", "Hello.\n你好。"), encoding="utf-8")
+    (project / "lesson.en.vtt").write_text("WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello.", encoding="utf-8")
+    folder = project / "subtitles" / "learning_tracks"
+    snapshot = snapshot_track([{"start": 0, "end": 2, "text": "旧的AI译文。"}], folder, "subtitles", "target", "zh-CN")
+    shared = tmp_path / "workspace" / "subtitles"
+    shared.mkdir(parents=True)
+    (shared / "A_long_lesson_title_google.srt").write_text(srt.replace("Hello.", "谷歌译文。"), encoding="utf-8")
+    (shared / "unrelated.en.srt").write_text(srt, encoding="utf-8")
+    found = subtitle_candidates(str(video), root=tmp_path, project_root=project)
+    assert str(snapshot) in {f["path"] for f in found}
+    assert any(f["name"].endswith(".vtt") and f["format"] == "VTT" for f in found)
+    mixed = [f for f in found if f["name"] == "lesson_bilingual.srt"]
+    assert {f["role"] for f in mixed} == {"source", "target"} and all(f["bilingual"] for f in mixed)
+    assert any(f["name"].endswith("_google.srt") for f in found)
+    assert not any(f["name"] == "unrelated.en.srt" for f in found)
+    # In a shared multi-video project, do not offer other episodes' files.
+    (project / "another_lesson.mp4").write_bytes(b"media")
+    found = subtitle_candidates(str(video), root=tmp_path, project_root=project)
+    assert not any(f["name"].startswith(("renamed", "lesson", "subtitles.")) for f in found)
+
+
 @pytest.mark.parametrize("entry", ["unified", "bilingual"])
 def test_transcription_entrypoints_also_save_plain_language_files(tmp_path, monkeypatch, entry):
     from src import youtube_transcriber as yt

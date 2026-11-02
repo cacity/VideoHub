@@ -98,6 +98,7 @@ class LearningService:
         if existing and (existing.get("size"), existing.get("mtime_ns")) != (info["size"], info["mtime_ns"]):
             video.pop("preview", None)
         prepared = {}
+        existing_tracks = self.store.tracks(video["id"]) if existing else {}
         if tracks is not None and (
             not isinstance(tracks, list) or len(tracks) > 80 or any(not isinstance(t, dict) for t in tracks)
         ):
@@ -106,8 +107,10 @@ class LearningService:
             item = self.prepare_track(track)
             self.validate_track(item, video["duration"])
             key = item["role"]
-            if key in prepared:
-                key = "available-" + hashlib.sha256((item["path"] + item["role"]).encode()).hexdigest()[:20]
+            if any(t["role"] == item["role"] and t["hash"] == item["hash"] for t in existing_tracks.values()):
+                continue
+            if key in prepared or key in existing_tracks:
+                key = "available-" + hashlib.sha256(encode([item["path"], item["role"], item["hash"]]).encode()).hexdigest()[:20]
             prepared[key] = item
         self.store.save_video(video)
         self.store.save_tracks(video["id"], prepared)
@@ -136,8 +139,20 @@ class LearningService:
         video = self.store.video(video_id)
         prepared = self.prepare_track(track)
         self.validate_track(prepared, video["duration"])
-        self.store.save_tracks(video_id, {prepared["role"]: prepared})
+        self.replace_track(video_id, prepared)
         return self.detail(video_id)
+
+    def replace_track(self, video_id: str, track: dict):
+        """Keep immutable, selectable history before replacing an active track."""
+        role = track["role"]
+        previous = self.store.tracks(video_id).get(role)
+        additions = {role: track}
+        if previous and previous["hash"] != track["hash"]:
+            key = "available-" + hashlib.sha256(
+                encode([role, previous["hash"], previous.get("original_path", previous["path"])]).encode()
+            ).hexdigest()[:20]
+            additions[key] = previous
+        self.store.save_tracks(video_id, additions)
 
     @staticmethod
     def validate_track(track: dict, duration: float):
@@ -187,7 +202,7 @@ class LearningService:
             if source
             else [{**cue, "translation": cue["text"], "translation_ids": [cue["id"]]} for cue in target]
         )
-        version = hashlib.sha256("|".join(tracks[r]["hash"] for r in sorted(tracks)).encode()).hexdigest()
+        version = hashlib.sha256("|".join(tracks[r]["hash"] for r in ("source", "target") if r in tracks).encode()).hexdigest()
         progress = self.store.progress(video_id)
         return {
             **video,
@@ -196,6 +211,7 @@ class LearningService:
                 {
                     "key": r, "name": Path(t.get("original_path") or t["path"]).name,
                     "path": t["path"], "language": t["language"], "role": t["role"],
+                    "updated": t.get("updated", ""), "label": t.get("label", ""),
                 }
                 for r, t in tracks.items()
             ],
@@ -222,13 +238,18 @@ class LearningService:
         tracks = self.store.tracks(video_id)
         if key not in tracks:
             raise ValueError("字幕轨道不存在，请刷新工程")
-        old = tracks.get(role)
-        additions = {role: {**tracks[key], "role": role}}
-        if old:
-            backup_key = "available-" + hashlib.sha256((old.get("original_path", old["path"]) + old["role"]).encode()).hexdigest()[:20]
-            additions[backup_key] = old
-        self.store.save_tracks(video_id, additions)
+        if tracks[key]["role"] != role:
+            raise ValueError("请选择对应语言角色的字幕")
+        self.replace_track(video_id, {**tracks[key], "role": role})
         return self.detail(video_id)
+
+    def subtitle_candidates(self, video_id: str) -> list[dict]:
+        from .imports import subtitle_candidates
+
+        video = self.store.video(video_id)
+        folders = [self.store.root / "subtitles" / video_id]
+        project_root = Path(video["project_root"]) if video.get("project_root") else None
+        return subtitle_candidates(video["path"], project_root=project_root, snapshot_folders=folders)
 
     def media_path(self, video_id: str) -> Path:
         video = self.store.video(video_id)

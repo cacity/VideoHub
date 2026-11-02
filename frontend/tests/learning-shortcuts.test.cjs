@@ -3,18 +3,19 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { resolve } = require('node:path');
 const ts = require('typescript');
+const { JSDOM } = require('jsdom');
 
 const compiled = ts.transpileModule(readFileSync(resolve(__dirname, '../src/learning-shortcuts.ts'), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText;
 const shortcuts = {};
 new Function('exports', compiled)(shortcuts);
-const { handlePlaybackShortcut, stepPlaybackRate, playbackRates, toggleSubtitleMode } = shortcuts;
+const { bindPlaybackShortcuts, handlePlaybackShortcut, stepPlaybackRate, playbackRates, toggleSubtitleMode } = shortcuts;
 
 function key(key, options = {}) {
   return {
     key, code: '', ctrlKey: false, altKey: false, metaKey: false, repeat: false,
-    isComposing: false, keyCode: 0, defaultPrevented: false, target: null,
+    isComposing: false, keyCode: 0, timeStamp: 0, defaultPrevented: false, target: null,
     preventDefault() { this.defaultPrevented = true; },
     stopPropagation() { this.stopped = true; },
     ...options,
@@ -32,8 +33,24 @@ test('page and fullscreen keys dispatch once and consume the native video action
   }
 });
 
-test('typing, IME, held keys, browser combinations, and import dialogs retain their keys', () => {
-  for (const options of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }, { repeat: true }, { isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }]) {
+test('pages without the native bootstrap retain one removable fallback listener', () => {
+  const dom = new JSDOM('<!doctype html><div></div>');
+  try {
+    const actions = [];
+    const unbind = bindPlaybackShortcuts(event => handlePlaybackShortcut(event, action => actions.push(action)), dom.window);
+    const press = () => dom.window.document.body.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+      key: 'c', code: 'KeyC', bubbles: true, cancelable: true,
+    }));
+    press();
+    assert.deepEqual(actions, ['faster']);
+    unbind();
+    press();
+    assert.deepEqual(actions, ['faster']);
+  } finally { dom.window.close(); }
+});
+
+test('typing, IME, browser combinations, and import dialogs retain their keys', () => {
+  for (const options of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }, { isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }]) {
     assert.equal(handlePlaybackShortcut(key('c', options), () => assert.fail('unwanted playback action')), false);
   }
   assert.equal(handlePlaybackShortcut(key('f'), () => assert.fail('modal shortcut'), true), false);
@@ -45,6 +62,45 @@ test('typing, IME, held keys, browser combinations, and import dialogs retain th
     assert.equal(event.defaultPrevented, false);
   }
   assert.equal(handlePlaybackShortcut(key('s', { target: { isContentEditable: true } }), () => assert.fail('editable ancestor')), false);
+});
+
+test('held speed and seek keys repeat at a controlled rate, while quick separate presses all work', () => {
+  for (const [value, action] of Object.entries({ c: 'faster', x: 'slower', ArrowLeft: 'back', ArrowRight: 'forward' })) {
+    const state = {};
+    const actions = [];
+    const run = value => actions.push(value);
+    handlePlaybackShortcut(key(value, { timeStamp: 100 }), run, false, state);
+    handlePlaybackShortcut(key(value, { repeat: true, timeStamp: 600 }), run, false, state);
+    const throttled = key(value, { repeat: true, timeStamp: 630 });
+    handlePlaybackShortcut(throttled, run, false, state);
+    assert.equal(throttled.defaultPrevented, true, 'throttled repeats must not reach native media controls');
+    handlePlaybackShortcut(key(value, { repeat: true, timeStamp: 780 }), run, false, state);
+    assert.deepEqual(actions, [action, action, action]);
+    handlePlaybackShortcut(key(value, { timeStamp: 790 }), run, false, state);
+    handlePlaybackShortcut(key(value, { timeStamp: 800 }), run, false, state);
+    assert.deepEqual(actions, [action, action, action, action, action], 'distinct presses must not be debounced');
+  }
+});
+
+test('held toggle keys are consumed without repeatedly changing state; editing still wins', () => {
+  for (const value of ['f', 's', 'm', ' ']) {
+    const state = {};
+    const actions = [];
+    handlePlaybackShortcut(key(value, { timeStamp: 100 }), action => actions.push(action), false, state);
+    for (const timeStamp of [600, 800, 1000]) {
+      const event = key(value, { repeat: true, timeStamp });
+      assert.equal(handlePlaybackShortcut(event, () => assert.fail('toggle repeated'), false, state), true);
+      assert.equal(event.defaultPrevented, true);
+    }
+    assert.equal(actions.length, 1);
+    handlePlaybackShortcut(key(value, { timeStamp: 1010 }), action => actions.push(action), false, state);
+    assert.equal(actions.length, 2, 'release and press toggles again');
+  }
+  const editor = { isContentEditable: true };
+  const event = key('c', { code: 'KeyC', repeat: true, target: editor, timeStamp: 2000 });
+  assert.equal(handlePlaybackShortcut(event, () => assert.fail('held typing intercepted'), false, {}), false);
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(handlePlaybackShortcut(key('c', { repeat: true }), () => assert.fail('modal repeat'), true, {}), false);
 });
 
 test('physical letter keys work with a Chinese IME outside text editors', () => {
@@ -80,7 +136,7 @@ test('letter shortcuts work after selecting a speed or changing a non-text input
 });
 
 test('focused controls keep Space activation and arrow navigation', () => {
-  for (const selector of ['button', 'a', 'summary', '[role="separator"]', '[role="tab"]']) {
+  for (const selector of ['button', 'a', 'summary', '[role="separator"]', '[role="tab"]', '[data-playback-navigation="local"]']) {
     const target = { closest: query => query.split(',').includes(selector) ? target : null };
     for (const value of [' ', 'ArrowLeft', 'ArrowRight']) {
       assert.equal(handlePlaybackShortcut(key(value, { target }), () => assert.fail('control key intercepted')), false);

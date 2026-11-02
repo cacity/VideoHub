@@ -107,7 +107,7 @@ def inspect_project(directory: str, video_path: str = "") -> dict:
         raise ValueError("工程视频必须位于所选目录内，不能通过链接指向目录外")
     files = [
         p
-        for folder in (root, root / "subtitles")
+        for folder in (root, root / "subtitles", root / "subtitles" / "learning_tracks")
         if folder.is_dir()
         for p in folder.iterdir()
         if p.is_file() and p.suffix.lower() in {".srt", ".vtt", ".ass", ".ssa"}

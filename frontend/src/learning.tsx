@@ -1,17 +1,21 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BookOpen, FolderPlus, Play, Search, Subtitles, X, Repeat, Crosshair, Maximize, Minimize, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import './learning.css';
 import { api, setToken, time, currentCue, defaultSubtitleStyle, SubtitleStyle, Mode, Progress, Cue, Video, Providers } from './learning-api';
 import { LearningPanel } from './learning-panel';
 import { ResizeHandle, useLearningSizes } from './learning-resize';
-import { handlePlaybackShortcut, inspectPlaybackShortcut, stepPlaybackRate, playbackRates, toggleSubtitleMode } from './learning-shortcuts';
+import { bindPlaybackShortcuts, handlePlaybackShortcut, inspectPlaybackShortcut, stepPlaybackRate, playbackRates, toggleSubtitleMode, ShortcutRepeatState } from './learning-shortcuts';
 
 function savedLayout(): { library: boolean; assistant: boolean } {
   try {
     const value = JSON.parse(localStorage.getItem('videohub.learning.layout') || '{}');
     return { library: value?.library === true, assistant: value?.assistant === true };
   } catch { return { library: false, assistant: false }; }
+}
+
+function reportRuntime(detail: Record<string, string>) {
+  document.dispatchEvent(new window.CustomEvent('videohub:learning-runtime', { detail }));
 }
 
 function App() {
@@ -26,12 +30,13 @@ function App() {
   const [path, setPath] = useState('');
   const [folder, setFolder] = useState('');
   const [importChoices, setImportChoices] = useState<Array<{ path: string; title: string; source_url?: string }>>([]);
-  const [subtitleChoices, setSubtitleChoices] = useState<Array<{ path: string; name: string; role: string; language: string }>>([]);
-  const [showChoices, setShowChoices] = useState(false);
+  const [subtitleChoices, setSubtitleChoices] = useState<Array<{ path: string; name: string; role: string; language: string; format?: string; bilingual?: boolean; modified?: number }>>([]);
+  const [translationRequest, setTranslationRequest] = useState({ videoId: '', count: 0 });
   const [sourceLanguage, setSourceLanguage] = useState('en');
   const [libraryQuery, setLibraryQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [providers, setProviders] = useState<Providers>({});
+  const [mindmapAvailable, setMindmapAvailable] = useState(false);
   const [position, setPosition] = useState(0);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
@@ -41,6 +46,8 @@ function App() {
   const [shortcutNotice, setShortcutNotice] = useState('');
   const [shortcutDiagnostic, setShortcutDiagnostic] = useState('');
   const diagnoseKeys = useRef(false);
+  const shortcutRepeat = useRef<ShortcutRepeatState>({});
+  const pendingRateSave = useRef<{ timer: number; id: string; progress: Progress } | null>(null);
   const visibleOverlay = useRef<Record<string, Mode>>({});
   const activeRow = useRef<HTMLDivElement>(null);
   const transcript = useRef<HTMLDivElement>(null);
@@ -81,8 +88,9 @@ function App() {
     setVideo(item); setPosition(item.progress.time); setSelected(null); setLoop(null); setFollow(true); setQuery('');
   };
   useEffect(() => { void execute(async () => {
-    const session = await api<{ token: string; providers: Providers }>('/session');
+    const session = await api<{ token: string; providers: Providers; features?: { mindmap?: boolean } }>('/session');
     setToken(session.token); setProviders(session.providers);
+    setMindmapAvailable(session.features?.mindmap === true);
     await refresh();
     const id = new URLSearchParams(location.search).get('video') || localStorage.getItem('videohub.learning.last');
     if (id) await open(id);
@@ -92,8 +100,18 @@ function App() {
   useEffect(() => { setVideoRatio(video?.width && video.height ? video.width / video.height : 16 / 9); }, [video?.id, video?.width, video?.height]);
   useEffect(() => { setSelected(null); setLoop(null); setQuery(''); setPage(0); }, [video?.subtitle_version]);
   useEffect(() => { if (importing) void api<{ videos: typeof importChoices }>('/imports/recent').then(v => setImportChoices(v.videos)).catch(e => setError(e.message)); }, [importing]);
-  useEffect(() => { setShowChoices(false); setSubtitleChoices([]); if (video) void api<{ tracks: typeof subtitleChoices }>('/videos/' + video.id + '/subtitle-candidates').then(v => setSubtitleChoices(v.tracks)).catch(e => setError(e.message)); }, [video?.id]);
+  useEffect(() => {
+    let disposed = false;
+    setSubtitleChoices([]);
+    if (video) void api<{ tracks: typeof subtitleChoices }>('/videos/' + video.id + '/subtitle-candidates')
+      .then(v => { if (!disposed) setSubtitleChoices(v.tracks); }).catch(e => { if (!disposed) setError(e.message); });
+    return () => { disposed = true; };
+  }, [video?.id, video?.subtitle_version]);
   const save = async () => {
+    if (pendingRateSave.current) {
+      window.clearTimeout(pendingRateSave.current.timer);
+      pendingRateSave.current = null;
+    }
     const item = currentVideo.current; const element = player.current;
     if (item && element) await api('/videos/' + item.id + '/progress', 'PUT',
       { ...item.progress, time: element.currentTime, rate: element.playbackRate });
@@ -104,7 +122,13 @@ function App() {
     window.addEventListener('pagehide', flush); document.addEventListener('visibilitychange', visibility);
     return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', visibility); };
   }, []);
-  const seek = (seconds: number) => { if (player.current) player.current.currentTime = seconds; setPosition(seconds); setFollow(true); };
+  useEffect(() => () => {
+    const pending = pendingRateSave.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer); pendingRateSave.current = null;
+    void api('/videos/' + pending.id + '/progress', 'PUT', pending.progress).catch(() => {});
+  }, []);
+  const seek = useCallback((seconds: number) => { if (player.current) player.current.currentTime = seconds; setPosition(seconds); setFollow(true); }, []);
   const current = video?.cues.filter(c => c.start <= position && c.end > position) || [];
   const sourceCaption = currentCue(video?.playback_cues?.source || [], position);
   const targetCaption = currentCue(video?.playback_cues?.target || [], position);
@@ -134,7 +158,19 @@ function App() {
     setVideo(currentVideo.current);
     if (progress.overlay !== 'off') visibleOverlay.current[item.id] = progress.overlay;
     if (patch.rate && player.current) player.current.playbackRate = patch.rate;
-    void api('/videos/' + item.id + '/progress', 'PUT', progress).catch(e => setError(e.message));
+    if (pendingRateSave.current) {
+      window.clearTimeout(pendingRateSave.current.timer);
+      pendingRateSave.current = null;
+    }
+    // Apply every key to the media immediately, but persist a burst as its
+    // final value instead of queuing overlapping requests for each repeat.
+    if (patch.rate !== undefined) {
+      const timer = window.setTimeout(() => {
+        pendingRateSave.current = null;
+        void api('/videos/' + item.id + '/progress', 'PUT', progress).catch(e => setError(e.message));
+      }, 250);
+      pendingRateSave.current = { timer, id: item.id, progress };
+    } else void api('/videos/' + item.id + '/progress', 'PUT', progress).catch(e => setError(e.message));
   };
   useEffect(() => {
     if (video?.progress.overlay && video.progress.overlay !== 'off') visibleOverlay.current[video.id] = video.progress.overlay;
@@ -146,9 +182,12 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [shortcutNotice]);
   useEffect(() => {
+    shortcutRepeat.current = {};
     const onKeyDown = (event: KeyboardEvent) => {
       const item = currentVideo.current;
       const element = player.current;
+      const decision = inspectPlaybackShortcut(event, importing);
+      reportRuntime({ decision: !item || !element ? '播放器尚未准备好' : decision.reason, execution: '未执行' });
       if (diagnoseKeys.current && !event.ctrlKey && !event.altKey && !event.metaKey) {
         const check = inspectPlaybackShortcut(event, importing);
         const editing = check.reason.includes('输入');
@@ -159,6 +198,7 @@ function App() {
       }
       if (!item || !element) return;
       handlePlaybackShortcut(event, action => {
+        reportRuntime({ execution: '已执行 ' + action });
         if (action === 'fullscreen') { void toggleFullscreen(); return; }
         if (action === 'faster' || action === 'slower') {
           const rate = stepPlaybackRate(element.playbackRate, action === 'faster' ? .1 : -.1);
@@ -177,11 +217,14 @@ function App() {
         } else if (action === 'mute') {
           element.muted = !element.muted; setShortcutNotice(element.muted ? '已静音' : '已取消静音');
         }
-      }, importing);
+      }, importing, shortcutRepeat.current);
     };
-    // Capture prevents native video shortcuts from handling the same key twice.
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+    const unbind = bindPlaybackShortcuts(onKeyDown);
+    reportRuntime({ app: '已启动', listener: '已绑定', player: player.current ? '已挂载' : '尚未打开视频' });
+    return () => {
+      unbind();
+      reportRuntime({ listener: '已移除' });
+    };
   }, [video?.id, importing]);
   const caption = (cue: Cue, mode: Mode) => <>
     {(mode === 'source' || mode === 'bilingual') && <span className="source-text">{cue.text}</span>}
@@ -229,7 +272,7 @@ function App() {
         <div className="lesson-heading"><div><div className="eyebrow">{video.project_root ? '视频学习工程' : '正在学习'}</div><h1 title={video.title}>{video.title}</h1></div><span className="time-pill">{time(position)}</span></div>
         {video.project_root && <p className="project-location" title={video.project_root}>工程目录：{video.project_root}</p>}
         {!!video.subtitle_warnings?.length && <details className="warning"><summary>字幕片尾时间已校正（{video.subtitle_warnings.length} 项）</summary>{video.subtitle_warnings.map(warning => <p key={warning}>{warning}</p>)}</details>}
-        <div className="player-wrap" id="learning-player" ref={playerWrap} tabIndex={0} aria-label="视频播放器" aria-keyshortcuts="F C X S Space ArrowLeft ArrowRight M" style={{ '--video-ratio': videoRatio, '--player-height': sizes.player + 'px' } as React.CSSProperties}><video key={video.id} ref={player} controls controlsList="nofullscreen" playsInline src={video.media_url}
+        <div className="player-wrap" id="learning-player" ref={playerWrap} tabIndex={0} aria-label="视频播放器" aria-keyshortcuts="F C X S Space ArrowLeft ArrowRight M" onPointerDownCapture={() => playerWrap.current?.focus({ preventScroll: true })} style={{ '--video-ratio': videoRatio, '--player-height': sizes.player + 'px' } as React.CSSProperties}><video key={video.id} ref={player} controls controlsList="nofullscreen" playsInline src={video.media_url}
           onDoubleClick={e => { e.preventDefault(); void toggleFullscreen(); }}
           onLoadedMetadata={() => { if (player.current) { const p = player.current; p.currentTime = video.progress.time; p.playbackRate = video.progress.rate; if (p.videoWidth && p.videoHeight) setVideoRatio(p.videoWidth / p.videoHeight); } }}
           onTimeUpdate={() => { let p = player.current?.currentTime || 0; if (loop && p >= loop.end && player.current) { player.current.currentTime = loop.start; p = loop.start; } setPosition(p); if (Date.now() - lastSaved.current > 5000) { lastSaved.current = Date.now(); void save().catch(e => setError(e.message)); } }}
@@ -258,7 +301,7 @@ function App() {
           <button type="button" onClick={() => { diagnoseKeys.current = true; setShortcutDiagnostic('检测已开启，等待按键。请点击画面后按一次 C。'); playerWrap.current?.focus({ preventScroll: true }); }}>检测按键是否收到</button>
           {shortcutDiagnostic && <pre className="shortcut-diagnostic" role="status">{shortcutDiagnostic}</pre>}
           <div><span><kbd>F</kbd> 全屏 / 退出</span><span><kbd>C</kbd> 加速 0.1×</span><span><kbd>X</kbd> 减速 0.1×</span><span><kbd>S</kbd> 显示 / 隐藏画面字幕</span><span><kbd>空格</kbd> 播放 / 暂停</span><span><kbd>←</kbd> / <kbd>→</kbd> 后退 / 前进 5 秒</span><span><kbd>M</kbd> 静音 / 取消</span></div>
-          <p>学习页与全屏均可使用，中文输入法下也支持字母快捷键；输入问题、笔记、搜索文字或打开导入窗口时停用。下拉框、滑块保留空格和方向键，F / C / X / S 仍可控制视频。倍速范围 0.25–3×，字幕恢复本页中该视频上次显示的语言，不改变下方文稿。</p>
+          <p>学习页与全屏均可使用，中文输入法下也支持字母快捷键；输入问题、笔记、搜索文字或打开导入窗口时停用。C / X 和左右方向键支持长按连续调节；F / S / M / 空格按住只切换一次，松开后可再次按下。下拉框、滑块保留空格和方向键，F / C / X / S 仍可控制视频。倍速范围 0.25–3×，字幕恢复本页中该视频上次显示的语言，不改变下方文稿。</p>
         </details>
         <details className="subtitle-settings"><summary>字幕文件与样式</summary>
           <p className="muted">原文和译文分别保存为纯文本 SRT；画面样式在这里调整，按当前视频记忆。</p>
@@ -277,9 +320,17 @@ function App() {
         <div className="transcript-toolbar"><h2><Subtitles size={18} />字幕文稿</h2><label className="search"><Search size={16}/><input aria-label="搜索字幕" placeholder="搜索视频内容" value={query} onChange={e => setQuery(e.target.value)}/></label>
           <select aria-label="原文语言" title="导入原文字幕的语言" value={sourceLanguage} onChange={e => setSourceLanguage(e.target.value)}><option value="en">英文</option><option value="zh-CN">中文</option><option value="ja">日文</option><option value="ko">韩文</option><option value="auto">其他原文</option></select>
           <label className="button">原文<input aria-label="导入原文字幕" type="file" accept=".srt,.vtt,.ass,.ssa" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void execute(() => importTrack(f, 'source')); e.target.value = ''; }} /></label>
-          <label className="button">中文<input aria-label="导入中文字幕" type="file" accept=".srt,.vtt,.ass,.ssa" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void execute(() => importTrack(f, 'target')); e.target.value = ''; }} /></label></div>
-        {!!subtitleChoices.length && <div className="existing-subtitles"><button onClick={() => setShowChoices(!showChoices)}>发现 {subtitleChoices.length} 份已有字幕 · {showChoices ? '收起' : '选择复用'}</button>{showChoices && <div>{subtitleChoices.map(track => <button disabled={busy} title={track.path} key={track.path} onClick={() => void execute(async () => { await save(); setVideo(await api<Video>('/videos/' + video.id + '/subtitles', 'POST', track)); })}>{track.role === 'target' ? '中文' : '原文'} · {track.name}</button>)}</div>}</div>}
-        {video.available_tracks.length > 1 && <div className="track-choices">{(['source','target'] as const).filter(role => video.available_tracks.some(t => t.role === role)).map(role => <label key={role}>{role === 'source' ? '原文轨道' : '译文轨道'}<select aria-label={role === 'source' ? '选择原文轨道' : '选择译文轨道'} value={role} onChange={e => void execute(async () => { await save(); setVideo(await api<Video>('/videos/' + video.id + '/select-track', 'POST', { role, key: e.target.value })); })}>{video.available_tracks.filter(t => t.role === role && (t.key === role || t.path !== video.tracks[role]?.path)).map(t => <option value={t.key} key={t.key}>{labels[t.language] || t.language} · {t.name}</option>)}</select></label>)}</div>}
+          <label className="button">中文<input aria-label="导入中文字幕" type="file" accept=".srt,.vtt,.ass,.ssa" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void execute(() => importTrack(f, 'target')); e.target.value = ''; }} /></label>
+          <button onClick={() => { setCollapsed(value => ({ ...value, assistant: false })); setTranslationRequest(value => ({ videoId: video.id, count: value.count + 1 })); }}>翻译已有字幕</button></div>
+        <details className="subtitle-versions"><summary>字幕版本 · 原文 / 译文 / 双语文件</summary>
+          <p className="muted">分别选择一份原文和一份译文用于学习。可先选原文，再点“翻译已有字幕”；重新翻译后可切回旧版本。</p>
+          <button disabled={busy} onClick={() => void execute(async () => { const value = await api<{ tracks: typeof subtitleChoices }>('/videos/' + video.id + '/subtitle-candidates'); setSubtitleChoices(value.tracks); })}>重新查找字幕</button>
+          <div className="track-choices">{(['source','target'] as const).filter(role => video.available_tracks.some(t => t.role === role)).map(role => <label key={role}>{role === 'source' ? '原文版本' : '译文版本'}<select disabled={busy} title={video.tracks[role]?.path} aria-label={role === 'source' ? '选择原文轨道' : '选择译文轨道'} value={role} onChange={e => { const key = e.target.value; void execute(async () => { await save(); setVideo(await api<Video>('/videos/' + video.id + '/select-track', 'POST', { role, key })); }); }}>{video.available_tracks.filter(t => t.role === role && (t.key === role || t.path !== video.tracks[role]?.path)).map(t => <option value={t.key} key={t.key}>{t.key === role ? '当前 · ' : ''}{labels[t.language] || t.language} · {t.label || t.name}{t.updated ? ' · ' + new Date(t.updated).toLocaleString() : ''}{t.key !== role ? ' · ' + t.key.slice(-6) : ''}</option>)}</select></label>)}</div>
+          <div className="subtitle-file-list">{subtitleChoices.filter(t => !video.available_tracks.some(a => a.role === t.role && a.path === t.path)).map(track => <button disabled={busy} title={track.path} key={track.path + track.role} onClick={() => void execute(async () => { await save(); setVideo(await api<Video>('/videos/' + video.id + '/subtitles', 'POST', track)); })}>
+            <strong>{track.role === 'target' ? '用作译文' : '用作原文'} · {labels[track.language] || track.language} · {track.format || track.name.split('.').pop()?.toUpperCase()}{track.bilingual ? ' · 双语文件（提取单语言）' : ''}</strong><span>{track.name}</span><small>{track.modified ? new Date(track.modified * 1000).toLocaleString() + ' · ' : ''}{track.path}</small>
+          </button>)}</div>
+          {!subtitleChoices.length && <p className="muted">未发现其他字幕文件。可用上方“原文 / 中文”导入其他目录中的字幕。</p>}
+        </details>
         <div className="transcript-options"><div className="segmented">{(['source','target','bilingual','off'] as Mode[]).map((mode, i) => <button key={mode} className={video.progress.mode === mode ? 'chosen' : ''} onClick={() => preference({ mode })}>{[sourceLabel,targetLabel,'双语','隐藏'][i]}</button>)}</div><button className={follow ? 'following' : ''} onClick={() => { setFollow(true); setQuery(''); }}><Crosshair size={14}/>{follow ? '正在跟随' : '回到当前'}</button></div>
         <div ref={transcript} className="transcript" onWheel={() => setFollow(false)} onTouchStart={() => setFollow(false)} onPointerDown={() => setFollow(false)} onKeyDown={e => { if (['ArrowDown','ArrowUp','PageDown','PageUp'].includes(e.key)) setFollow(false); }}>
           {video.progress.mode !== 'off' && filtered.slice(page * 120, (page + 1) * 120).map(c => <div ref={c.id === currentId ? activeRow : undefined} key={c.id} className={'cue ' + (current.some(a => a.id === c.id) ? 'active ' : '') + (selected?.id === c.id ? 'cue-selected' : '')}>
@@ -288,7 +339,7 @@ function App() {
         {pageCount > 1 && <div className="transcript-pages"><button disabled={page === 0} onClick={() => { setFollow(false); setPage(p => Math.max(0, p - 1)); }}>上一页</button><span>{page + 1} / {pageCount} · {filtered.length} 条字幕</span><button disabled={page >= pageCount - 1} onClick={() => { setFollow(false); setPage(p => Math.min(pageCount - 1, p + 1)); }}>下一页</button></div>}
         {selected && <div className="selection-bar"><span>已选择 {time(selected.start)} · {selected.text.slice(0, 60)}</span><button onClick={() => seek(selected.start)}>定位原片</button><button aria-label="取消选句" onClick={() => setSelected(null)}><X size={15}/></button></div>}
       </> : <div className="welcome"><div className="welcome-icon"><BookOpen size={42}/></div><div className="eyebrow">看懂每一段，留下每一个收获</div><h1>把视频变成你的学习资料</h1><p>双语字幕、随时提问、时间戳笔记。<br/>从一个已经下载好的视频开始。</p><button className="primary" onClick={() => setImporting(true)}><FolderPlus size={18}/>导入第一个视频</button></div>}</section>
-      {video && <LearningPanel key={video.id} video={video} position={position} selected={selected} providers={providers} seek={seek} collapsed={collapsed.assistant}
+      {video && <LearningPanel key={video.id} video={video} position={position} selected={selected} providers={providers} mindmapAvailable={mindmapAvailable} translationRequest={translationRequest.videoId === video.id ? translationRequest.count : 0} seek={seek} collapsed={collapsed.assistant}
         resizeHandle={<ResizeHandle label="调整学习助手宽度" controls="learning-assistant" className="assistant-width-resizer" axis="x" direction={-1} value={sizes.assistant} min={260} max={sizes.assistantMax} change={value => sizes.change('assistant', value)} reset={() => sizes.reset('assistant')}/>}
         refresh={async () => { await save(); const updated = await api<Video>('/videos/' + video.id); setVideo(updated); await refresh(); }} report={setError}/>}
     </main>
