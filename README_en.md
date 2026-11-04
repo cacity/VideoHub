@@ -8,6 +8,13 @@ The source version now includes a [local video learning workspace](docs/video_le
 
 VideoHub is a local video processing and intelligent editing workbench built with **PyQt6**, supporting **YouTube, Twitter/X, Douyin/TikTok, Instagram, Bilibili**, and local media. Alongside downloading, audio extraction, Whisper transcription, bilingual subtitles, subtitle translation, **AI dubbing**, and LLM summaries, its project-level skills for Codex, Claude Code, DeepSeek, and compatible agents provide evidence-grounded story editing, film commentary, configuration-driven batch episode editing, beat-synced edits, multi-format covers, and complete publishing packages. The desktop application also includes batch processing, an idle-time queue, and portable series-directory projects so multi-episode work can run in stages, reuse intermediate assets, and remain editable.
 
+## New: Meeting Captions and Screen Recording (Windows source version)
+
+- Select a screen or fixed region, record system playback audio and video after a cancellable three-second countdown, and stop to create a portable learning project. Includes elapsed time, destination selection, and recovery muxing for unfinished recordings.
+- Optional live English-to-Chinese captions use local models or the official DeepSeek API. Caption overload or translation failure does not stop original recording. Microphone capture is outside this first version.
+- Save video and separate English/Chinese captions together; optionally re-transcribe and translate the complete original audio after the meeting, then use the existing learning workspace for questions, notes, chapters, and mind maps.
+- Runs in an optional isolated environment and can reuse an existing MeetingCaption installation, keeping that app available independently. See the [meeting recorder guide](docs/meeting_recorder.md) for setup and validation limits. Existing EXEs require repackaging.
+
 ## v0.6.0: Video Learning, Mind Maps, and Subtitle Versions
 
 Updated November 2, 2026. This version consolidates recent learning features and fixes. See the [v0.6.0 release notes](./docs/release-v0.6.0.md) and [learning guide](./docs/video_learning.md) for usage, upgrades, and verification limits.

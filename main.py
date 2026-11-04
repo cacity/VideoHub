@@ -1889,6 +1889,20 @@ class LearningOpenThread(QThread):
             self.failed.emit(str(exc) if isinstance(exc, ValueError) else "学习服务启动失败，请检查本地服务与依赖")
 
 
+class MeetingOpenThread(QThread):
+    opened = pyqtSignal()
+    failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            from src.meeting_desktop import launch_meeting
+            launch_meeting()
+            self.opened.emit()
+        except Exception as error:
+            self.failed.emit(str(error) if isinstance(error, (OSError, ValueError, RuntimeError))
+                             else "会议模块启动失败，请检查可选环境和FFmpeg配置")
+
+
 class MainWindow(QMainWindow):
     """主窗口类"""
     
@@ -1975,6 +1989,7 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(local_audio_tab, "本地音频")
         tab_widget.addTab(local_video_tab, "本地视频")
         tab_widget.addTab(self.create_learning_tab(), "视频学习")
+        tab_widget.addTab(self.create_meeting_tab(), "会议翻译与录屏")
         tab_widget.addTab(local_text_tab, "本地文本")
         tab_widget.addTab(batch_tab, "批量处理")
         tab_widget.addTab(idle_queue_tab, "闲时队列")
@@ -2015,6 +2030,39 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.statusBar)
         self.statusBar.showMessage("就绪")
     
+    def create_meeting_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        title = QLabel("会议翻译与录屏：会中听懂，会后复盘")
+        title.setStyleSheet("font-size: 20px; font-weight: 600; padding: 18px 0;")
+        layout.addWidget(title)
+        description = QLabel(
+            "在独立窗口选择屏幕或固定区域，录制系统声音，可同时显示英文和中文字幕。\n"
+            "点击开始后才采集；字幕处理失败不影响录制，停止后生成视频学习工程。\n"
+            "可从完整原始录音重新转写，再进入学习页提问、记笔记和生成脑图。\n\n"
+            "首版支持 Windows；不采集麦克风。会议模块使用独立 Python 环境和本地模型，\n"
+            "可以复用本机 MeetingCaption 环境；安装方法见 docs/meeting_recorder.md。"
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
+        launch = QPushButton("打开会议翻译与录屏")
+        launch.clicked.connect(self.open_meeting_recorder)
+        layout.addWidget(launch)
+        folder = QPushButton("打开会议工程目录")
+        folder.clicked.connect(lambda: self.open_directory("meetings"))
+        layout.addWidget(folder)
+        layout.addStretch()
+        return tab
+
+    def open_meeting_recorder(self):
+        if getattr(self, "meeting_open_thread", None) and self.meeting_open_thread.isRunning():
+            self.statusBar.showMessage("正在打开会议模块，请稍候")
+            return
+        self.meeting_open_thread = MeetingOpenThread(self)
+        self.meeting_open_thread.opened.connect(lambda: self.statusBar.showMessage("会议模块已打开，点击开始后才会录制"))
+        self.meeting_open_thread.failed.connect(lambda message: QMessageBox.warning(self, "会议翻译与录屏", message))
+        self.meeting_open_thread.start()
+
     def create_learning_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -7675,6 +7723,10 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         # 保存闲时队列
         if getattr(self, "learning_open_thread", None) and self.learning_open_thread.isRunning():
             self.statusBar.showMessage("学习页面正在准备，请稍候再关闭窗口")
+            event.ignore()
+            return
+        if getattr(self, "meeting_open_thread", None) and self.meeting_open_thread.isRunning():
+            self.statusBar.showMessage("会议模块正在准备，请稍候再关闭窗口")
             event.ignore()
             return
         self.save_idle_queue()
