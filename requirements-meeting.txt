@@ -1,0 +1,11 @@
+# Optional isolated Windows environment; do not install into the PyQt desktop environment.
+faster-whisper==1.2.1
+PyAudioWPatch==0.2.12.9
+ctranslate2>=4.8,<5
+sentencepiece>=0.2
+numpy>=1.26,<2
+scipy>=1.12
+PySide6>=6.7,<7
+requests>=2.32,<3
+Flask>=2.3,<4
+python-dotenv>=1,<2
