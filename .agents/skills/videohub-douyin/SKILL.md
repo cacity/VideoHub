@@ -23,6 +23,7 @@ python src/douyin_cli.py "https://www.douyin.com/user/xxxxx" --cookie "your_cook
 
 ## 前置条件
 - 单视频优先使用 `f2`，解析失败或依赖不可用时自动回退 DLPanda；不再需要本地 douyinVd 服务。
+- `f2` 返回 HTTP 403 后，同一程序进程内相同 Cookie/代理/UA 配置暂停该来源15分钟，期间公开单视频直接走 DLPanda；到期或配置变更后再试，不表示已修好F2接口。查看带作品ID、实际来源与保存路径的阶段结果，不把“解析完成”当作文件已下载。
 - DLPanda 只用于公开单视频链接回退，绝不能向它转发用户的抖音 Cookie。
 - 用户主页批量下载需要有效 Cookie 和可用的 `f2` 环境。
 - 当前 CLI 默认保存视频和封面，不保存 JSON 元数据，不下载音乐。

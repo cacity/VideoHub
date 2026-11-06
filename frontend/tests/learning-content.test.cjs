@@ -41,7 +41,8 @@ before(async () => {
     if (url.endsWith('/prepare')) {
       submitted.push(JSON.parse(options.body));
       study.mindmap = structuredClone(map);
-      return { ok: true, json: async () => ({ id: 'job', kind: 'mindmap', status: 'finished', message: '完成', progress: 100 }) };
+      study.latest_job = { id: 'job', kind: 'mindmap', status: 'finished', message: '完成', progress: 100 };
+      return { ok: true, json: async () => study.latest_job };
     }
     throw new Error('Unexpected isolated request: ' + url);
   };
@@ -201,4 +202,52 @@ test('translation requires an existing source and configured provider, and repor
     assert.match(document.querySelector('.translation-setup [role="alert"]').textContent, /原文字幕已改变/);
     assert.ok(!button('开始翻译为中文').disabled, 'a failed request can be retried');
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('failed brain-map tasks retain their reason across reload and can retry without losing an existing map', async () => {
+  study = { messages: [], notes: [], outline: [], mindmap: structuredClone(map), active_job: null,
+    latest_job: { id: 'failed-map', kind: 'mindmap', status: 'failed', progress: 43, message: '全片结构分析第 19/25 段未完成：达到输出长度限制；已完成缓存保留' } };
+  await panel('restored-failure');
+  await click(button('脑图'));
+  assert.match(document.querySelector('.job-card[role="alert"]').textContent, /19\/25.*输出长度限制/);
+  assert.equal(document.querySelectorAll('.mindmap-node').length, 3, 'retain the last valid map');
+  await panel('reopened-failure');
+  await click(button('脑图'));
+  assert.ok(button('重试脑图'), 'reopening restores the failed job and retry');
+  const before = submitted.length;
+  await click(button('重试脑图'));
+  assert.equal(submitted.length, before + 1);
+  assert.equal(submitted.at(-1).kind, 'mindmap');
+  assert.equal(submitted.at(-1).force, true, 'retry map generation rather than return the old map; chapter caches remain reusable');
+  assert.equal(document.querySelector('.job-card').classList.contains('finished'), true);
+});
+
+test('failed answers show the concrete reason and retry the original message while preserving a new draft', async () => {
+  study = { messages: [{ id: 'failed-answer', role: 'assistant', text: '', status: 'failed', time: 142,
+    subtitle_version: 'v1', error: '全片结构分析第 18/25 段未完成：达到输出长度限制' }], notes: [], outline: [], active_job: null };
+  await panel('failed-answer-retry');
+  assert.match(document.querySelector('.message [role="alert"]').textContent, /18\/25/);
+  const draft = document.querySelector('[aria-label="向视频提问"]');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(draft, '下一条问题草稿');
+    draft.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const originalFetch = globalThis.fetch;
+  let retry;
+  globalThis.fetch = async (url, options) => {
+    if (url.endsWith('/messages/failed-answer/retry')) {
+      retry = { url, data: JSON.parse(options.body) };
+      study.latest_job = { id: 'retry-answer', kind: 'chat', status: 'finished', progress: 100, message: '完成' };
+      return { ok: true, json: async () => study.latest_job };
+    }
+    return originalFetch(url, options);
+  };
+  try {
+    await click(button('重试回答'));
+    assert.ok(retry);
+    assert.deepEqual(Object.keys(retry.data).sort(), ['model', 'provider']);
+    assert.equal(draft.value, '下一条问题草稿');
+  } finally { globalThis.fetch = originalFetch; }
+  await panel('old-version-answer', { video: { ...video, subtitle_version: 'v2' } });
+  assert.equal(button('重试回答'), undefined, 'do not replay a question against changed subtitles');
 });

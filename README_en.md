@@ -1,12 +1,33 @@
 # VideoHub
 
-**Current Version: v0.6.0 (Source Version)**
+**Current Version: v0.7.0 (Source Version)**
 
 English | [简体中文](./README.md)
 
 The source version now includes a [local video learning workspace](docs/video_learning.md): turn downloaded or local videos into projects with readable subtitles, AI questions, and reusable notes. See the update below for the new features and fixes.
 
 VideoHub is a local video processing and intelligent editing workbench built with **PyQt6**, supporting **YouTube, Twitter/X, Douyin/TikTok, Instagram, Bilibili**, and local media. Alongside downloading, audio extraction, Whisper transcription, bilingual subtitles, subtitle translation, **AI dubbing**, and LLM summaries, its project-level skills for Codex, Claude Code, DeepSeek, and compatible agents provide evidence-grounded story editing, film commentary, configuration-driven batch episode editing, beat-synced edits, multi-format covers, and complete publishing packages. The desktop application also includes batch processing, an idle-time queue, and portable series-directory projects so multi-episode work can run in stages, reuse intermediate assets, and remain editable.
+
+## v0.7.0: Meeting Recording and Learning Workflow Improvements
+
+Updated November 6, 2026. See the [v0.7.0 release notes](./docs/release-v0.7.0.md) for details.
+
+- **Meeting captions and recording**: Windows screen/region recording with system audio and optional live English/Chinese captions. Save video, separate subtitles, and a learning project; optionally transcribe and translate the complete recording afterward. See the [guide](./docs/meeting_recorder.md).
+- **Multiple videos per directory**: Select several videos for import, match their subtitles by filename, and retain independent progress, notes, AI history, and subtitle versions.
+- **AI failure recovery**: Show chat/map errors and offer retries that reuse completed chapter analysis. Structured output truncation receives a bounded retry; failed regeneration preserves a valid existing map.
+- **Wider assistant panel**: Expand chat, notes, outline, and map panels up to 80% of the window while reserving at least 320 pixels for video, with saved widths restored.
+- **Douyin download fixes**: Try alternate media URLs and one refreshed resolution after rejection, validate download completeness, and simplify diagnostics. This does not establish that F2's 403 errors are resolved.
+
+**Upgrade: restart source VideoHub, then Ctrl+F5 the learning page.** The meeting module uses an optional isolated environment; microphone capture and pause/resume are outside this first version. This source update includes the learning, Douyin, and unified local-file improvements. GitHub Releases, packaged EXEs, and website deployments are separate steps.
+
+## November 6, 2026: Unified Local Files and Douyin Series Downloads (Source Version)
+
+- **Local Files**: video, audio, and text share one tab with automatic type detection, controls, and logs; directory processing, subtitle burning, and audio extraction remain available.
+- **Douyin identity and learning projects**: filenames retain the complete work ID to prevent collisions between episodes. Transcription/subtitle/summary workflows keep media and outputs in `workspace/learning/projects/douyin_<workID>/`; download-only tasks retain the selected Douyin directory, and old files are preserved.
+- After an F2 HTTP 403, public single-video requests fall back to DLPanda and skip F2 for 15 minutes across downloader instances in the current process. Changing the configured cookie/proxy permits an immediate retry. Logs identify the work, actual provider, saved path, and local-file reuse, and distinguish resolved metadata from ready media. This does not repair the F2 API itself.
+- For media responses with 401/403/404/410 or HTML, try available video addresses, then resolve the post again and retry once. Repeated failures remain explicit. Refreshed metadata must identify the same post; failed partial files are removed, and uncompressed responses with a declared size are checked for completeness.
+- F2-call diagnostics and download errors omit full signed URLs while retaining status codes and fallback information. Routine module-state messages no longer repeat. Douyin cookies are not forwarded to DLPanda or unrelated CDNs.
+- Douyin and local-file checks use substituted network/media responses and isolated Qt forms. They do not confirm F2 service recovery or a successful new download of the reported failed post. See the [development log](./docs/development_log.md) for validation. Restart source VideoHub to load the fixes; existing EXEs need repackaging.
 
 ## New: Meeting Captions and Screen Recording (Windows source version)
 
@@ -97,9 +118,11 @@ This update implements the first six stages of video learning and fixes extra pl
 ### One Video, One Project
 
 - **Automatic download projects**: YouTube single-video, batch, and playlist processing with full-video download enabled defaults to `workspace/learning/projects/<video-ID>/`. Video, subtitles, audio, transcripts, summaries, and subtitled renders stay together; repeat processing reuses an existing project.
-- **Directory import**: Put a video and several subtitle files in one folder, optionally using a `subtitles/` subfolder, then choose the project-directory import mode. Multiple-video folders require video selection and associate matching subtitle names only.
+- **Wider assistant and recoverable failures (November 4, 2026)**: The right panel can use up to 80% of the viewport, preserving 320px for the video column; collapsing the library releases more space. Width persists across reloads. Truncated structured generation gets one larger attempt on the same model (up to 8192 tokens), reusing completed analysis chunks. Failed answers and brain maps retain concrete errors and offer retry controls after reopening. Answer retries preserve the original question's position, selected cues, scope, and search settings, use the currently chosen model, and retain partial text without duplicating the question. Restart the source application and refresh; real-model recovery and visual acceptance remain unverified.
+- **Directory batch import (November 4, 2026)**: A folder can contain multiple videos and their subtitles. Scan it in the project-directory import form; all videos are checked by default, or choose a subset. Switch imported lessons in the left library. Each keeps its own progress, subtitle versions, notes, and AI history; failures are reported individually while successful imports remain available.
+- **Matching subtitles**: A single-video folder accepts all captions. Multiple-video folders match each video's name, for example `lesson1.mp4`, `lesson1.en.srt`, and `lesson1.zh-CN.srt`, including captions in `subtitles/`. Generated versions are stored separately per video. Ambiguous video names require renaming.
 - **Existing downloads**: Opening a download from history copies matching assets into a project while retaining the originals. Migrating an existing learning record retains its identity, notes, and progress; conflicting files with the same name are not silently overwritten.
-- **Portable media references**: `videohub_learning.json` stores relative paths so the folder can be moved and reopened. The learning page displays its project directory.
+- **Portable media references**: `videohub_learning.json` stores relative paths and independent video IDs in a multi-video collection, preserving existing single-video projects. Reimporting a moved folder in the same learning database restores each lesson's records. Restart the source application and refresh the learning page after this update.
 
 ```text
 workspace/learning/projects/<video-ID>/
@@ -415,7 +438,7 @@ python main.py
 Main tabs in the GUI include:
 
 - **Online Video**
-- **Local Audio / Video**
+- **Local Files**: a single entry for video, audio, text, and video directories, with automatic type detection, shared options/logs, subtitles, and audio extraction
 - **Video Learning** (source version)
 - **Batch Processing**
 - **Idle Queue**

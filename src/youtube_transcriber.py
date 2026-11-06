@@ -4096,7 +4096,20 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
     :return: 总结文件的路径或字幕文件路径（如果不生成摘要）
     """
     project_layout = None
+    learning_project = None
     try:
+        # Processing an existing learning download must keep new assets beside
+        # that video, including when invoked through the Douyin-specific tabs.
+        try:
+            from .learning.project import MANIFEST, inspect_project
+            from .learning.downloads import bundle_download
+        except ImportError:
+            from learning.project import MANIFEST, inspect_project
+            from learning.downloads import bundle_download
+        learning_root = Path(video_path).resolve().parent
+        if (learning_root / MANIFEST).is_file() and (not project_root or Path(project_root).resolve() == learning_root):
+            learning_project = inspect_project(str(learning_root), str(video_path))
+            project_root = learning_root
         audio_output_dir = DOWNLOADS_DIR
         transcript_output_dir = TRANSCRIPTS_DIR
         subtitle_output_dir = SUBTITLES_DIR
@@ -4183,6 +4196,8 @@ def process_local_video(video_path, model=None, api_key=None, base_url=None, whi
         if project_layout:
             try:
                 refresh_series_project_manifest(project_layout.root)
+                if learning_project is not None:
+                    bundle_download(Path(video_path), project_layout.root, learning_project.get("source_url", ""))
             except Exception as manifest_error:
                 print(f"警告: 剧集项目清单刷新失败: {manifest_error}")
 

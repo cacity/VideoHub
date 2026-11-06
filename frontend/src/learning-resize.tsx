@@ -10,11 +10,11 @@ function savedSizes(): Sizes {
     const value = JSON.parse(localStorage.getItem('videohub.learning.sizes') || '{}');
     const valid = (key: Part, min: number, max: number) => typeof value?.[key] === 'number' && Number.isFinite(value[key])
       ? clamp(value[key], min, max) : defaults[key];
-    return { library: valid('library', 160, 420)!, assistant: valid('assistant', 260, 560)!, player: valid('player', 60, 1200) };
+    return { library: valid('library', 160, 420)!, assistant: valid('assistant', 260, 10000)!, player: valid('player', 60, 1200) };
   } catch { return { ...defaults }; }
 }
 
-export function useLearningSizes(lesson: React.RefObject<HTMLElement>, assistantHidden: boolean, ratio: number) {
+export function useLearningSizes(lesson: React.RefObject<HTMLElement>, assistantHidden: boolean, ratio: number, libraryHidden = false) {
   const [sizes, setSizes] = useState(savedSizes);
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [contentWidth, setContentWidth] = useState(640);
@@ -39,13 +39,16 @@ export function useLearningSizes(lesson: React.RefObject<HTMLElement>, assistant
     try { localStorage.setItem('videohub.learning.sizes', JSON.stringify(sizes)); } catch { /* Optional preference storage. */ }
   }, [sizes]);
   const libraryMax = Math.max(160, Math.min(420, viewport.width * .28));
-  const assistantMax = Math.max(260, Math.min(560, viewport.width * .36));
+  const library = clamp(sizes.library, 160, libraryMax);
+  // Give reading/brain-map tasks up to 80% of the viewport while keeping a
+  // usable video column; collapsing the library immediately releases its room.
+  const assistantMax = Math.max(260, Math.min(viewport.width * .8, viewport.width - (libraryHidden ? 0 : library) - 320));
   const playerMax = Math.max(1, Math.min(1200, viewport.height * .85, contentWidth / ratio));
   const playerMin = Math.min(120, playerMax);
   const change = (part: Part, value: number) => setSizes(previous => ({ ...previous, [part]: Math.round(value) }));
   const reset = (part: Part) => setSizes(previous => ({ ...previous, [part]: defaults[part] }));
   return {
-    library: clamp(sizes.library, 160, libraryMax), libraryMax,
+    library, libraryMax,
     assistant: clamp(sizes.assistant, 260, assistantMax), assistantMax,
     player: clamp(sizes.player ?? viewport.height * (assistantHidden ? .68 : .46), playerMin, playerMax), playerMin, playerMax,
     change, reset,

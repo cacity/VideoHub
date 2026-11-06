@@ -1,4 +1,4 @@
-"""A directory with one video and multiple subtitles is a learning project."""
+"""Portable single-video projects and directories containing several lessons."""
 
 from __future__ import annotations
 
@@ -12,6 +12,53 @@ from .store import new_id, now
 from .subtitles import read_track
 
 MANIFEST = "videohub_learning.json"
+
+
+def load_manifest(root: Path) -> dict:
+    path = root / MANIFEST
+    if not path.is_file():
+        return {}
+    if path.stat().st_size > 1_000_000:
+        raise ValueError("工程清单过大")
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError:
+        raise ValueError("工程清单损坏，请检查 videohub_learning.json") from None
+    if not isinstance(manifest, dict) or manifest.get("schema_version") not in (1, 2):
+        raise ValueError("不支持此学习工程清单版本")
+    entries = manifest.get("videos") if manifest["schema_version"] == 2 else [manifest]
+    if not isinstance(entries, list) or len(entries) > 200 or any(not isinstance(e, dict) for e in entries):
+        raise ValueError("工程视频清单格式无效，最多200个视频")
+    paths, ids = set(), set()
+    for entry in entries:
+        if not isinstance(entry.get("video"), str) or not entry["video"]:
+            raise ValueError("工程视频路径无效")
+        tracks = entry.get("subtitles", [])
+        if not isinstance(tracks, list) or any(
+            not isinstance(t, dict) or not isinstance(t.get("path"), str) for t in tracks
+        ) or not isinstance(entry.get("source_url", ""), str):
+            raise ValueError("工程字幕或来源链接格式无效")
+        video = inside(root, entry["video"])
+        project_id = entry.get("id", "")
+        if project_id and (not isinstance(project_id, str) or not re.fullmatch(r"[a-f0-9]{32}", project_id)):
+            raise ValueError("工程编号无效")
+        if video in paths or (project_id and project_id in ids):
+            raise ValueError("工程清单中存在重复视频或编号")
+        paths.add(video)
+        if project_id:
+            ids.add(project_id)
+    return manifest
+
+
+def project_videos(root: Path) -> list[Path]:
+    if not root.is_dir():
+        raise ValueError("请选择存在的视频工程目录")
+    videos = sorted(p for p in root.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS)
+    if not videos:
+        raise ValueError("目录中没有视频文件")
+    if len(videos) > 200:
+        raise ValueError("目录视频超过200个，请分批放入不同目录")
+    return videos
 
 
 def inside(root: Path, relative: str) -> Path:
@@ -73,30 +120,14 @@ def inspect_project(directory: str, video_path: str = "") -> dict:
     root = Path(directory.strip().strip('"')).expanduser().resolve()
     if not root.is_dir():
         raise ValueError("请选择存在的视频工程目录")
-    manifest_path = root / MANIFEST
-    previous = {}
-    if manifest_path.is_file():
-        if manifest_path.stat().st_size > 1_000_000:
-            raise ValueError("工程清单过大")
-        try:
-            previous = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
-        except json.JSONDecodeError:
-            raise ValueError("工程清单损坏，请检查 videohub_learning.json") from None
-        if not isinstance(previous, dict) or previous.get("schema_version") != 1:
-            raise ValueError("不支持此学习工程清单版本")
-    videos = sorted(p for p in root.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS)
+    manifest = load_manifest(root)
+    videos = project_videos(root)
     if video_path:
         video = Path(video_path).resolve()
         if video not in videos:
             raise ValueError("视频必须属于所选目录")
-    elif previous.get("video"):
-        video = inside(root, previous["video"])
-        if not video.is_file():
-            raise ValueError("工程视频已移动，请重新选择目录或修正清单中的相对路径")
     elif len(videos) == 1:
         video = videos[0]
-    elif not videos:
-        raise ValueError("目录中没有视频文件")
     else:
         return {
             "needs_selection": True,
@@ -105,21 +136,31 @@ def inspect_project(directory: str, video_path: str = "") -> dict:
         }
     if not video.resolve().is_relative_to(root):
         raise ValueError("工程视频必须位于所选目录内，不能通过链接指向目录外")
+    entries = manifest.get("videos", []) if manifest.get("schema_version") == 2 else [manifest]
+    previous = next((e for e in entries if e.get("video") and inside(root, e["video"]) == video), {})
+    project_id = previous.get("id", "")
+    dedicated = root / "subtitles" / "learning_tracks" / project_id if project_id else None
     files = [
         p
-        for folder in (root, root / "subtitles", root / "subtitles" / "learning_tracks")
-        if folder.is_dir()
+        for folder in (root, root / "subtitles", root / "subtitles" / "learning_tracks", dedicated)
+        if folder and folder.is_dir()
         for p in folder.iterdir()
         if p.is_file() and p.suffix.lower() in {".srt", ".vtt", ".ass", ".ssa"}
     ]
-    if len(files) > 80:
-        raise ValueError("工程字幕超过80份，请按视频拆分目录")
-    if len(videos) > 1:
+    if len(videos) > 1 or manifest.get("schema_version") == 2:
         try:
             from ..series_project import normalize_asset_stem
         except ImportError:
             from series_project import normalize_asset_stem
-        files = [p for p in files if normalize_asset_stem(p.stem) == normalize_asset_stem(video.stem)]
+        if sum(normalize_asset_stem(p.stem) == normalize_asset_stem(video.stem) for p in videos) > 1:
+            raise ValueError("多个视频名称无法区分对应字幕，请为视频及配套字幕使用不同名称")
+        owned = {inside(root, t["path"]) for t in previous.get("subtitles", []) if isinstance(t, dict) and t.get("path")}
+        files = [
+            p for p in files if p.parent == dedicated or p.resolve() in owned
+            or normalize_asset_stem(p.stem) == normalize_asset_stem(video.stem)
+        ]
+    if len(files) > 80:
+        raise ValueError("单个视频字幕超过80份，请整理后再导入")
     tracks = []
     warnings = []
     for path in files:
@@ -157,9 +198,6 @@ def inspect_project(directory: str, video_path: str = "") -> dict:
     )
     if tracks and not any(t["role"] == "source" for t in tracks):
         tracks[0] = {**tracks[0], "role": "source"}
-    project_id = previous.get("id", "")
-    if project_id and not re.fullmatch(r"[a-f0-9]{32}", project_id):
-        raise ValueError("工程编号无效")
     return {
         "root": str(root),
         "path": str(video.resolve()),
@@ -168,19 +206,44 @@ def inspect_project(directory: str, video_path: str = "") -> dict:
         "id": project_id,
         "media_signature": signature(video),
         "warnings": warnings,
+        "source_url": previous.get("source_url", ""),
+        "collection": len(videos) > 1 or manifest.get("schema_version") == 2,
     }
 
 
-def import_project(service, directory: str, video_path: str = "") -> dict:
+def import_project(service, directory: str, video_path: str = "", *, video_paths=None, import_all=False) -> dict:
+    if video_paths is not None or import_all:
+        root = Path(directory.strip().strip('"')).expanduser().resolve()
+        videos = project_videos(root)
+        load_manifest(root)
+        if not isinstance(import_all, bool):
+            raise ValueError("全部导入参数无效")
+        if video_paths is not None and (
+            not isinstance(video_paths, list) or not 1 <= len(video_paths) <= 200
+            or any(not isinstance(p, str) for p in video_paths)
+        ):
+            raise ValueError("请选择1至200个视频")
+        selected = videos if import_all else [Path(p).resolve() for p in video_paths]
+        if any(p not in videos for p in selected) or len(set(selected)) != len(selected):
+            raise ValueError("所选视频必须属于该目录且不能重复")
+        imported, errors, warnings = [], [], []
+        for path in selected:
+            try:
+                result = import_project(service, str(root), str(path))
+                imported.append(result["video"])
+                warnings.extend(f"{path.name}：{message}" for message in result["warnings"])
+            except (ValueError, OSError) as exc:
+                errors.append({"path": str(path), "error": str(exc)})
+        return {"root": str(root), "video": imported[0] if imported else None,
+                "imported": imported, "errors": errors, "warnings": warnings}
     project = inspect_project(directory, video_path)
     if project.get("needs_selection"):
         return project
     root = Path(project["root"])
-    previous = json.loads((root / MANIFEST).read_text(encoding="utf-8-sig")) if (root / MANIFEST).is_file() else {}
     video = service.register(
         project["path"],
         str(project["title"]),
-        source_url=previous.get("source_url", ""),
+        source_url=project["source_url"],
         tracks=project["tracks"],
         project=project,
     )
@@ -204,9 +267,19 @@ def write_manifest(project: dict, source_url: str = ""):
         "subtitles": [{**t, "path": Path(t["path"]).relative_to(root).as_posix()} for t in project["tracks"]],
         "updated": now(),
     }
+    previous = load_manifest(root)
+    if project.get("collection") or previous.get("schema_version") == 2:
+        entries = previous.get("videos", []) if previous.get("schema_version") == 2 else ([previous] if previous else [])
+        entry = {k: v for k, v in manifest.items() if k not in {"schema_version", "project_type"}}
+        entries = [e for e in entries if e["video"] != entry["video"]] + [entry]
+        manifest = {"schema_version": 2, "project_type": "video_learning_collection",
+                    "videos": entries, "updated": now()}
     temporary = root / ("." + MANIFEST + "." + new_id() + ".tmp")
     try:
-        temporary.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        content = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+        if len(content.encode("utf-8")) > 1_000_000:
+            raise OSError("工程清单过大，未保存")
+        temporary.write_text(content, encoding="utf-8")
         temporary.replace(root / MANIFEST)
     finally:
         temporary.unlink(missing_ok=True)

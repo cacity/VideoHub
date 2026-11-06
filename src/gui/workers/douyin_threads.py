@@ -204,11 +204,15 @@ class DouyinDownloadThread(QThread):
                     self.progress_signal.emit(progress, message)
 
             # 下载视频
-            result = downloader.download_video(
-                self.url,
-                progress_callback=progress_callback,
-                video_info=self.video_info,
-            )
+            if self.config.get("enable_transcription", True) or self.config.get("generate_article", True):
+                from learning.downloads import download_douyin
+                result = download_douyin(
+                    downloader, self.url, video_info=self.video_info, progress_callback=progress_callback,
+                )
+            else:
+                result = downloader.download_video(
+                    self.url, progress_callback=progress_callback, video_info=self.video_info,
+                )
 
             if self.stopped:
                 return

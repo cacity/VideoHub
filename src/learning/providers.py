@@ -11,6 +11,10 @@ from urllib.parse import urlsplit
 import requests
 
 
+class OutputLimitError(ValueError):
+    """A truncated response must never be accepted as complete structured data."""
+
+
 class Provider:
     def __init__(self, name: str = "deepseek", model: str = ""):
         if name not in {"deepseek", "kimi"}:
@@ -99,9 +103,11 @@ class Provider:
                             yield {"text": content}
                         if choice.get("finish_reason"):
                             finish = choice["finish_reason"]
+                if finish == "length":
+                    raise OutputLimitError("模型回复未完整结束（达到输出长度限制）")
                 if finish != "stop":
                     raise ValueError(
-                        "模型回复未完整结束" + ("（达到输出长度限制）" if finish == "length" else "，请重试")
+                        "模型回复未完整结束，请重试"
                     )
                 if not received:
                     raise ValueError("模型未返回正文，请检查模型配置")
@@ -111,11 +117,21 @@ class Provider:
             raise ValueError("模型服务连接失败或超时，请检查网络后重试") from None
 
     def complete(self, messages, cancelled, max_tokens=1200) -> tuple[str, dict | None]:
-        text, usage = "", None
-        for event in self.stream(messages, cancelled, max_tokens):
-            text += event.get("text", "")
-            usage = event.get("usage", usage)
-        return text, usage
+        # Retry only a truncated buffered result, once. Keep the same model and
+        # input; discard the incomplete JSON rather than concatenating attempts.
+        limits = [max_tokens, min(8192, max(2048, max_tokens * 2))]
+        for attempt, limit in enumerate(limits):
+            text, usage = "", None
+            try:
+                for event in self.stream(messages, cancelled, limit):
+                    text += event.get("text", "")
+                    usage = event.get("usage", usage)
+                return text, usage
+            except OutputLimitError:
+                if cancelled.is_set():
+                    raise InterruptedError() from None
+                if attempt or limits[1] <= limit:
+                    raise
 
 
 def provider_error(name: str, status: int) -> str:

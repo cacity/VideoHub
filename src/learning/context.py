@@ -68,9 +68,12 @@ def build_outline(store, video: dict, cues: list[dict], provider, cancelled, upd
                 '为这段视频原文生成中文章节导航，只返回 JSON 对象：{"title":"简短标题","summary":"不超过180字，保留因果和术语"}。不得加入外部知识。\n'
                 + "\n".join(map(cue_text, part))
             )
-            text, usage = provider.complete(
-                [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}], cancelled, 650
-            )
+            try:
+                text, usage = provider.complete(
+                    [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}], cancelled, 650
+                )
+            except ValueError as error:
+                raise ValueError(f"全片结构分析第 {index + 1}/{len(parts)} 段未完成：{error}。已完成的分段缓存保留，可重试。") from None
             value = json_result(text)
             if (
                 not isinstance(value, dict)
