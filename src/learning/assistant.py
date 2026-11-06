@@ -45,7 +45,28 @@ class Assistant:
 
         return self.jobs.start(video_id, "analysis", work)
 
-    def start_chat(self, video_id: str, data: dict):
+    def retry_chat(self, video_id: str, message_id: str, data: dict):
+        video = self.service.detail(video_id)
+        messages = self.store.list_items("messages", video_id)
+        answer = next((m for m in messages if m["id"] == message_id), None)
+        if not answer or answer["role"] != "assistant" or answer.get("status") not in {"failed", "cancelled"}:
+            raise ValueError("只能重试本视频中失败或已停止的回答")
+        if answer.get("subtitle_version") != video["subtitle_version"]:
+            raise ValueError("字幕已改变，请根据当前字幕重新提问")
+        earlier = messages[:messages.index(answer)]
+        user = next((m for m in reversed(earlier) if m["role"] == "user"
+                     and (not answer.get("question_id") or m["id"] == answer["question_id"])), None)
+        if not user:
+            raise ValueError("没有找到原问题，请重新输入问题")
+        request = user.get("request") or {
+            "question": user["text"], "time": user["time"], "scope": user.get("scope", "full"),
+            "cue_ids": user.get("cue_ids", []), "search": False,
+        }
+        request = {**request, "provider": data.get("provider", answer.get("provider", "deepseek")),
+                   "model": data.get("model", answer.get("model", ""))}
+        return self.start_chat(video_id, request, retry_user=user)
+
+    def start_chat(self, video_id: str, data: dict, *, retry_user: dict | None = None):
         video = self.service.detail(video_id)
         if not video["has_source"]:
             raise ValueError("请先导入原文字幕或生成转写，AI 才能依据视频回答")
@@ -73,7 +94,7 @@ class Assistant:
 
         def work(cancelled, update):
             created = now()
-            user = {
+            user = retry_user or {
                 "id": new_id(),
                 "role": "user",
                 "text": question,
@@ -83,15 +104,19 @@ class Assistant:
                 "scope": scope,
                 "cue_ids": selected,
                 "subtitle_version": video["subtitle_version"],
+                "request": {"question": question, "time": position, "scope": scope, "cue_ids": selected,
+                            "search": use_search, "search_provider": search_provider, "search_query": search_query},
             }
             history = [
                 m
                 for m in self.store.list_items("messages", video_id)
                 if m.get("status") == "finished"
+                and m["id"] != user["id"]
                 and m.get("subtitle_version") == video["subtitle_version"]
                 and (scope == "full" or (m.get("scope") == "current" and m.get("time", 0) <= position))
             ][-6:]
-            self.store.save_item("messages", video_id, user)
+            if not retry_user:
+                self.store.save_item("messages", video_id, user)
             answer = {
                 "id": new_id(),
                 "role": "assistant",
@@ -107,8 +132,9 @@ class Assistant:
                 "sources": [],
                 "warnings": [],
                 "usage": None,
+                "question_id": user["id"],
             }
-            update(answer_id=answer["id"])
+            update(answer_id=answer["id"], subtitle_version=video["subtitle_version"])
             try:
                 outline = []
                 if sum(size(cue_text(c)) + 1 for c in cues) > provider.budget // 2:
@@ -193,8 +219,11 @@ class Assistant:
             except InterruptedError:
                 answer.update(status="cancelled", warnings=["回复已停止，内容可能不完整"])
                 raise
+            except ValueError as error:
+                answer.update(status="failed", error=str(error), warnings=["回复失败，内容可能不完整"])
+                raise
             except Exception:
-                answer.update(status="failed", warnings=["回复失败，内容可能不完整"])
+                answer.update(status="failed", error="任务失败，请检查服务配置、网络或本地依赖后重试", warnings=["回复失败，内容可能不完整"])
                 raise
             finally:
                 self.store.save_item("messages", video_id, answer)
@@ -209,6 +238,7 @@ class Assistant:
         provider = self.provider(data)
 
         def work(cancelled, update):
+            update(subtitle_version=video["subtitle_version"])
             result = build_mindmap(self, video, provider, cancelled, update, data.get("force") is True)
             if cancelled.is_set():
                 raise InterruptedError()

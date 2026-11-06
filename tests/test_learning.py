@@ -111,7 +111,7 @@ def test_learning_html_is_not_stored_across_restarts(tmp_path, monkeypatch):
             response.close()
 
 
-@pytest.mark.parametrize("mode", ["library", "video", "project"])
+@pytest.mark.parametrize("mode", ["library", "video", "project", "project-multiple"])
 def test_desktop_open_gets_fresh_url_without_disclosing_session_token(monkeypatch, mode):
     from src import learning_desktop
     from urllib.parse import parse_qs, urlparse
@@ -130,18 +130,22 @@ def test_desktop_open_gets_fresh_url_without_disclosing_session_token(monkeypatc
 
     def post(url, **kwargs):
         assert kwargs["headers"]["X-Learning-Token"] == "private-session"
+        if mode == "project-multiple":
+            return Reply({"needs_selection": True, "videos": [{"path": "one.mp4"}, {"path": "two.mp4"}]})
         return Reply({"video": {"id": "test-id"}} if url.endswith("/imports/project") else {"id": "test-id"})
 
     monkeypatch.setattr(learning_desktop.requests, "get", get)
     monkeypatch.setattr(learning_desktop.requests, "post", post)
-    options = {"path": "test.mp4"} if mode == "video" else {"directory": "project"} if mode == "project" else {}
+    options = {"path": "test.mp4"} if mode == "video" else {"directory": "project"} if mode.startswith("project") else {}
     urls = [learning_desktop.learning_url(**options) for _ in range(2)]
     assert urls[0] != urls[1]
     for url in urls:
         query = parse_qs(urlparse(url).query)
         assert "private-session" not in url
         assert len(query["launch"][0]) == 16
-        assert query.get("video") == (["test-id"] if mode != "library" else None)
+        assert query.get("video") == (["test-id"] if mode in {"video", "project"} else None)
+        if mode == "project-multiple":
+            assert query["directory"] == ["project"]
 
 
 def test_download_import_keeps_progress_and_notes(workspace, monkeypatch, tmp_path):
@@ -470,6 +474,145 @@ def test_chat_citations_usage_and_note_roundtrip(workspace):
     assert len(restart.get(f"/api/learning/videos/{vid}/study").json["messages"]) == 2
     assert restart.get(f"/api/learning/videos/{vid}/notes").json["notes"][0]["tags"] == ["learning"]
     assert client.delete(f"/api/learning/videos/{vid}/notes/{item['id']}", headers=headers).status_code == 200
+
+
+def test_failed_chat_restores_reason_and_retries_original_context_without_duplicate_question(workspace):
+    app, client, headers, video = with_ai(workspace)
+    assistant = app.config["LEARNING_ASSISTANT"]
+    service = app.config["LEARNING_SERVICE"]
+    route = f"/api/learning/videos/{video['id']}"
+    searches = []
+    assistant.search = lambda provider, query, cancelled: searches.append(query) or []
+
+    class Failing(FakeProvider):
+        def stream(self, messages, cancelled, max_tokens=2200):
+            yield {"text": "保留已返回的部分正文"}
+            raise ValueError("模型回复未完整结束（达到输出长度限制）")
+
+    assistant.provider_factory = Failing
+    response = client.post(route + "/chat", headers=headers, json={
+        "question": "Explain this", "time": 1, "scope": "current", "search": True, "search_query": "concept",
+    })
+    failed = wait_job(client, response.json["id"])
+    assert failed["status"] == "failed"
+    study = client.get(route + "/study").json
+    answer = study["messages"][-1]
+    assert "输出长度限制" in answer["error"] and answer["text"] == "保留已返回的部分正文"
+    assert study["latest_job"]["id"] == failed["id"] and study["active_job"] is None
+    # Old failed messages had no error field; recover it from their linked job.
+    answer.pop("error")
+    service.store.save_item("messages", video["id"], answer)
+    assert "输出长度限制" in client.get(route + "/study").json["messages"][-1]["error"]
+    service.progress(video["id"], {"time": 23})
+    assistant.provider_factory = FakeProvider
+    retried = client.post(route + "/messages/" + answer["id"] + "/retry", headers=headers, json={
+        "provider": "deepseek", "model": "test-model", "question": "must be ignored", "time": 59, "scope": "full",
+    })
+    assert retried.status_code == 202
+    result = wait_job(client, retried.json["id"])
+    assert result["status"] == "finished", result
+    messages = client.get(route + "/study").json["messages"]
+    assert len(messages) == 3 and sum(m["role"] == "user" for m in messages) == 1
+    assert messages[-1]["time"] == 1 and messages[-1]["scope"] == "current"
+    assert "Learning takes practice." not in FakeProvider.calls[-1][-1]["content"]
+    assert "must be ignored" not in FakeProvider.calls[-1][-1]["content"]
+    assert searches == ["concept", "concept"]
+    assert service.detail(video["id"])["progress"]["time"] == 23
+    assert client.post(route + "/messages/" + messages[-1]["id"] + "/retry", headers=headers, json={}).status_code == 400
+    service.add_track(video["id"], {"role": "source", "content": SRT.replace("Hello", "Changed")})
+    stale = client.post(route + "/messages/" + answer["id"] + "/retry", headers=headers, json={})
+    assert stale.status_code == 400 and "字幕已改变" in stale.json["error"]
+
+
+def mock_model_streams(monkeypatch, responses):
+    """Exercise the real provider parser with synthetic HTTP/SSE only."""
+    from src.learning.providers import Provider
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://model.example.test")
+    calls = []
+
+    class Reply:
+        status_code = 200
+
+        def __init__(self, spec):
+            self.spec = spec
+            self.status_code = spec.get("status", 200)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def iter_lines(self, **kwargs):
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": self.spec.get("text", "")},
+                                                       "finish_reason": self.spec.get("finish", "stop")}],
+                                         "usage": {"total_tokens": 10}})
+            yield "data: [DONE]"
+
+    def post(url, **kwargs):
+        calls.append(kwargs["json"])
+        assert responses, "unexpected extra model attempt"
+        return Reply(responses.pop(0))
+
+    monkeypatch.setattr("src.learning.providers.requests.post", post)
+    return Provider("deepseek", "deepseek-chat"), calls
+
+
+def test_structured_output_length_retry_discards_partial_json_and_is_bounded(monkeypatch):
+    from src.learning.providers import OutputLimitError
+
+    replies = [{"text": '{"title":"cut', "finish": "length"}, {"text": '{"title":"ok"}'}]
+    provider, calls = mock_model_streams(monkeypatch, replies)
+    messages = [{"role": "user", "content": "json please"}]
+    text, usage = provider.complete(messages, threading.Event(), 650)
+    assert text == '{"title":"ok"}' and usage["total_tokens"] == 10
+    assert [c["max_tokens"] for c in calls] == [650, 2048]
+    assert all(c["model"] == "deepseek-chat" and c["messages"] == messages for c in calls)
+    replies.extend([{"finish": "length"}, {"finish": "length"}])
+    with pytest.raises(OutputLimitError):
+        provider.complete(messages, threading.Event(), 6000)
+    assert [c["max_tokens"] for c in calls[-2:]] == [6000, 8192]
+
+
+@pytest.mark.parametrize("spec", [{"status": 401}, {"finish": None}, {"text": "", "finish": "stop"}])
+def test_structured_output_does_not_retry_auth_disconnection_or_empty_body(monkeypatch, spec):
+    provider, calls = mock_model_streams(monkeypatch, [spec])
+    with pytest.raises(ValueError):
+        provider.complete([{"role": "user", "content": "test"}], threading.Event(), 650)
+    assert len(calls) == 1
+
+
+def test_streamed_chat_is_not_replayed_after_output_limit(monkeypatch):
+    from src.learning.providers import OutputLimitError
+
+    provider, calls = mock_model_streams(monkeypatch, [{"text": "partial answer", "finish": "length"}])
+    events = []
+    with pytest.raises(OutputLimitError):
+        for event in provider.stream([{"role": "user", "content": "test"}], threading.Event()):
+            events.append(event)
+    assert len(calls) == 1 and any(e.get("text") == "partial answer" for e in events)
+
+
+def test_outline_length_failure_retains_completed_parts_and_retry_resumes_cache(workspace, monkeypatch):
+    from src.learning.context import build_outline
+
+    app, _, _, video = workspace
+    good = {"text": '{"title":"Topic","summary":"A concise summary"}'}
+    replies = [good, {"finish": "length"}, {"finish": "length"}]
+    provider, calls = mock_model_streams(monkeypatch, replies)
+    provider.budget = 8000
+    cues = subtitles.normalize([{"start": i * 10, "end": i * 10 + 5, "text": "A" * 2800} for i in range(3)])
+    service = app.config["LEARNING_SERVICE"]
+    detail = service.detail(video["id"])
+    with pytest.raises(ValueError, match="第 2/3 段未完成"):
+        build_outline(service.store, detail, cues, provider, threading.Event(), lambda **kw: None)
+    replies.extend([good, good])
+    outline = build_outline(service.store, detail, cues, provider, threading.Event(), lambda **kw: None)
+    assert len(outline) == 3 and len(calls) == 5, "retry only unfinished parts; preserve successful first part"
+    assert build_outline(service.store, detail, cues, provider, threading.Event(), lambda **kw: None) == outline
+    assert len(calls) == 5
 
 
 def test_translation_analysis_cache_and_changed_subtitles(workspace):
@@ -852,6 +995,126 @@ def test_project_multiple_videos_requires_selection(workspace, tmp_path):
     )
     assert chosen.json["video"]["cues"][0]["text"] == "two, world."
     assert len(chosen.json["video"]["available_tracks"]) == 1
+
+
+def test_collection_import_retains_each_video_versions_and_state_after_move(workspace, tmp_path):
+    import shutil
+
+    app, client, headers, fixture = workspace
+    service = app.config["LEARNING_SERVICE"]
+    root = tmp_path / "课程合集"
+    root.mkdir()
+    for name in ("one", "two"):
+        (root / f"{name}.mp4").write_bytes(Path(fixture["path"]).read_bytes() + name.encode())
+        (root / f"{name}.en.srt").write_text(SRT.replace("Hello", name), encoding="utf-8")
+        (root / f"{name}.zh-CN.srt").write_text(SRT.replace("Hello", name + "中文"), encoding="utf-8")
+    endpoint = "/api/learning/imports/project"
+    result = client.post(endpoint, headers=headers, json={"directory": str(root), "import_all": True})
+    assert result.status_code == 200 and not result.json["errors"], result.json
+    first, second = result.json["imported"]
+    assert first["id"] != second["id"]
+    for item in (first, second):
+        assert item["cues"][0]["text"] == item["title"] + ", world."
+        assert item["cues"][0]["translation"] == item["title"] + "中文, world."
+        assert len(item["available_tracks"]) == 2
+    service.progress(first["id"], {"time": 19, "rate": 1.3})
+    service.progress(second["id"], {"time": 35, "rate": 1.1})
+    service.store.save_item("notes", first["id"], {"id": "one-note", "text": "one only"})
+    old = service.add_track(first["id"], {"role": "target", "content": SRT.replace("Hello", "新译文"), "language": "zh-CN"})
+    current = old["tracks"]["target"]["path"]
+    assert Path(current).parent.name == first["id"]
+    again = client.post(endpoint, headers=headers, json={"directory": str(root), "import_all": True}).json
+    assert [v["id"] for v in again["imported"]] == [first["id"], second["id"]]
+    assert again["imported"][0]["tracks"]["target"]["path"] == current
+    manifest = json.loads((root / "videohub_learning.json").read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 2 and len(manifest["videos"]) == 2
+    assert {v["video"] for v in manifest["videos"]} == {"one.mp4", "two.mp4"}
+    moved = tmp_path / "移动后的合集"
+    shutil.move(str(root), moved)
+    reopened = client.post(endpoint, headers=headers, json={"directory": str(moved), "import_all": True}).json
+    assert not reopened["errors"], reopened
+    a, b = reopened["imported"]
+    assert [a["id"], b["id"]] == [first["id"], second["id"]]
+    assert [a["progress"]["time"], b["progress"]["time"]] == [19, 35]
+    assert "新译文" in a["cues"][0]["translation"]
+    assert service.store.list_items("notes", a["id"])[0]["text"] == "one only"
+    assert not service.store.list_items("notes", b["id"])
+    choices = service.subtitle_candidates(a["id"])
+    assert a["tracks"]["target"]["path"] in {t["path"] for t in choices}
+    assert all("two" not in t["name"] for t in choices)
+    assert all(Path(t["path"]).is_relative_to(moved) for t in a["available_tracks"])
+    # Removing a lesson's media must not make its leftover captions become
+    # generic single-video captions belonging to the remaining lesson.
+    (moved / "two.mp4").unlink()
+    remaining = client.post(endpoint, headers=headers, json={"directory": str(moved)}).json["video"]
+    assert remaining["id"] == a["id"]
+    assert all("two" not in t["name"] for t in remaining["available_tracks"])
+    assert all("two" not in t["name"] for t in service.subtitle_candidates(a["id"]))
+
+
+def test_collection_upgrades_single_manifest_without_reusing_identity(workspace, tmp_path):
+    _, client, headers, fixture = workspace
+    root = tmp_path / "growing"
+    root.mkdir()
+    (root / "one.mp4").write_bytes(Path(fixture["path"]).read_bytes())
+    (root / "English.srt").write_text(SRT, encoding="utf-8")
+    endpoint = "/api/learning/imports/project"
+    original = client.post(endpoint, headers=headers, json={"directory": str(root)}).json["video"]
+    (root / "two.mp4").write_bytes(b"second")
+    (root / "two.en.srt").write_text(SRT.replace("Hello", "second"), encoding="utf-8")
+    preview = client.post(endpoint, headers=headers, json={"directory": str(root)}).json
+    assert preview["needs_selection"] and len(preview["videos"]) == 2
+    # Importing a different video first must not borrow the old manifest's ID/title.
+    second = client.post(endpoint, headers=headers, json={"directory": str(root), "video_paths": [str(root / "two.mp4")]}).json
+    assert len(second["imported"]) == 1 and second["video"]["id"] != original["id"]
+    assert second["video"]["title"] == "two"
+    first = client.post(endpoint, headers=headers, json={"directory": str(root), "video_path": str(root / "one.mp4")}).json["video"]
+    assert first["id"] == original["id"] and first["has_source"]
+    assert first["cues"][0]["text"] == "Hello, world."
+    # Desktop/history single-file entries into a collection still open that file.
+    direct = client.post("/api/learning/videos", headers=headers, json={"path": str(root / "two.mp4")})
+    assert direct.status_code == 201 and direct.json["id"] == second["video"]["id"]
+
+
+def test_collection_partial_failure_and_selection_validation(workspace, tmp_path, monkeypatch):
+    _, client, headers, fixture = workspace
+    root = tmp_path / "partial"
+    root.mkdir()
+    for name in ("good", "broken"):
+        (root / f"{name}.mp4").write_bytes(b"media")
+    probe = media.probe
+
+    def selective_probe(path):
+        if path.stem == "broken":
+            raise ValueError("无法读取视频，请检查文件完整性")
+        return probe(path)
+
+    monkeypatch.setattr(media, "probe", selective_probe)
+    endpoint = "/api/learning/imports/project"
+    response = client.post(endpoint, headers=headers, json={"directory": str(root), "import_all": True}).json
+    assert len(response["imported"]) == len(response["errors"]) == 1
+    assert response["video"]["title"] == "good" and "broken.mp4" in response["errors"][0]["path"]
+    for selection in ([], "not-a-list", [fixture["path"]], [str(root / "good.mp4")] * 2):
+        assert client.post(endpoint, headers=headers, json={"directory": str(root), "video_paths": selection}).status_code == 400
+    failed = client.post(endpoint, headers=headers, json={"directory": str(root), "video_paths": [str(root / "broken.mp4")]}).json
+    assert not failed["imported"] and failed["video"] is None and len(failed["errors"]) == 1
+    # A corrupt collection must never merge two learning records by ID.
+    manifest = {"schema_version": 2, "videos": [{"video": name + ".mp4", "id": "a" * 32} for name in ("good", "broken")]}
+    (root / "videohub_learning.json").write_text(json.dumps(manifest), encoding="utf-8")
+    rejected = client.post(endpoint, headers=headers, json={"directory": str(root), "import_all": True})
+    assert rejected.status_code == 400 and "重复" in rejected.json["error"]
+
+
+def test_collection_ambiguous_names_do_not_share_subtitles(workspace, tmp_path):
+    _, client, headers, _ = workspace
+    root = tmp_path / "ambiguous"
+    root.mkdir()
+    for filename in ("lesson.mp4", "lesson.mkv"):
+        (root / filename).write_bytes(b"video")
+    (root / "lesson.en.srt").write_text(SRT, encoding="utf-8")
+    result = client.post("/api/learning/imports/project", headers=headers, json={"directory": str(root), "import_all": True}).json
+    assert not result["imported"] and len(result["errors"]) == 2
+    assert all("不同名称" in e["error"] for e in result["errors"])
 
 
 def test_learning_service_import_does_not_require_ml_runtime():

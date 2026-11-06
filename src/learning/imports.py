@@ -56,6 +56,7 @@ def directory_assets(path: str) -> list[dict]:
 def subtitle_candidates(
     video_path: str, root: Path = REPO_ROOT, *, project_root: Path | None = None,
     snapshot_folders: list[Path] | None = None,
+    collection: bool = False,
 ) -> list[dict]:
     from .subtitles import read_track
     try:
@@ -73,7 +74,7 @@ def subtitle_candidates(
         project_root = project_root.resolve()
         videos = [p.resolve() for p in project_root.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS]
         directories[(project_root / "subtitles" / "learning_tracks").resolve()] = False
-        if videos == [video]:
+        if videos == [video] and not collection:
             for folder in (project_root, project_root / "subtitles", project_root / "subtitles" / "learning_tracks"):
                 directories[folder.resolve()] = True
     for folder in snapshot_folders or []:

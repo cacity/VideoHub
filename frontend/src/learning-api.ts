@@ -15,7 +15,7 @@ export type Video = { id: string; title: string; duration: number; width?: numbe
   available_tracks: Array<{ key: string; name: string; path?: string; language: string; role: string; updated?: string; label?: string }> };
 export type Message = { id: string; role: 'user' | 'assistant'; text: string; time: number; status: string;
   citations?: Citation[]; sources?: WebSource[]; searched_sources?: WebSource[]; warnings?: string[];
-  usage?: { total_tokens?: number }; subtitle_version: string; provider?: string; model?: string };
+  usage?: { total_tokens?: number }; subtitle_version: string; provider?: string; model?: string; error?: string };
 export type Chapter = { title: string; summary: string; start: number; end: number; cue_ids: string[] };
 export type Job = { id: string; video_id: string; kind: string; status: string; progress: number; message: string; text: string;
   outline?: Chapter[]; warnings?: string[]; result?: { outline?: Chapter[]; answer?: Message }; coverage?: { completed: number; total: number } };
@@ -24,7 +24,7 @@ export type Note = { id: string; text: string; start: number; end: number; creat
 export type MindmapNode = { id: string; label: string; summary: string; start: number; end: number; chapter_indices: number[]; children: MindmapNode[] };
 export type Mindmap = { organization: 'logical' | 'topics'; explanation: string; basis: string; root: MindmapNode;
   created: string; subtitle_version: string; provider: string; model: string; coverage: { parts: number; cues: number } };
-export type Study = { messages: Message[]; notes: Note[]; outline: Chapter[]; mindmap?: Mindmap | null; active_job: Job | null };
+export type Study = { messages: Message[]; notes: Note[]; outline: Chapter[]; mindmap?: Mindmap | null; active_job: Job | null; latest_job?: Job | null };
 export type Providers = Record<string, { configured: boolean; model: string; input_budget: number; error?: string }>;
 let token = '';
 export const setToken = (value: string) => { token = value; };

@@ -171,7 +171,15 @@ class WorkerThread(QThread):
                     def progress_callback(message, progress):
                         self.update_signal.emit(f"[{progress}%] {message}")
 
-                    result = downloader.download_video(youtube_url, progress_callback=progress_callback)
+                    if enable_transcription or generate_article or generate_subtitles:
+                        from learning.downloads import download_douyin
+                        result = download_douyin(
+                            downloader, youtube_url, video_info=video_info, progress_callback=progress_callback,
+                        )
+                    else:
+                        result = downloader.download_video(
+                            youtube_url, video_info=video_info, progress_callback=progress_callback,
+                        )
 
                     if result.get("success"):
                         downloaded_files = result.get("downloaded_files", [])

@@ -11,6 +11,10 @@ let blockLaterKeyHandlers = false;
 let subtitleCandidates = [];
 const subtitleSelections = [];
 const savedProgress = [];
+let importedLessons = [];
+let projectImportFailures = [];
+const projectRequests = [];
+const savedByVideo = [];
 const detail = {
   id: 'fixture', title: 'Synthetic lesson', duration: 60, width: 1280, height: 720,
   path: '/synthetic.mp4', source_url: '', media_url: '/synthetic.mp4', browser_ready: true,
@@ -53,7 +57,24 @@ before(async () => {
     const route = String(url).replace('/api/learning', '');
     let data;
     if (route === '/session') data = { token: 'synthetic-token-' + sessionGeneration, providers: {} };
-    else if (route === '/videos') data = { videos: [detail] };
+    else if (route === '/videos') data = { videos: [detail, ...importedLessons] };
+    else if (route === '/imports/recent') data = { videos: [] };
+    else if (route === '/imports/project') {
+      const request = JSON.parse(options.body);
+      projectRequests.push(request);
+      const lessons = ['one', 'two'].map((name, index) => ({
+        ...structuredClone(detail), id: name, title: 'Lesson ' + name, path: '/course/' + name + '.mp4',
+        progress: { ...detail.progress, time: 10 + index * 20 },
+        cues: [{ id: name + '-cue', start: 0, end: 60, text: 'English ' + name, translation: '中文 ' + name }],
+      }));
+      if (!request.video_paths) data = { needs_selection: true, videos: lessons };
+      else {
+        assert.deepEqual(request.video_paths, lessons.map(v => v.path));
+        importedLessons = lessons.filter(v => !projectImportFailures.some(e => e.path === v.path));
+        data = { video: importedLessons[0] || null, imported: importedLessons, errors: projectImportFailures };
+      }
+    }
+    else if (importedLessons.some(v => route === '/videos/' + v.id)) data = structuredClone(importedLessons.find(v => route === '/videos/' + v.id));
     else if (route === '/videos/fixture') data = structuredClone(detail);
     else if (route.endsWith('/subtitle-candidates')) data = { tracks: subtitleCandidates };
     else if (route.endsWith('/select-track') || route.endsWith('/subtitles')) {
@@ -70,7 +91,11 @@ before(async () => {
     else if (route.endsWith('/study')) data = { messages: [], notes: [], outline: [], active_job: null };
     else if (route.endsWith('/progress')) {
       assert.equal(options.headers['X-Learning-Token'], 'synthetic-token-' + sessionGeneration);
-      data = JSON.parse(options.body); savedProgress.push(data); detail.progress = structuredClone(data);
+      data = JSON.parse(options.body); savedProgress.push(data);
+      const id = route.split('/')[2];
+      savedByVideo.push({ id, ...data });
+      const lesson = [detail, ...importedLessons].find(v => v.id === id);
+      lesson.progress = structuredClone(data);
     }
     else throw new Error('Unexpected isolated request: ' + route);
     return { ok: true, json: async () => data };
@@ -100,6 +125,17 @@ after(async () => {
   if (root) await act(async () => root.unmount());
   dom?.window.close();
 });
+
+async function scanProject() {
+  const open = [...document.querySelectorAll('button')].find(b => b.textContent.includes('导入视频'));
+  await act(async () => open.click());
+  const folder = document.querySelector('[aria-label="工程目录"]');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(folder, '/course');
+    folder.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => document.querySelector('.import-modal').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+}
 
 async function press(target, key, code = '', extra = {}) {
   const event = new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...extra });
@@ -412,4 +448,92 @@ test('subtitle versions in the actual App select one track per role, reuse bilin
   assert.equal(subtitleSelections.at(-1).path, '/mixed.ass');
   assert.equal(subtitleSelections.at(-1).role, 'target');
   assert.equal(document.querySelectorAll('video').length, 1, 'switching subtitles does not remount the player');
+});
+
+test('assistant dragging can use most of the viewport, releases library space, and survives reopening', async () => {
+  const previousWidth = window.innerWidth;
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1920 });
+  await act(async () => window.dispatchEvent(new Event('resize')));
+  let handle = document.querySelector('[aria-label="调整学习助手宽度"]');
+  handle.setPointerCapture = () => {};
+  handle.hasPointerCapture = () => false;
+  const pointer = (name, x) => Object.assign(new Event(name, { bubbles: true, cancelable: true }), { pointerId: 42, button: 0, clientX: x });
+  await act(async () => handle.dispatchEvent(pointer('pointerdown', 1200)));
+  await act(async () => handle.dispatchEvent(pointer('pointermove', -10000)));
+  await act(async () => handle.dispatchEvent(pointer('pointerup', -10000)));
+  assert.ok(Number(handle.getAttribute('aria-valuenow')) > 1000, 'drag beyond the previous 560px limit');
+  const widthWithLibrary = Number(handle.getAttribute('aria-valuemax'));
+  await act(async () => document.querySelector('[aria-label="折叠资料库"]').click());
+  assert.equal(Number(handle.getAttribute('aria-valuemax')), 1536, 'collapsed library permits 80% at 1920px');
+  assert.ok(Number(handle.getAttribute('aria-valuemax')) > widthWithLibrary);
+  await press(handle, 'End');
+  assert.equal(document.querySelector('.workspace').style.getPropertyValue('--preferred-assistant-width'), '1536px');
+  await act(async () => root.unmount());
+  const entry = resolve(__dirname, '../src/learning.tsx');
+  delete require.cache[entry];
+  await act(async () => require(entry));
+  media = document.querySelector('video');
+  handle = document.querySelector('[aria-label="调整学习助手宽度"]');
+  assert.equal(Number(handle.getAttribute('aria-valuenow')), 1536, 'saved wide preference is not clamped to the old 560px cap');
+  await act(async () => document.querySelector('[aria-label="展开资料库"]').click());
+  const libraryWidth = Number(document.querySelector('[aria-label="调整资料库宽度"]').getAttribute('aria-valuenow'));
+  assert.ok(1920 - libraryWidth - Number(handle.getAttribute('aria-valuenow')) >= 320);
+  await press(handle, 'Enter');
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
+  await act(async () => window.dispatchEvent(new Event('resize')));
+});
+
+test('directory imports select all lessons and switch their own captions and progress in the real App', async () => {
+  await scanProject();
+  const boxes = [...document.querySelectorAll('.import-video-choice input')];
+  assert.equal(boxes.length, 2);
+  assert.ok(boxes.every(b => b.checked), 'all videos are selected by default');
+  const submit = document.querySelector('.import-modal .primary');
+  assert.match(submit.textContent, /2 个视频/);
+  await act(async () => [...document.querySelectorAll('.import-selection-actions button')].find(b => b.textContent === '清空选择').click());
+  assert.equal(submit.disabled, true);
+  await act(async () => [...document.querySelectorAll('.import-selection-actions button')].find(b => b.textContent === '全选').click());
+  await act(async () => document.querySelector('.import-modal').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  assert.equal(document.querySelector('.import-modal'), null);
+  assert.deepEqual(projectRequests.at(-1).video_paths, ['/course/one.mp4', '/course/two.mp4']);
+  assert.match(document.querySelector('.import-notice').textContent, /已导入 2 个视频/);
+  assert.match(document.querySelector('.transcript').textContent, /English one/);
+  await act(async () => document.querySelector('video').dispatchEvent(new Event('loadedmetadata')));
+  assert.equal(document.querySelector('video').currentTime, 10);
+  const two = [...document.querySelectorAll('.library-item')].find(b => b.textContent.includes('Lesson two'));
+  await act(async () => { document.querySelector('video').currentTime = 17; two.click(); });
+  await act(async () => document.querySelector('video').dispatchEvent(new Event('loadedmetadata')));
+  assert.match(document.querySelector('.transcript').textContent, /English two/);
+  assert.equal(document.querySelector('video').currentTime, 30);
+  assert.ok(savedByVideo.some(v => v.id === 'one' && v.time === 17));
+  const one = [...document.querySelectorAll('.library-item')].find(b => b.textContent.includes('Lesson one'));
+  await act(async () => one.click());
+  await act(async () => document.querySelector('video').dispatchEvent(new Event('loadedmetadata')));
+  assert.equal(document.querySelector('video').currentTime, 17);
+});
+
+test('partial directory imports show the failed video without dropping the successful lesson', async () => {
+  projectImportFailures = [{ path: '/course/two.mp4', error: '无法读取视频' }];
+  await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent.includes('导入视频')).click());
+  await act(async () => document.querySelector('.import-modal').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  assert.equal(document.querySelector('.import-modal'), null);
+  assert.match(document.querySelector('.import-notice').textContent, /已导入 1 个视频，1 个失败/);
+  assert.match(document.querySelector('[role="alert"]').textContent, /two.mp4：无法读取视频/);
+  assert.ok([...document.querySelectorAll('.library-item')].some(b => b.textContent.includes('Lesson one')));
+});
+
+test('desktop directory links open the directory form and complete failures remain available for retry', async () => {
+  await act(async () => root.unmount());
+  history.replaceState(null, '', '/learn?directory=%2Fcourse&launch=example');
+  const entry = resolve(__dirname, '../src/learning.tsx');
+  delete require.cache[entry];
+  await act(async () => require(entry));
+  assert.equal(document.querySelector('[aria-label="工程目录"]').value, '/course');
+  await act(async () => document.querySelector('.import-modal').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  projectImportFailures = ['one', 'two'].map(name => ({ path: '/course/' + name + '.mp4', error: '模拟导入失败' }));
+  await act(async () => document.querySelector('.import-modal').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  assert.ok(document.querySelector('.import-modal'), 'keep selections and errors visible for retry');
+  assert.equal(document.querySelectorAll('.import-video-choice input:checked').length, 2);
+  assert.match(document.querySelector('.import-modal [role="alert"]').textContent, /模拟导入失败/);
+  assert.equal(document.querySelector('.import-modal .primary').disabled, false);
 });

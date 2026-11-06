@@ -33,7 +33,7 @@ def download_douyin_video(url, output_dir=DOUYIN_DOWNLOADS_DIR, cookie=None):
     """下载单个视频"""
 
     print("=" * 60)
-    print("抖音视频下载工具（F2 主解析 + DLPanda 回退）")
+    print("抖音视频下载工具（自动选择可用解析源）")
     print("=" * 60)
 
     downloader = build_downloader(output_dir, cookie)

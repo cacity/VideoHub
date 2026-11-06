@@ -27,6 +27,8 @@ function App() {
   const [importing, setImporting] = useState(false);
   const [importMode, setImportMode] = useState('project');
   const [needsSelection, setNeedsSelection] = useState(false);
+  const [importPaths, setImportPaths] = useState<string[]>([]);
+  const [importNotice, setImportNotice] = useState('');
   const [path, setPath] = useState('');
   const [folder, setFolder] = useState('');
   const [importChoices, setImportChoices] = useState<Array<{ path: string; title: string; source_url?: string }>>([]);
@@ -55,7 +57,7 @@ function App() {
   const playerWrap = useRef<HTMLDivElement>(null);
   const lesson = useRef<HTMLElement>(null);
   const [videoRatio, setVideoRatio] = useState(16 / 9);
-  const sizes = useLearningSizes(lesson, collapsed.assistant, videoRatio);
+  const sizes = useLearningSizes(lesson, collapsed.assistant, videoRatio, collapsed.library);
   const currentVideo = useRef<Video | null>(null);
   const lastSaved = useRef(0);
   currentVideo.current = video;
@@ -92,14 +94,21 @@ function App() {
     setToken(session.token); setProviders(session.providers);
     setMindmapAvailable(session.features?.mindmap === true);
     await refresh();
+    const directory = new URLSearchParams(location.search).get('directory');
     const id = new URLSearchParams(location.search).get('video') || localStorage.getItem('videohub.learning.last');
-    if (id) await open(id);
+    if (directory) { setFolder(directory); setImporting(true); }
+    else if (id) await open(id);
   }); }, []);
   useEffect(() => { if (video) localStorage.setItem('videohub.learning.last', video.id); }, [video?.id]);
   useEffect(() => { setSourceLanguage(video?.tracks.source?.language || 'en'); }, [video?.id, video?.tracks.source?.language]);
   useEffect(() => { setVideoRatio(video?.width && video.height ? video.width / video.height : 16 / 9); }, [video?.id, video?.width, video?.height]);
   useEffect(() => { setSelected(null); setLoop(null); setQuery(''); setPage(0); }, [video?.subtitle_version]);
-  useEffect(() => { if (importing) void api<{ videos: typeof importChoices }>('/imports/recent').then(v => setImportChoices(v.videos)).catch(e => setError(e.message)); }, [importing]);
+  useEffect(() => {
+    let disposed = false;
+    if (importing && !needsSelection) void api<{ videos: typeof importChoices }>('/imports/recent')
+      .then(v => { if (!disposed) setImportChoices(v.videos); }).catch(e => { if (!disposed) setError(e.message); });
+    return () => { disposed = true; };
+  }, [importing, needsSelection]);
   useEffect(() => {
     let disposed = false;
     setSubtitleChoices([]);
@@ -240,12 +249,21 @@ function App() {
   const importChosen = async () => {
     let item: Video;
     if (importMode === 'project') {
-      const result = await api<{ video?: Video; warnings?: string[]; needs_selection?: boolean; videos?: typeof importChoices }>(
-        '/imports/project', 'POST', { directory: folder, video_path: needsSelection ? path : '' });
-      if (result.needs_selection) { setImportChoices(result.videos || []); setNeedsSelection(true); setPath(''); return; }
+      const result = await api<{ video?: Video; imported?: Video[]; errors?: Array<{ path: string; error: string }>; warnings?: string[]; needs_selection?: boolean; videos?: typeof importChoices }>(
+        '/imports/project', 'POST', { directory: folder, ...(needsSelection ? { video_paths: importPaths } : {}) });
+      if (result.needs_selection) {
+        const choices = result.videos || [];
+        setImportChoices(choices); setImportPaths(choices.map(c => c.path)); setNeedsSelection(true); return;
+      }
+      const messages = [...(result.warnings || []), ...(result.errors || []).map(e => e.path.split(/[\\/]/).pop() + '：' + e.error)];
+      if (messages.length) setError(messages.join('；'));
+      if (result.imported) {
+        await refresh();
+        setImportNotice(`已导入 ${result.imported.length} 个视频${result.errors?.length ? `，${result.errors.length} 个失败` : ''}，可在左侧资料库切换。`);
+      }
+      if (!result.video && messages.length) return;
       if (!result.video) throw new Error('工程导入失败');
       item = result.video;
-      if (result.warnings?.length) setError(result.warnings.join('；'));
     } else {
       const chosen = importChoices.find(c => c.path === path);
       item = await api<Video>('/videos', 'POST', { path, source_url: chosen?.source_url });
@@ -253,6 +271,7 @@ function App() {
     await save(); setVideo(item); setPosition(item.progress.time); setSelected(null); setLoop(null);
     history.replaceState(null, '', '/learn?video=' + item.id);
     await refresh(); setImporting(false);
+    setLibraryQuery(''); setCollapsed(value => ({ ...value, library: false }));
   };
   return <div className="learning-app">
     <header className="topbar"><a className="brand" href="/learn"><BookOpen size={24} />VideoHub <span>学习</span></a>
@@ -262,6 +281,7 @@ function App() {
         <button onClick={() => setImporting(true)}><FolderPlus size={17} />导入视频</button>
       </div></header>
     {error && <div className="error" role="alert">{error}<button aria-label="关闭错误" onClick={() => setError('')}><X size={16} /></button></div>}
+    {importNotice && !importing && <div className="import-notice" role="status">{importNotice}<button aria-label="关闭导入结果" onClick={() => setImportNotice('')}><X size={16}/></button></div>}
     <main style={{ '--preferred-library-width': sizes.library + 'px', '--preferred-assistant-width': sizes.assistant + 'px' } as React.CSSProperties} className={'workspace' + (collapsed.library ? ' library-collapsed' : '') + (collapsed.assistant ? ' assistant-collapsed' : '')}><aside className="library" id="learning-library" hidden={collapsed.library}><div className="eyebrow">我的学习资料</div>
       {!!library.length && <input className="library-search" aria-label="搜索学习资料" placeholder="搜索资料" value={libraryQuery} onChange={e => setLibraryQuery(e.target.value)}/>}
       {library.filter(v => v.title.toLowerCase().includes(libraryQuery.toLowerCase())).map(item => <button key={item.id} className={'library-item ' + (video?.id === item.id ? 'selected' : '')} title={item.title + '\n' + time(item.progress.time) + ' / ' + time(item.duration)} aria-label={item.title + '，' + time(item.progress.time) + ' / ' + time(item.duration)}
@@ -343,11 +363,12 @@ function App() {
         resizeHandle={<ResizeHandle label="调整学习助手宽度" controls="learning-assistant" className="assistant-width-resizer" axis="x" direction={-1} value={sizes.assistant} min={260} max={sizes.assistantMax} change={value => sizes.change('assistant', value)} reset={() => sizes.reset('assistant')}/>}
         refresh={async () => { await save(); const updated = await api<Video>('/videos/' + video.id); setVideo(updated); await refresh(); }} report={setError}/>}
     </main>
-    {importing && <div className="modal-backdrop"><form className="modal import-modal" onSubmit={e => { e.preventDefault(); void execute(importChosen); }}><div className="modal-title"><h2>导入学习资料</h2><button type="button" aria-label="关闭导入" onClick={() => setImporting(false)}><X size={20}/></button></div><div className="segmented import-mode"><button type="button" className={importMode === 'project' ? 'chosen' : ''} onClick={() => { setImportMode('project'); setNeedsSelection(false); }}>视频工程（目录）</button><button type="button" className={importMode === 'file' ? 'chosen' : ''} onClick={() => { setImportMode('file'); setNeedsSelection(false); }}>单个视频 / 下载记录</button></div>
+    {importing && <div className="modal-backdrop"><form className="modal import-modal" onSubmit={e => { e.preventDefault(); void execute(importChosen); }}><div className="modal-title"><h2>导入学习资料</h2><button type="button" disabled={busy} aria-label="关闭导入" onClick={() => setImporting(false)}><X size={20}/></button></div><div className="segmented import-mode"><button type="button" disabled={busy} className={importMode === 'project' ? 'chosen' : ''} onClick={() => { setImportMode('project'); setNeedsSelection(false); }}>视频工程（目录）</button><button type="button" disabled={busy} className={importMode === 'file' ? 'chosen' : ''} onClick={() => { setImportMode('file'); setNeedsSelection(false); }}>单个视频 / 下载记录</button></div>
       {error && <p className="warning" role="alert">{error}</p>}
-      {importMode === 'project' ? <><p>把一个视频和几份字幕放在同一个文件夹，或把字幕放进 subtitles 子文件夹。导入时自动识别语言并加载全部字幕。</p><label>工程目录<input aria-label="工程目录" autoFocus value={folder} placeholder="F:\学习\一节课程" required onChange={e => { setFolder(e.target.value); setNeedsSelection(false); }}/></label>{needsSelection && <p className="warning">目录中有多个视频，请先选择本次学习的视频；只关联同名字幕。</p>}</> : <><p>本地视频直接引用；下载记录会自动整理为工程并加载对应字幕，保留原文件。</p><label>视频路径<input aria-label="视频路径" autoFocus value={path} placeholder="F:\videos\课程.mp4" required onChange={e => setPath(e.target.value)} /></label><details><summary>从视频目录或剧集目录选择</summary><div className="folder-scan"><input aria-label="视频目录" value={folder} placeholder="目录完整路径" onChange={e => setFolder(e.target.value)}/><button type="button" disabled={busy || !folder} onClick={() => void execute(async () => setImportChoices((await api<{ videos: typeof importChoices }>('/imports/directory', 'POST', { path: folder })).videos))}>扫描目录</button></div></details></>}
-      {(importMode === 'file' || needsSelection) && !!importChoices.length && <div className="import-choices">{importChoices.map(choice => <button type="button" className={path === choice.path ? 'chosen' : ''} key={choice.path} title={choice.path} onClick={() => setPath(choice.path)}><Play size={13}/>{choice.title}</button>)}</div>}
-      <button className="primary" disabled={busy || (needsSelection && !path)}>{busy ? '正在读取…' : importMode === 'project' ? '打开工程并自动加载字幕' : '加入学习资料'}</button></form></div>}
+      {importMode === 'project' ? <><p>一个目录可放多个视频；字幕放在同目录或 subtitles 子目录。多个视频请使用对应名称，例如 lesson1.mp4、lesson1.en.srt、lesson1.zh-CN.srt。</p><label>工程目录<input disabled={busy} aria-label="工程目录" autoFocus value={folder} placeholder="F:\学习\课程目录" required onChange={e => { setFolder(e.target.value); setNeedsSelection(false); setImportPaths([]); }}/></label>{needsSelection && <><p className="warning">找到 {importChoices.length} 个视频，已选 {importPaths.length} 个。可全部导入或选择部分；每个视频只关联自己的同名字幕，进度和笔记分别保存。</p><div className="import-selection-actions"><button type="button" disabled={busy} onClick={() => setImportPaths(importChoices.map(c => c.path))}>全选</button><button type="button" disabled={busy} onClick={() => setImportPaths([])}>清空选择</button></div></>}</> : <><p>本地视频直接引用；下载记录会自动整理为工程并加载对应字幕，保留原文件。</p><label>视频路径<input aria-label="视频路径" autoFocus value={path} placeholder="F:\videos\课程.mp4" required onChange={e => setPath(e.target.value)} /></label><details><summary>从视频目录或剧集目录选择</summary><div className="folder-scan"><input aria-label="视频目录" value={folder} placeholder="目录完整路径" onChange={e => setFolder(e.target.value)}/><button type="button" disabled={busy || !folder} onClick={() => void execute(async () => setImportChoices((await api<{ videos: typeof importChoices }>('/imports/directory', 'POST', { path: folder })).videos))}>扫描目录</button></div></details></>}
+      {importMode === 'project' && needsSelection && <div className="import-choices">{importChoices.map(choice => <label className="import-video-choice" key={choice.path} title={choice.path}><input type="checkbox" disabled={busy} checked={importPaths.includes(choice.path)} onChange={e => { const checked = e.target.checked; setImportPaths(previous => checked ? [...previous, choice.path] : previous.filter(p => p !== choice.path)); }}/><span>{choice.title}</span></label>)}</div>}
+      {importMode === 'file' && !!importChoices.length && <div className="import-choices">{importChoices.map(choice => <button type="button" className={path === choice.path ? 'chosen' : ''} key={choice.path} title={choice.path} onClick={() => setPath(choice.path)}><Play size={13}/>{choice.title}</button>)}</div>}
+      <button className="primary" disabled={busy || (needsSelection && !importPaths.length)}>{busy ? '正在读取并导入…' : importMode === 'project' ? needsSelection ? `导入所选 ${importPaths.length} 个视频及字幕` : '打开工程并扫描视频' : '加入学习资料'}</button></form></div>}
   </div>;
 }
 createRoot(document.getElementById('root')!).render(<App />);

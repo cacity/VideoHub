@@ -93,12 +93,24 @@ class LearningService:
         }
         if project:
             video.update(project_root=project["root"], media_signature=project["media_signature"])
+            video["project_collection"] = project.get("collection", False)
             if not existing and project.get("id"):
                 video["id"] = project["id"]
         if existing and (existing.get("size"), existing.get("mtime_ns")) != (info["size"], info["mtime_ns"]):
             video.pop("preview", None)
         prepared = {}
         existing_tracks = self.store.tracks(video["id"]) if existing else {}
+        if project and existing and existing.get("project_root") != project["root"] and existing.get("project_root"):
+            old_root, new_root = Path(existing["project_root"]), Path(project["root"])
+            for key, track in existing_tracks.items():
+                moved = dict(track)
+                for field in ("path", "original_path"):
+                    previous_path = Path(track[field]) if track.get(field) else None
+                    if previous_path and previous_path.is_relative_to(old_root):
+                        candidate = new_root / previous_path.relative_to(old_root)
+                        if candidate.is_file():
+                            moved[field] = str(candidate)
+                prepared[key] = moved
         if tracks is not None and (
             not isinstance(tracks, list) or len(tracks) > 80 or any(not isinstance(t, dict) for t in tracks)
         ):
@@ -177,15 +189,18 @@ class LearningService:
         tracks = self.store.tracks(video_id)
         changed = {}
         for key, track in tracks.items():
+            fallback = self.store.root / "subtitles" / video_id
+            folder = Path(video["project_root"]) / "subtitles" / "learning_tracks" if video.get("project_root") else fallback
+            if video.get("project_collection"):
+                folder /= video_id
             if (
                 track.get("separate_file")
                 and f".{track['role']}." in Path(track["path"]).name
                 and Path(track["path"]).is_file()
+                and (not video.get("project_collection") or Path(track["path"]).parent in (folder, fallback))
             ):
                 continue
             original = track.get("original_path", track["path"])
-            fallback = self.store.root / "subtitles" / video_id
-            folder = Path(video["project_root"]) / "subtitles" / "learning_tracks" if video.get("project_root") else fallback
             name = Path(original).stem or "subtitles"
             try:
                 path = snapshot_track(track["cues"], folder, name, track["role"], track["language"])
@@ -249,7 +264,12 @@ class LearningService:
         video = self.store.video(video_id)
         folders = [self.store.root / "subtitles" / video_id]
         project_root = Path(video["project_root"]) if video.get("project_root") else None
-        return subtitle_candidates(video["path"], project_root=project_root, snapshot_folders=folders)
+        if project_root:
+            folders.append(project_root / "subtitles" / "learning_tracks" / video_id)
+        return subtitle_candidates(
+            video["path"], project_root=project_root, snapshot_folders=folders,
+            collection=video.get("project_collection", False),
+        )
 
     def media_path(self, video_id: str) -> Path:
         video = self.store.video(video_id)

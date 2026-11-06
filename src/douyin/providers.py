@@ -6,8 +6,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
+from time import monotonic
 from typing import Any, Dict, Iterable, Optional
 from urllib.parse import urljoin
 
@@ -15,6 +19,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from .config import DouyinConfig
+from .diagnostics import concise_error, concise_f2_logs, http_status, provider_label
 from .utils import DouyinUtils
 
 
@@ -31,6 +36,14 @@ def _first_url(values: Any) -> str:
             if result:
                 return result
     return ""
+
+
+def _all_urls(values: Any) -> list[str]:
+    if isinstance(values, str):
+        return [values.strip()] if values.strip() else []
+    if isinstance(values, Iterable) and not isinstance(values, (bytes, dict)):
+        return list(dict.fromkeys(url for value in values for url in _all_urls(value)))
+    return []
 
 
 def _run_async(coroutine):
@@ -106,14 +119,17 @@ class F2Provider:
 
     async def _fetch(self, url: str):
         handler_cls, aweme_id_fetcher, token_manager = self._load_f2()
-        aweme_id = await aweme_id_fetcher.get_aweme_id(url)
-        if not aweme_id:
-            raise DouyinProviderError("F2 未能从链接中提取作品 ID")
-        handler = handler_cls(self._build_kwargs(token_manager))
-        # F2 0.0.1.7 enables Bark globally by default, even when no Bark key is
-        # configured. VideoHub only needs metadata resolution here.
-        handler.enable_bark = False
-        return await handler.fetch_one_video(str(aweme_id))
+        # The provider chain reports a single scoped result. F2's internal
+        # retries/QA links should not look like a failed VideoHub download.
+        with concise_f2_logs(quiet=True):
+            aweme_id = await aweme_id_fetcher.get_aweme_id(url)
+            if not aweme_id:
+                raise DouyinProviderError("F2 未能从链接中提取作品 ID")
+            handler = handler_cls(self._build_kwargs(token_manager))
+            # F2 0.0.1.7 enables Bark globally by default, even when no Bark key is
+            # configured. VideoHub only needs metadata resolution here.
+            handler.enable_bark = False
+            return await handler.fetch_one_video(str(aweme_id))
 
     def get_video_info(self, url: str) -> Dict[str, Any]:
         try:
@@ -126,7 +142,7 @@ class F2Provider:
             raise
         except Exception as exc:
             raise DouyinProviderError(
-                f"F2 解析失败（{type(exc).__name__}: {exc}）"
+                f"F2 解析失败（{type(exc).__name__}: {concise_error(exc)}）"
             ) from exc
 
     @staticmethod
@@ -136,13 +152,12 @@ class F2Provider:
             raise DouyinProviderError("F2 响应中缺少 aweme_detail")
 
         video = detail.get("video") or {}
-        play_url = ""
+        play_urls = []
         for bit_rate in video.get("bit_rate") or []:
-            play_url = _first_url((bit_rate.get("play_addr") or {}).get("url_list"))
-            if play_url:
-                break
-        if not play_url:
-            play_url = _first_url((video.get("play_addr") or {}).get("url_list"))
+            play_urls.extend(_all_urls((bit_rate.get("play_addr") or {}).get("url_list")))
+        play_urls.extend(_all_urls((video.get("play_addr") or {}).get("url_list")))
+        play_urls = list(dict.fromkeys(play_urls))
+        play_url = play_urls[0] if play_urls else ""
 
         images = []
         for image in detail.get("images") or []:
@@ -183,6 +198,7 @@ class F2Provider:
             "video": {
                 "play_url": play_url,
                 "play_url_no_watermark": play_url,
+                "play_urls": play_urls,
                 "cover_url": _first_url((video.get("origin_cover") or video.get("cover") or {}).get("url_list")),
                 "duration": duration,
                 "width": video.get("width") or 0,
@@ -261,7 +277,7 @@ class DLPandaProvider:
             raise
         except Exception as exc:
             raise DouyinProviderError(
-                f"DLPanda 解析失败（{type(exc).__name__}: {exc}）"
+                f"DLPanda 解析失败（{type(exc).__name__}: {concise_error(exc)}）"
             ) from exc
 
     @classmethod
@@ -282,6 +298,11 @@ class DLPandaProvider:
             if source:
                 video_url = source.get("src") or ""
         video_url = urljoin(cls.base_url, video_url) if video_url else ""
+        play_urls = list(dict.fromkeys(
+            ([video_url] if video_url else []) + [
+                urljoin(cls.base_url, node["src"]) for node in result.select("video source[src]") if node["src"]
+            ]
+        ))
 
         image_urls = []
         for node in result.select("a[data-download-name], img[src]"):
@@ -334,6 +355,7 @@ class DLPandaProvider:
             "video": {
                 "play_url": video_url,
                 "play_url_no_watermark": video_url,
+                "play_urls": play_urls,
                 "cover_url": "",
                 "duration": 0,
                 "width": 0,
@@ -357,6 +379,10 @@ class DLPandaProvider:
 class DouyinProviderChain:
     """Try F2 first, then DLPanda, retaining useful failure details."""
 
+    F2_COOLDOWN_SECONDS = 15 * 60
+    _f2_blocked_until = {}
+    _f2_health_lock = Lock()
+
     def __init__(
         self,
         config: Optional[DouyinConfig] = None,
@@ -369,23 +395,56 @@ class DouyinProviderChain:
         ]
         self.last_errors: Dict[str, str] = {}
 
+    def _f2_key(self):
+        # Share health across downloaders, but retry immediately after a user
+        # changes authorization or network settings. Never retain raw secrets.
+        settings = {
+            "cookie": self.config.get_cookie() or "",
+            "proxies": self.config.get_proxies(),
+            "user_agent": self.config.get("user_agent"),
+        }
+        return hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
+
+    def _f2_pause_remaining(self):
+        with self._f2_health_lock:
+            return max(0, self._f2_blocked_until.get(self._f2_key(), 0) - monotonic())
+
+    def _pause_f2(self):
+        with self._f2_health_lock:
+            self._f2_blocked_until[self._f2_key()] = monotonic() + self.F2_COOLDOWN_SECONDS
+
     def get_video_info(self, url: str) -> Dict[str, Any]:
         self.last_errors = {}
-        for provider in self.providers:
+        for index, provider in enumerate(self.providers):
             name = getattr(provider, "name", provider.__class__.__name__)
+            label = provider_label(name)
+            next_source = "，继续尝试其他解析源" if index + 1 < len(self.providers) else ""
+            if name == "f2":
+                remaining = self._f2_pause_remaining()
+                if remaining:
+                    minutes = max(1, int((remaining + 59) // 60))
+                    message = f"此前请求返回 HTTP 403，暂跳过 F2（约 {minutes} 分钟后再试）"
+                    self.last_errors[name] = message
+                    print(f"[抖音解析] {message}{next_source}")
+                    continue
             try:
-                print(f"[抖音解析] 尝试 {name}...")
+                print(f"[抖音解析] 正在通过 {label} 获取媒体地址...")
                 info = provider.get_video_info(url)
                 if info:
                     info.setdefault("provider", name)
                     if self.last_errors:
                         info["provider_errors"] = self.last_errors.copy()
-                    print(f"[抖音解析] {name} 解析成功")
+                    print(f"[抖音解析] {label} 已获取媒体地址，可继续下载")
                     return info
+                self.last_errors[name] = "未返回有效作品信息"
             except Exception as exc:
-                message = str(exc) or type(exc).__name__
+                message = concise_error(exc)
                 self.last_errors[name] = message
-                print(f"[抖音解析] {name} 失败: {message}")
+                if name == "f2" and http_status(exc) == 403:
+                    self._pause_f2()
+                    print(f"[抖音解析] F2 请求被抖音拒绝（HTTP 403），暂停该来源 15 分钟{next_source}")
+                else:
+                    print(f"[抖音解析] {label} 未成功：{message}{next_source}")
 
         details = "；".join(f"{name}: {error}" for name, error in self.last_errors.items())
-        raise DouyinProviderError(f"F2 与 DLPanda 均解析失败。{details}")
+        raise DouyinProviderError(f"当前可用抖音解析源均未成功，尚未下载文件。{details}")

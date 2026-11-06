@@ -214,7 +214,15 @@ class DouyinUtils:
                 create_date=create_date
             )
             
-            return DouyinUtils.clean_filename(filename)
+            # A series may share the same title, and truncation must never
+            # discard its work ID (even when the template already contains it).
+            identity = str(aweme_id) if str(aweme_id).isdigit() else hashlib.sha256(
+                str(video_info.get('source_url') or video_info).encode('utf-8')
+            ).hexdigest()[:20]
+            suffix = f"_{identity}"
+            if filename.endswith(suffix):
+                filename = filename[:-len(suffix)]
+            return DouyinUtils.clean_filename(filename, 100 - len(suffix)) + suffix
         except Exception as e:
             logger.info(f"格式化文件名失败: {e}")
             return f"douyin_{int(time.time())}"

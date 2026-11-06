@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox,
     QCheckBox, QTabWidget, QFileDialog, QMessageBox, QProgressBar,
     QGroupBox, QRadioButton, QScrollArea, QSplitter, QSlider, QListWidget,
-    QListWidgetItem, QButtonGroup, QSpinBox, QStatusBar, QDialog,
+    QListWidgetItem, QSpinBox, QStatusBar, QDialog,
     QDialogButtonBox, QInputDialog, QMenu, QFontComboBox, QDoubleSpinBox,
     QFrame, QColorDialog
 )
@@ -117,11 +117,8 @@ def safe_douyin_utils():
     global DOUYIN_AVAILABLE, DouyinUtils
     
     try:
-        print(f"[安全调用] 检查状态 - DOUYIN_AVAILABLE: {DOUYIN_AVAILABLE}, DouyinUtils: {DouyinUtils}")
-        
         # 检查当前状态
         if DOUYIN_AVAILABLE and DouyinUtils is not None:
-            print("[安全调用] 使用现有的 DouyinUtils")
             return DouyinUtils
         
         # 尝试重新导入
@@ -984,7 +981,15 @@ class WorkerThread(QThread):
                     def progress_callback(message, progress):
                         self.update_signal.emit(f"[{progress}%] {message}")
 
-                    result = downloader.download_video(youtube_url, progress_callback=progress_callback)
+                    if enable_transcription or generate_article or generate_subtitles:
+                        from learning.downloads import download_douyin
+                        result = download_douyin(
+                            downloader, youtube_url, video_info=video_info, progress_callback=progress_callback,
+                        )
+                    else:
+                        result = downloader.download_video(
+                            youtube_url, video_info=video_info, progress_callback=progress_callback,
+                        )
 
                     if result.get("success"):
                         downloaded_files = result.get("downloaded_files", [])
@@ -1965,9 +1970,7 @@ class MainWindow(QMainWindow):
         
         # 创建各个选项卡
         youtube_tab = self.create_youtube_tab()
-        local_audio_tab = self.create_local_audio_tab()
-        local_video_tab = self.create_local_video_tab()
-        local_text_tab = self.create_local_text_tab()
+        local_files_tab = self.create_local_files_tab()
         batch_tab = self.create_batch_tab()
         idle_queue_tab = self.create_idle_queue_tab()
         history_tab = self.create_history_tab()
@@ -1986,11 +1989,9 @@ class MainWindow(QMainWindow):
             print(f"❌ AI中文配音标签页创建异常: {e}")
 
         tab_widget.addTab(youtube_tab, "在线视频")
-        tab_widget.addTab(local_audio_tab, "本地音频")
-        tab_widget.addTab(local_video_tab, "本地视频")
+        tab_widget.addTab(local_files_tab, "本地文件")
         tab_widget.addTab(self.create_learning_tab(), "视频学习")
         tab_widget.addTab(self.create_meeting_tab(), "会议翻译与录屏")
-        tab_widget.addTab(local_text_tab, "本地文本")
         tab_widget.addTab(batch_tab, "批量处理")
         tab_widget.addTab(idle_queue_tab, "闲时队列")
         tab_widget.addTab(history_tab, "下载历史")
@@ -2150,14 +2151,14 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         
         # 创建输入区域
-        input_group = QGroupBox("视频链接（支持YouTube、Twitter/X、Instagram、Pornhub等平台）")
+        input_group = QGroupBox("视频链接（支持YouTube、Twitter/X、Instagram等平台）")
         input_layout = QVBoxLayout(input_group)
         
         # 添加URL输入框
         url_layout = QHBoxLayout()
         url_label = QLabel("视频URL:")
         self.youtube_url_input = URLLineEdit()
-        self.youtube_url_input.setPlaceholderText("输入YouTube、Twitter/X、Instagram、Pornhub、抖音等视频链接或播放列表（右键可直接粘贴）...")
+        self.youtube_url_input.setPlaceholderText("输入YouTube、Twitter/X、Instagram、抖音等视频链接或播放列表（右键可直接粘贴）...")
         url_layout.addWidget(url_label)
         url_layout.addWidget(self.youtube_url_input)
         input_layout.addLayout(url_layout)
@@ -2313,363 +2314,86 @@ class MainWindow(QMainWindow):
         
         return tab
     
-    def create_local_audio_tab(self):
-        """创建本地音频选项卡"""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # 创建输入区域
-        input_group = QGroupBox("本地音频文件")
-        input_layout = QVBoxLayout(input_group)
-        
-        # 添加文件选择
-        file_layout = QHBoxLayout()
-        file_label = QLabel("音频文件:")
-        self.audio_path_input = QLineEdit()
-        self.audio_path_input.setPlaceholderText("选择本地音频文件...")
-        self.audio_browse_button = QPushButton("浏览...")
-        file_layout.addWidget(file_label)
-        file_layout.addWidget(self.audio_path_input)
-        file_layout.addWidget(self.audio_browse_button)
-        input_layout.addLayout(file_layout)
-        
-        # 添加处理选项
-        options_layout = QHBoxLayout()
-        
-        # 左侧选项
-        left_options = QVBoxLayout()
-        self.audio_generate_subtitles_checkbox = QCheckBox("生成字幕文件")
-        self.audio_translate_checkbox = QCheckBox("翻译字幕")
-        self.audio_translate_checkbox.setChecked(True)
-        
-        # 处理步骤选择
-        self.audio_enable_transcription_checkbox = QCheckBox("执行转录（音频转文字）")
-        self.audio_enable_transcription_checkbox.setChecked(True)  # 默认开启
-        self.audio_generate_article_checkbox = QCheckBox("生成文章摘要")
-        self.audio_generate_article_checkbox.setChecked(True)  # 默认开启
-        
-        # 按照正确的处理流程排序：执行转录 -> 生成字幕 -> 生成摘要
-        left_options.addWidget(self.audio_enable_transcription_checkbox)
-        left_options.addWidget(self.audio_generate_subtitles_checkbox)
-        left_options.addWidget(self.audio_translate_checkbox)
-        left_options.addWidget(self.audio_generate_article_checkbox)
-        left_options.addStretch()
-        
-        # 右侧选项
-        right_options = QVBoxLayout()
-        audio_model_layout = QHBoxLayout()
-        audio_model_label = QLabel("Whisper模型:")
-        self.audio_whisper_model_combo = QComboBox()
-        self.audio_whisper_model_combo.addItems(["tiny", "base", "small", "medium", "large"])
-        self.audio_whisper_model_combo.setCurrentText("small")
-        audio_model_layout.addWidget(audio_model_label)
-        audio_model_layout.addWidget(self.audio_whisper_model_combo)
+    def create_local_files_tab(self):
+        """Share one form and log while retaining existing task/queue formats."""
+        from src.gui.local_files import LocalFilesPanel
 
-        audio_target_lang_layout = QHBoxLayout()
-        audio_target_lang_label = QLabel("目标语言:")
-        self.audio_target_language_combo = self.create_translation_target_combo()
-        audio_target_lang_layout.addWidget(audio_target_lang_label)
-        audio_target_lang_layout.addWidget(self.audio_target_language_combo)
+        panel = LocalFilesPanel(self.create_translation_target_combo(), SONGS_DIR)
+        self.local_files_panel = panel
+        # Existing workers, completion handlers, and saved queue tasks keep
+        # their names; all three input types now use the same visible controls.
+        shared = {
+            "path_input": panel.path_input,
+            "output_text": panel.output_text,
+            "process_button": panel.process_button,
+            "stop_button": panel.stop_button,
+            "idle_button": panel.idle_button,
+        }
+        for prefix in ("audio", "video", "text"):
+            for name, control in shared.items():
+                setattr(self, f"{prefix}_{name}", control)
+        media = {
+            "generate_subtitles_checkbox": panel.subtitles_checkbox,
+            "translate_checkbox": panel.translate_checkbox,
+            "enable_transcription_checkbox": panel.transcription_checkbox,
+            "generate_article_checkbox": panel.summary_checkbox,
+            "whisper_model_combo": panel.whisper_combo,
+            "target_language_combo": panel.target_combo,
+        }
+        for prefix in ("audio", "video"):
+            for name, control in media.items():
+                setattr(self, f"{prefix}_{name}", control)
+        self.video_embed_subtitles_checkbox = panel.embed_checkbox
+        self.video_series_project_checkbox = panel.series_checkbox
+        self.video_source_language_combo = panel.source_combo
+        self.video_extract_audio_button = panel.extract_button
+        panel.process_requested.connect(lambda: self.run_local_file_action("process"))
+        panel.idle_requested.connect(lambda: self.run_local_file_action("idle"))
+        panel.extract_requested.connect(lambda: self.run_local_file_action("extract"))
+        panel.stop_requested.connect(self.stop_current_task)
+        panel.songs_requested.connect(lambda: self.open_directory("songs"))
+        return panel
 
-        right_options.addLayout(audio_model_layout)
-        right_options.addLayout(audio_target_lang_layout)
-        right_options.addStretch()
-        
-        options_layout.addLayout(left_options)
-        options_layout.addLayout(right_options)
-        input_layout.addLayout(options_layout)
-        
-        # 添加按钮
-        button_layout = QHBoxLayout()
-        self.audio_process_button = QPushButton("开始处理")
-        self.audio_process_button.setMinimumHeight(40)
-        self.audio_stop_button = QPushButton("中断操作")
-        self.audio_stop_button.setMinimumHeight(40)
-        self.audio_stop_button.setEnabled(False)
-        self.audio_idle_button = QPushButton("闲时操作")
-        self.audio_idle_button.setMinimumHeight(40)
-        button_layout.addWidget(self.audio_process_button)
-        button_layout.addWidget(self.audio_stop_button)
-        button_layout.addWidget(self.audio_idle_button)
-        input_layout.addLayout(button_layout)
-        
-        layout.addWidget(input_group)
-        
-        # 创建输出区域
-        output_group = QGroupBox("处理日志")
-        output_layout = QVBoxLayout(output_group)
-        self.audio_output_text = QTextEdit()
-        self.audio_output_text.setReadOnly(True)
-        output_layout.addWidget(self.audio_output_text)
-        
-        layout.addWidget(output_group)
-        
-        # 连接信号和槽
-        self.audio_process_button.clicked.connect(self.process_local_audio)
-        self.audio_stop_button.clicked.connect(self.stop_current_task)
-        self.audio_idle_button.clicked.connect(self.add_audio_to_idle_queue)
-        self.audio_browse_button.clicked.connect(self.browse_audio_file)
-        
-        return tab
-    
-    def create_local_video_tab(self):
-        """创建本地视频选项卡"""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # 创建输入区域
-        input_group = QGroupBox("本地视频文件")
-        input_layout = QVBoxLayout(input_group)
-        
-        # 添加处理模式选择
-        mode_layout = QHBoxLayout()
-        mode_label = QLabel("处理模式:")
-        self.video_mode_group = QButtonGroup()
-        self.video_single_mode_radio = QRadioButton("单个视频文件")
-        self.video_batch_mode_radio = QRadioButton("批量处理（目录）")
-        self.video_single_mode_radio.setChecked(True)  # 默认选择单个文件模式
-        
-        self.video_mode_group.addButton(self.video_single_mode_radio, 0)
-        self.video_mode_group.addButton(self.video_batch_mode_radio, 1)
-        
-        mode_layout.addWidget(mode_label)
-        mode_layout.addWidget(self.video_single_mode_radio)
-        mode_layout.addWidget(self.video_batch_mode_radio)
-        mode_layout.addStretch()
-        input_layout.addLayout(mode_layout)
-        
-        # 添加文件选择
-        file_layout = QHBoxLayout()
-        self.video_path_label = QLabel("视频文件:")
-        self.video_path_input = QLineEdit()
-        self.video_path_input.setPlaceholderText("选择本地视频文件...")
-        self.video_browse_button = QPushButton("浏览...")
-        file_layout.addWidget(self.video_path_label)
-        file_layout.addWidget(self.video_path_input)
-        file_layout.addWidget(self.video_browse_button)
-        input_layout.addLayout(file_layout)
-        
-        # 添加处理选项
-        options_layout = QHBoxLayout()
-        
-        # 左侧选项
-        left_options = QVBoxLayout()
-        self.video_generate_subtitles_checkbox = QCheckBox("生成字幕文件")
-        self.video_translate_checkbox = QCheckBox("翻译字幕")
-        self.video_translate_checkbox.setChecked(True)
-        self.video_embed_subtitles_checkbox = QCheckBox("将字幕嵌入到视频中")
-        self.video_series_project_checkbox = QCheckBox("剧集项目模式（输出保存在视频目录）")
-        self.video_series_project_checkbox.setChecked(True)
-        self.video_series_project_checkbox.setEnabled(False)
-        self.video_series_project_checkbox.setToolTip(
-            "目录批处理时，在视频目录内创建字幕、转录、摘要子目录和 videohub_project.json"
-        )
-        
-        # 处理步骤选择
-        self.video_enable_transcription_checkbox = QCheckBox("执行转录（音频转文字）")
-        self.video_enable_transcription_checkbox.setChecked(True)  # 默认开启
-        self.video_generate_article_checkbox = QCheckBox("生成文章摘要")
-        self.video_generate_article_checkbox.setChecked(True)  # 默认开启
-        
-        # 按照正确的处理流程排序：执行转录 -> 生成字幕 -> 嵌入视频 -> 生成摘要
-        left_options.addWidget(self.video_enable_transcription_checkbox)
-        left_options.addWidget(self.video_generate_subtitles_checkbox)
-        left_options.addWidget(self.video_translate_checkbox)
-        left_options.addWidget(self.video_embed_subtitles_checkbox)
-        left_options.addWidget(self.video_generate_article_checkbox)
-        left_options.addWidget(self.video_series_project_checkbox)
-        
-        # 右侧选项
-        right_options = QVBoxLayout()
-        video_model_layout = QHBoxLayout()
-        video_model_label = QLabel("Whisper模型:")
-        self.video_whisper_model_combo = QComboBox()
-        self.video_whisper_model_combo.addItems(["tiny", "base", "small", "medium", "large"])
-        self.video_whisper_model_combo.setCurrentText("small")
-        video_model_layout.addWidget(video_model_label)
-        video_model_layout.addWidget(self.video_whisper_model_combo)
-        
-        # 添加源语言选择
-        source_lang_layout = QHBoxLayout()
-        source_lang_label = QLabel("源语言:")
-        self.video_source_language_combo = QComboBox()
-        # 添加常见语言选项
-        language_options = [
-            ("自动检测", "auto"),
-            ("英语", "en"),
-            ("中文", "zh"),
-            ("日语", "ja"),
-            ("韩语", "ko"),
-            ("法语", "fr"),
-            ("德语", "de"),
-            ("西班牙语", "es"),
-            ("意大利语", "it"),
-            ("俄语", "ru"),
-            ("阿拉伯语", "ar"),
-            ("葡萄牙语", "pt"),
-            ("荷兰语", "nl"),
-            ("瑞典语", "sv"),
-            ("丹麦语", "da"),
-            ("挪威语", "no"),
-            ("芬兰语", "fi"),
-            ("波兰语", "pl"),
-            ("捷克语", "cs"),
-            ("匈牙利语", "hu"),
-            ("泰语", "th"),
-            ("越南语", "vi"),
-            ("印尼语", "id"),
-            ("马来语", "ms"),
-            ("希腊语", "el"),
-            ("土耳其语", "tr")
-        ]
-        for display_name, code in language_options:
-            self.video_source_language_combo.addItem(display_name, code)
-        self.video_source_language_combo.setCurrentText("自动检测")
-        source_lang_layout.addWidget(source_lang_label)
-        source_lang_layout.addWidget(self.video_source_language_combo)
-        
-        right_options.addLayout(video_model_layout)
-        right_options.addLayout(source_lang_layout)
-        video_target_lang_layout = QHBoxLayout()
-        video_target_lang_label = QLabel("目标语言:")
-        self.video_target_language_combo = self.create_translation_target_combo()
-        video_target_lang_layout.addWidget(video_target_lang_label)
-        video_target_lang_layout.addWidget(self.video_target_language_combo)
-        right_options.addLayout(video_target_lang_layout)
-        right_options.addStretch()
-        
-        options_layout.addLayout(left_options)
-        options_layout.addLayout(right_options)
-        input_layout.addLayout(options_layout)
-        
-        # 添加按钮
-        button_layout = QHBoxLayout()
-        self.video_process_button = QPushButton("开始处理")
-        self.video_process_button.setMinimumHeight(40)
-        self.video_stop_button = QPushButton("中断操作")
-        self.video_stop_button.setMinimumHeight(40)
-        self.video_stop_button.setEnabled(False)
-        self.video_idle_button = QPushButton("闲时操作")
-        self.video_idle_button.setMinimumHeight(40)
-        button_layout.addWidget(self.video_process_button)
-        button_layout.addWidget(self.video_stop_button)
-        button_layout.addWidget(self.video_idle_button)
-        input_layout.addLayout(button_layout)
+    def run_local_file_action(self, action):
+        panel = self.local_files_panel
+        worker = getattr(self, "worker_thread", None)
+        if panel.busy or (worker is not None and worker.isRunning()):
+            QMessageBox.warning(self, "正在处理", "请等待当前任务完成，或先中断当前操作")
+            return
+        try:
+            kind = panel.validate_input()
+        except ValueError as exc:
+            QMessageBox.warning(self, "输入错误", str(exc))
+            return
+        if action == "extract":
+            if kind not in {"video", "video_directory"}:
+                QMessageBox.warning(self, "输入错误", "音频提取需要选择视频文件或视频目录")
+                return
+            callback = self.extract_local_video_audio
+        elif action == "idle":
+            callback = {"video": self.add_video_to_idle_queue, "video_directory": self.add_video_to_idle_queue,
+                        "audio": self.add_audio_to_idle_queue, "text": self.add_text_to_idle_queue}[kind]
+        else:
+            callback = {"video": self.process_local_video, "video_directory": self.process_local_video,
+                        "audio": self.process_local_audio, "text": self.process_local_text}[kind]
+        callback()
+        active = getattr(self, "worker_thread", None)
+        if action != "idle" and active is not None and active is not worker:
+            panel.set_busy(True)
+            active.finished.connect(lambda: panel.set_busy(False))
 
-        extract_audio_group = QGroupBox("音频提取")
-        extract_audio_layout = QHBoxLayout(extract_audio_group)
-        self.video_extract_audio_label = QLabel(f"输出目录: {SONGS_DIR}")
-        self.video_extract_audio_button = QPushButton("提取音频到歌曲目录")
-        self.video_extract_audio_button.setMinimumHeight(36)
-        self.video_open_songs_dir_button = QPushButton("打开歌曲目录")
-        self.video_open_songs_dir_button.setMinimumHeight(36)
-        extract_audio_layout.addWidget(self.video_extract_audio_label)
-        extract_audio_layout.addStretch()
-        extract_audio_layout.addWidget(self.video_extract_audio_button)
-        extract_audio_layout.addWidget(self.video_open_songs_dir_button)
-        input_layout.addWidget(extract_audio_group)
-
-        layout.addWidget(input_group)
-
-        # 创建输出区域
-        output_group = QGroupBox("处理日志")
-        output_layout = QVBoxLayout(output_group)
-        self.video_output_text = QTextEdit()
-        self.video_output_text.setReadOnly(True)
-        output_layout.addWidget(self.video_output_text)
-        
-        layout.addWidget(output_group)
-        
-        # 连接信号和槽
-        self.video_process_button.clicked.connect(self.process_local_video)
-        self.video_stop_button.clicked.connect(self.stop_current_task)
-        self.video_idle_button.clicked.connect(self.add_video_to_idle_queue)
-        self.video_browse_button.clicked.connect(self.browse_video_path)
-        self.video_mode_group.buttonClicked.connect(self.on_video_mode_changed)
-        self.video_extract_audio_button.clicked.connect(self.extract_local_video_audio)
-        self.video_open_songs_dir_button.clicked.connect(lambda: self.open_directory("songs"))
-
-        return tab
-    
-    def create_local_text_tab(self):
-        """创建本地文本选项卡"""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # 创建输入区域
-        input_group = QGroupBox("本地文本文件")
-        input_layout = QVBoxLayout(input_group)
-        
-        # 添加文件选择
-        file_layout = QHBoxLayout()
-        file_label = QLabel("文本文件:")
-        self.text_path_input = QLineEdit()
-        self.text_path_input.setPlaceholderText("选择本地文本文件...")
-        self.text_browse_button = QPushButton("浏览...")
-        file_layout.addWidget(file_label)
-        file_layout.addWidget(self.text_path_input)
-        file_layout.addWidget(self.text_browse_button)
-        input_layout.addLayout(file_layout)
-        
-        # 添加处理选项
-        options_layout = QHBoxLayout()
-        
-        # 模型选择
-        model_layout = QHBoxLayout()
-        model_label = QLabel("使用模型:")
-        self.text_model_input = QLineEdit()
-        self.text_model_input.setPlaceholderText("留空使用默认模型")
-        model_layout.addWidget(model_label)
-        model_layout.addWidget(self.text_model_input)
-        
-        options_layout.addLayout(model_layout)
-        input_layout.addLayout(options_layout)
-        
-        # 添加按钮
-        button_layout = QHBoxLayout()
-        self.text_process_button = QPushButton("开始处理")
-        self.text_process_button.setMinimumHeight(40)
-        self.text_stop_button = QPushButton("中断操作")
-        self.text_stop_button.setMinimumHeight(40)
-        self.text_stop_button.setEnabled(False)
-        self.text_idle_button = QPushButton("闲时操作")
-        self.text_idle_button.setMinimumHeight(40)
-        button_layout.addWidget(self.text_process_button)
-        button_layout.addWidget(self.text_stop_button)
-        button_layout.addWidget(self.text_idle_button)
-        input_layout.addLayout(button_layout)
-        
-        layout.addWidget(input_group)
-        
-        # 创建输出区域
-        output_group = QGroupBox("处理日志")
-        output_layout = QVBoxLayout(output_group)
-        self.text_output_text = QTextEdit()
-        self.text_output_text.setReadOnly(True)
-        output_layout.addWidget(self.text_output_text)
-        
-        layout.addWidget(output_group)
-        
-        # 连接信号和槽
-        self.text_process_button.clicked.connect(self.process_local_text)
-        self.text_stop_button.clicked.connect(self.stop_current_task)
-        self.text_idle_button.clicked.connect(self.add_text_to_idle_queue)
-        self.text_browse_button.clicked.connect(self.browse_text_file)
-        
-        return tab
-    
     def create_batch_tab(self):
         """创建批量处理选项卡"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
         
         # 创建输入区域
-        input_group = QGroupBox("批量处理视频（支持YouTube、Twitter/X、Instagram、Pornhub等平台）")
+        input_group = QGroupBox("批量处理视频（支持YouTube、Twitter/X、Instagram等平台）")
         input_layout = QVBoxLayout(input_group)
         
         # 添加URL输入框
         self.batch_urls_text = URLTextEdit()
-        self.batch_urls_text.setPlaceholderText("输入多个视频链接，每行一个，支持YouTube、Twitter/X、Instagram、Pornhub等（右键可直接粘贴）...")
+        self.batch_urls_text.setPlaceholderText("输入多个视频链接，每行一个，支持YouTube、Twitter/X、Instagram等（右键可直接粘贴）...")
         input_layout.addWidget(self.batch_urls_text)
         
         # 添加文件选择
@@ -3170,7 +2894,7 @@ class MainWindow(QMainWindow):
 
         url_label = QLabel("视频链接:")
         self.dubbing_url_input = URLLineEdit()
-        self.dubbing_url_input.setPlaceholderText("粘贴视频链接，例如 YouTube、Twitter/X、Instagram、Pornhub 等...")
+        self.dubbing_url_input.setPlaceholderText("粘贴视频链接，例如 YouTube、Twitter/X、Instagram 等...")
 
         url_layout.addWidget(url_label)
         url_layout.addWidget(self.dubbing_url_input)
@@ -5209,7 +4933,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, 
                 "输入错误", 
-                "请输入视频链接（支持YouTube、Twitter/X、Instagram、Pornhub、抖音等平台）\n\n提示：如果您已经输入了链接但仍看到此错误，请尝试：\n1. 重新粘贴链接\n2. 手动输入链接\n3. 检查链接是否完整"
+                "请输入视频链接（支持YouTube、Twitter/X、Instagram、抖音等平台）\n\n提示：如果您已经输入了链接但仍看到此错误，请尝试：\n1. 重新粘贴链接\n2. 手动输入链接\n3. 检查链接是否完整"
             )
             # 将焦点设置回输入框
             self.youtube_url_input.setFocus()
@@ -5355,7 +5079,7 @@ class MainWindow(QMainWindow):
         """处理本地视频文件"""
         video_path = self.video_path_input.text().strip()
         if not video_path or not os.path.exists(video_path):
-            if self.video_single_mode_radio.isChecked():
+            if not self.local_files_panel.is_video_directory():
                 QMessageBox.warning(self, "输入错误", "请选择有效的本地视频文件")
             else:
                 QMessageBox.warning(self, "输入错误", "请选择有效的包含视频文件的目录")
@@ -5386,7 +5110,7 @@ class MainWindow(QMainWindow):
             "generate_article": self.video_generate_article_checkbox.isChecked(),
             "source_language": self.video_source_language_combo.currentData(),  # 获取选择的源语言代码
             "series_project": (
-                self.video_batch_mode_radio.isChecked()
+                self.local_files_panel.is_video_directory()
                 and self.video_series_project_checkbox.isChecked()
             ),
         }
@@ -5405,7 +5129,7 @@ class MainWindow(QMainWindow):
         self.video_stop_button.setEnabled(True)
         
         # 创建并启动工作线程
-        task_type = "local_video_batch" if self.video_batch_mode_radio.isChecked() else "local_video"
+        task_type = "local_video_batch" if self.local_files_panel.is_video_directory() else "local_video"
         self.worker_thread = WorkerThread(task_type, params)
         self.worker_thread.update_signal.connect(self.update_video_output)
         self.worker_thread.finished_signal.connect(self.on_video_finished)
@@ -5415,7 +5139,7 @@ class MainWindow(QMainWindow):
         """从本地视频文件或目录提取音频到歌曲目录"""
         video_path = self.video_path_input.text().strip()
         if not video_path or not os.path.exists(video_path):
-            if self.video_single_mode_radio.isChecked():
+            if not self.local_files_panel.is_video_directory():
                 QMessageBox.warning(self, "输入错误", "请选择有效的本地视频文件")
             else:
                 QMessageBox.warning(self, "输入错误", "请选择有效的包含视频文件的目录")
@@ -5434,7 +5158,7 @@ class MainWindow(QMainWindow):
         params = {
             "input_path": video_path,
             "output_dir": SONGS_DIR,
-            "recursive": self.video_batch_mode_radio.isChecked(),
+            "recursive": self.local_files_panel.is_video_directory(),
         }
 
         self.worker_thread = WorkerThread("extract_audio", params)
@@ -5474,7 +5198,7 @@ class MainWindow(QMainWindow):
                 return
 
             # 检查是否为批量处理模式
-            is_batch_mode = hasattr(self, 'video_batch_mode_radio') and self.video_batch_mode_radio.isChecked()
+            is_batch_mode = self.local_files_panel.is_video_directory()
             
             if is_batch_mode:
                 # 批量处理完成
@@ -7076,38 +6800,6 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
         if file_path:
             self.video_path_input.setText(file_path)
     
-    def browse_video_path(self):
-        """浏览视频文件或目录（根据选择的模式）"""
-        if self.video_single_mode_radio.isChecked():
-            # 单个文件模式
-            file_path, _ = QFileDialog.getOpenFileName(
-                self, "选择视频文件", "", 
-                "视频文件 (*.mp4 *.avi *.mkv *.mov *.wmv *.flv *.webm *.m4v *.3gp *.mpg *.mpeg);;所有文件 (*.*)"
-            )
-            if file_path:
-                self.video_path_input.setText(file_path)
-        else:
-            # 目录模式
-            dir_path = QFileDialog.getExistingDirectory(
-                self, "选择包含视频文件的目录"
-            )
-            if dir_path:
-                self.video_path_input.setText(dir_path)
-    
-    def on_video_mode_changed(self):
-        """当视频处理模式改变时更新UI"""
-        if self.video_single_mode_radio.isChecked():
-            self.video_path_label.setText("视频文件:")
-            self.video_path_input.setPlaceholderText("选择本地视频文件...")
-            self.video_series_project_checkbox.setEnabled(False)
-        else:
-            self.video_path_label.setText("视频目录:")
-            self.video_path_input.setPlaceholderText("选择包含视频文件的目录...")
-            self.video_series_project_checkbox.setEnabled(True)
-        
-        # 清空当前路径
-        self.video_path_input.clear()
-    
     def browse_text_file(self):
         """浏览文本文件"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -7174,7 +6866,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             youtube_url = self.youtube_url_input.text().strip()
             
             if not youtube_url:
-                QMessageBox.warning(self, "输入错误", "请输入视频链接（支持YouTube、Twitter/X、Instagram、Pornhub、抖音等平台）")
+                QMessageBox.warning(self, "输入错误", "请输入视频链接（支持YouTube、Twitter/X、Instagram、抖音等平台）")
                 restore_button_state()
                 return
             
@@ -8957,7 +8649,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             return
         
         # 创建任务参数
-        task_type = "local_video_batch" if self.video_batch_mode_radio.isChecked() else "local_video"
+        task_type = "local_video_batch" if self.local_files_panel.is_video_directory() else "local_video"
         model, base_url = self.get_model_and_base_url()
 
         task = {
@@ -8981,7 +8673,7 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                 "generate_article": generate_article,
                 "source_language": self.video_source_language_combo.currentData(),
                 "series_project": (
-                    self.video_batch_mode_radio.isChecked()
+                    self.local_files_panel.is_video_directory()
                     and self.video_series_project_checkbox.isChecked()
                 ),
             },
@@ -9687,11 +9379,15 @@ class DouyinDownloadThread(QThread):
                     self.progress_signal.emit(progress, message)
             
             # 下载视频
-            result = downloader.download_video(
-                self.url,
-                progress_callback=progress_callback,
-                video_info=self.video_info,
-            )
+            if self.config.get("enable_transcription", True) or self.config.get("generate_article", True):
+                from learning.downloads import download_douyin
+                result = download_douyin(
+                    downloader, self.url, video_info=self.video_info, progress_callback=progress_callback,
+                )
+            else:
+                result = downloader.download_video(
+                    self.url, progress_callback=progress_callback, video_info=self.video_info,
+                )
             
             if self.stopped:
                 return

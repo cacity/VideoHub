@@ -120,7 +120,10 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     @app.post("/api/learning/imports/project")
     def project_import():
         data = body()
-        return jsonify(import_project(service, str(data.get("directory", "")), str(data.get("video_path", ""))))
+        return jsonify(import_project(
+            service, str(data.get("directory", "")), str(data.get("video_path", "")),
+            video_paths=data.get("video_paths"), import_all=data.get("import_all", False),
+        ))
 
     @app.post("/api/learning/videos")
     def register():
@@ -178,6 +181,13 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     def study(video_id):
         video = service.detail(video_id)
         jobs = service.store.video_jobs(video_id)
+        failed_answers = {j["answer_id"]: j for j in jobs if j.get("answer_id") and j["status"] == "failed"}
+        messages = service.store.list_items("messages", video_id)
+        messages = [
+            {**m, "error": failed_answers[m["id"]]["message"]}
+            if m.get("status") == "failed" and not m.get("error") and m["id"] in failed_answers else m
+            for m in messages
+        ]
         outline = next(
             (
                 j["result"]["outline"]
@@ -189,11 +199,12 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
             [],
         )
         return jsonify(
-            messages=service.store.list_items("messages", video_id),
+            messages=messages,
             notes=service.store.list_items("notes", video_id),
             outline=outline,
             mindmap=service.store.cache(latest_key(video)),
             active_job=next((j for j in jobs if j["status"] in {"queued", "running", "cancelling"}), None),
+            latest_job=next((j for j in jobs if j.get("subtitle_version", video["subtitle_version"]) == video["subtitle_version"]), None),
         )
 
     @app.get("/api/learning/videos/<video_id>/notes")
@@ -226,6 +237,10 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     @app.post("/api/learning/videos/<video_id>/chat")
     def chat(video_id):
         return jsonify(assistant.start_chat(video_id, body())), 202
+
+    @app.post("/api/learning/videos/<video_id>/messages/<message_id>/retry")
+    def retry_chat(video_id, message_id):
+        return jsonify(assistant.retry_chat(video_id, message_id, body())), 202
 
     @app.get("/api/learning/videos/<video_id>/mindmap/export")
     def export_mindmap(video_id):

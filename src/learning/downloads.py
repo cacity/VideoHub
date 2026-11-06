@@ -22,6 +22,10 @@ def project_directory(url: str, base: Path | None = None) -> Path:
     key = parse_qs(parsed.query).get("v", [""])[0]
     if parsed.hostname in {"youtu.be", "www.youtu.be"}:
         key = parsed.path.strip("/").split("/")[0]
+    if parsed.hostname in {"douyin.com", "www.douyin.com", "www.iesdouyin.com", "iesdouyin.com"}:
+        match = re.search(r"/(?:share/)?video/(\d+)", parsed.path)
+        if match:
+            key = "douyin_" + match[1]
     if not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", key):
         key = hashlib.sha256(url.encode()).hexdigest()[:20]
     if base is None:
@@ -31,6 +35,36 @@ def project_directory(url: str, base: Path | None = None) -> Path:
             from paths_config import LEARNING_PROJECTS_DIR
         base = Path(LEARNING_PROJECTS_DIR)
     return base / key
+
+
+def download_douyin(downloader, url: str, *, video_info=None, progress_callback=None) -> dict:
+    """Download processed Douyin media directly into its learning project."""
+    info = video_info or downloader.get_video_info(url)
+    if not info:
+        return {"success": False, "error": downloader.last_error or "无法获取抖音视频信息"}
+    work_id = str(info.get("aweme_id", ""))
+    canonical_url = f"https://www.douyin.com/video/{work_id}" if work_id.isdigit() else url
+    root = project_directory(canonical_url)
+    root.mkdir(parents=True, exist_ok=True)
+    if progress_callback:
+        progress_callback(f"视频学习工程: {root}", 5)
+    result = downloader.download_video(
+        url, video_info=info, progress_callback=progress_callback, download_dir=str(root),
+    )
+    if result.get("success"):
+        for entry in result.get("downloaded_files", []):
+            if entry.get("type") != "video":
+                continue
+            video = bundle_download(Path(entry["path"]), root, url, info.get("desc", ""))
+            result["project_root"] = str(root)
+            try:
+                from ..youtube_transcriber import log_downloaded_video
+            except ImportError:
+                from youtube_transcriber import log_downloaded_video
+            log_downloaded_video(url, str(video), {
+                "id": work_id, "title": info.get("desc", ""), "duration": info.get("duration", 0),
+            })
+    return result
 
 
 def copy_asset(source: Path, destination: Path) -> Path:
@@ -106,9 +140,9 @@ def update_history(url: str, video: Path, repo: Path = REPO_ROOT):
 def import_download(service, path: str, title: str = "", source_url: str = "") -> dict | None:
     source = Path(path.strip().strip('"')).expanduser().resolve()
     if (source.parent / MANIFEST).is_file():
-        project = inspect_project(str(source.parent))
+        project = inspect_project(str(source.parent), str(source))
         if Path(project["path"]) == source:
-            return import_project(service, str(source.parent))["video"]
+            return import_project(service, str(source.parent), str(source))["video"]
     item = next((r for r in recent_downloads() if Path(r["path"]).resolve() == source), None)
     if not item:
         return None

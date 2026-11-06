@@ -15,8 +15,13 @@ import requests
 from paths_config import DOUYIN_DOWNLOADS_DIR
 
 from .config import DouyinConfig
+from .diagnostics import concise_error, http_status
 from .providers import DouyinProviderChain, DouyinProviderError
 from .utils import DouyinUtils
+
+
+class MediaAddressError(DouyinProviderError):
+    """A media address can be refreshed, without retrying local file errors."""
 
 
 class DouyinVdExtractor:
@@ -49,7 +54,7 @@ class DouyinVdExtractor:
             self.last_error = ""
             return info
         except Exception as exc:
-            self.last_error = str(exc)
+            self.last_error = concise_error(exc)
             print(f"获取视频信息异常: {self.last_error}")
             return None
 
@@ -112,11 +117,16 @@ class DouyinVdExtractor:
                 timeout=max(self.config.get("timeout", 30), 60),
                 allow_redirects=True,
             ) as response:
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except requests.HTTPError as exc:
+                    if http_status(exc) in {401, 403, 404, 410}:
+                        raise MediaAddressError(concise_error(exc)) from exc
+                    raise
                 total_size = int(response.headers.get("Content-Length", 0) or 0)
                 content_type = (response.headers.get("Content-Type") or "").lower()
                 if "text/html" in content_type:
-                    raise DouyinProviderError("媒体地址返回了 HTML 页面，链接可能已过期")
+                    raise MediaAddressError("媒体地址返回了 HTML 页面，链接可能已过期")
 
                 downloaded = 0
                 first_chunk = True
@@ -130,7 +140,7 @@ class DouyinVdExtractor:
                             first_chunk = False
                             prefix = chunk[:64].lstrip().lower()
                             if prefix.startswith(b"<html") or prefix.startswith(b"<!doctype html"):
-                                raise DouyinProviderError("媒体地址返回了网页而不是媒体文件")
+                                raise MediaAddressError("媒体地址返回了网页而不是媒体文件")
                         handle.write(chunk)
                         downloaded += len(chunk)
                         if progress_callback and total_size:
@@ -140,6 +150,9 @@ class DouyinVdExtractor:
 
             if not part_path.exists() or part_path.stat().st_size == 0:
                 raise DouyinProviderError("下载结果为空")
+            encoding = (response.headers.get("Content-Encoding") or "").lower()
+            if total_size and encoding in {"", "identity"} and downloaded != total_size:
+                raise DouyinProviderError("下载文件不完整，请重新下载")
             part_path.replace(output_path)
             return output_path
         except Exception:
@@ -155,11 +168,41 @@ class DouyinVdExtractor:
         video_info: Optional[Dict[str, Any]] = None,
         progress_callback: Optional[Callable] = None,
     ) -> Dict[str, Any]:
-        try:
-            info = video_info or self.get_video_info(douyin_url)
-            if not info:
-                return {"success": False, "error": self.last_error or "无法获取视频信息"}
+        info = video_info or self.get_video_info(douyin_url)
+        if not info:
+            return {"success": False, "error": self.last_error or "无法获取视频信息"}
+        for attempt in range(2):
+            try:
+                result = self._download_video_once(douyin_url, download_dir, save_metadata, info, progress_callback)
+                if result.get("success"):
+                    self.last_error = ""
+                return result
+            except MediaAddressError as exc:
+                if attempt:
+                    self.last_error = f"视频地址刷新后仍不可用（{concise_error(exc)}）；请稍后重试或检查抖音访问状态"
+                    break
+                message = f"视频地址不可用（{concise_error(exc)}），正在重新解析并重试一次..."
+                print(message)
+                if progress_callback:
+                    progress_callback(message, 10)
+                refreshed = self.get_video_info(douyin_url)
+                if not refreshed:
+                    self.last_error = "视频地址不可用，重新解析失败：" + (self.last_error or "未获取到新地址")
+                    break
+                previous_id = str(info.get("aweme_id") or "unknown")
+                if previous_id != "unknown" and str(refreshed.get("aweme_id")) != previous_id:
+                    self.last_error = "重新解析返回了其他作品，已停止下载，请检查链接"
+                    break
+                info = refreshed
+        print(f"下载视频失败: {self.last_error}")
+        return {"success": False, "error": self.last_error}
 
+    def _download_video_once(
+        self, douyin_url: str, download_dir: str, save_metadata: bool,
+        video_info: Dict[str, Any], progress_callback: Optional[Callable],
+    ) -> Dict[str, Any]:
+        try:
+            info = video_info
             provider = info.get("provider", "unknown")
             base_filename = DouyinUtils.format_filename(
                 self.config.get("filename_template"), info
@@ -171,14 +214,22 @@ class DouyinVdExtractor:
             video_url = self.get_video_url(douyin_url, info)
             images = info.get("images") or []
             if video_url:
-                video_path = self._download_media(
-                    video_url,
-                    output_dir / f"{base_filename}_no_watermark.mp4",
-                    provider,
-                    progress_callback,
-                    15,
-                    85,
-                )
+                destination = output_dir / f"{base_filename}_no_watermark.mp4"
+                reused = destination.is_file() and destination.stat().st_size > 0
+                alternatives = (info.get("video") or {}).get("play_urls") or []
+                urls = list(dict.fromkeys([video_url] + alternatives))[:6]
+                for index, address in enumerate(urls):
+                    try:
+                        video_path = self._download_media(
+                            address, destination,
+                            provider, progress_callback, 15, 85,
+                        )
+                        break
+                    except MediaAddressError:
+                        if index == len(urls) - 1:
+                            raise
+                        if progress_callback:
+                            progress_callback("当前媒体地址不可用，尝试备用地址...", 15)
                 files["video"].append(str(video_path))
                 downloaded_files.append(
                     {
@@ -186,6 +237,7 @@ class DouyinVdExtractor:
                         "path": str(video_path),
                         "size": video_path.stat().st_size,
                         "is_no_watermark": True,
+                        "reused": reused,
                     }
                 )
             elif images:
@@ -226,7 +278,7 @@ class DouyinVdExtractor:
                         {"type": "cover", "path": str(cover_path), "size": cover_path.stat().st_size}
                     )
                 except Exception as exc:
-                    print(f"封面下载失败，已跳过: {exc}")
+                    print(f"封面下载失败，已跳过: {concise_error(exc)}")
 
             music_url = (info.get("music") or {}).get("play_url")
             if self.config.get("download_music", False) and music_url:
@@ -244,7 +296,7 @@ class DouyinVdExtractor:
                         {"type": "music", "path": str(music_path), "size": music_path.stat().st_size}
                     )
                 except Exception as exc:
-                    print(f"原声下载失败，已跳过: {exc}")
+                    print(f"原声下载失败，已跳过: {concise_error(exc)}")
 
             if save_metadata:
                 metadata_path = output_dir / f"{base_filename}_metadata.json"
@@ -261,7 +313,7 @@ class DouyinVdExtractor:
                 )
 
             if progress_callback:
-                progress_callback(f"下载完成（解析源：{provider}）", 100)
+                progress_callback(f"媒体文件已就绪（解析源：{provider}）", 100)
             return {
                 "success": True,
                 "provider": provider,
@@ -270,8 +322,10 @@ class DouyinVdExtractor:
                 "files": files,
                 "errors": [],
             }
+        except MediaAddressError:
+            raise
         except Exception as exc:
-            self.last_error = str(exc)
+            self.last_error = concise_error(exc)
             print(f"下载视频失败: {self.last_error}")
             return {"success": False, "error": self.last_error}
 

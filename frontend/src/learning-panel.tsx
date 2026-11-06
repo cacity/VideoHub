@@ -38,7 +38,10 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
   const reload = async () => {
     const id = video.id;
     const value = await api<Study>('/videos/' + id + '/study');
-    if (currentId.current === id) { setStudy(value); if (value.active_job) setJob(value.active_job); }
+    if (currentId.current === id) {
+      setStudy(value);
+      if (value.active_job || value.latest_job) setJob(value.active_job || value.latest_job || null);
+    }
   };
   useEffect(() => { setStudy({ messages: [], notes: [], outline: [], active_job: null }); setJob(null); setQuestion(''); void reload().catch(e => report(e.message)); }, [video.id, video.subtitle_version]);
   useEffect(() => {
@@ -63,7 +66,7 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
     return () => { disposed = true; stream.close(); if (fallback) clearInterval(fallback); };
   }, [job?.id]);
   useEffect(() => { const box = tail.current?.parentElement; if (box) box.scrollTop = box.scrollHeight; }, [study.messages.length, job?.text]);
-  const start = async (kind: string, text = question, force = false) => {
+  const start = async (kind: string, text = question, force = false, retryMessageId = '') => {
     if (pendingSubmission.current || activeJob(job)) return;
     pendingSubmission.current = true;
     setSubmissionError(''); report('');
@@ -71,10 +74,12 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
     try {
       const data = { provider, model, kind, force, source_hash: kind === 'translation' ? video.tracks.source?.hash : undefined, whisper_model: whisperModel, question: text, time: position, scope,
         cue_ids: selected ? [selected.id] : [], search, search_provider: searchProvider, search_query: searchQuery };
-      const value = kind === 'chat' ? await sendChat(video.id, data) : await api<Job>('/videos/' + video.id + '/prepare', 'POST', data);
+      const value = kind === 'chat'
+        ? retryMessageId ? await api<Job>('/videos/' + video.id + '/messages/' + retryMessageId + '/retry', 'POST', { provider, model }) : await sendChat(video.id, data)
+        : await api<Job>('/videos/' + video.id + '/prepare', 'POST', data);
       setJob(value);
       if (kind === 'chat') {
-        setQuestion('');
+        if (!retryMessageId) setQuestion('');
         await reload().catch(() => setSubmissionError('问题已提交，暂时无法刷新历史记录；请查看任务进度，无需重复发送。'));
       } else if (!activeJob(value)) {
         // Cached jobs can finish before the POST returns, so no SSE will open.
@@ -103,7 +108,9 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
   const answer = (message: Message) => <article key={message.id} className={'message ' + message.role}>
     <div className="message-label">{message.role === 'user' ? '你' : '学习助教'}<small>{time(message.time)}{message.model && ' · ' + message.model}</small></div>
     <div className="message-text"><GroundedText text={message.text} citations={message.citations || []} sources={message.sources || []} seek={seek}/></div>
-    {message.status !== 'finished' && <p className="warning">{message.status === 'cancelled' ? '已停止，回复不完整' : '回复未完成'}</p>}
+    {message.status !== 'finished' && <p className="warning">{message.status === 'cancelled' ? '已停止，回复不完整' : message.status === 'failed' ? '回复失败' : '正在准备回复…'}</p>}
+    {message.error && <p className="message-error" role="alert">{message.error}</p>}
+    {message.role === 'assistant' && ['failed', 'cancelled'].includes(message.status) && message.subtitle_version === video.subtitle_version && <button className="retry-answer" disabled={working} title="使用上方所选模型，按原问题的时间、选句与联网设置重试；保留失败记录" onClick={() => void start('chat', '', false, message.id)}>重试回答</button>}
     {message.subtitle_version !== video.subtitle_version && <p className="warning">字幕已更新，此回答基于旧版字幕。</p>}
     <div className="citation-list">{message.citations?.map(c => <button title={c.text} key={c.id} onClick={() => seek(c.start)}><PlayCitation/>{time(c.start)}—{time(c.end)}</button>)}</div>
     {message.sources?.map(s => <a className="web-source" href={s.url} key={s.id} target="_blank" rel="noopener noreferrer"><Globe size={13}/>{s.title}<small>{s.level}</small></a>)}
@@ -126,7 +133,7 @@ export function LearningPanel({ video, position, selected, providers, seek, refr
       <button className="primary" disabled={working || !video.has_source || !providers[provider]?.configured} onClick={() => void start('translation')}>{working ? '任务进行中…' : '开始翻译为中文'}</button>
       {submissionError && <p className="warning" role="alert">{submissionError}</p>}
     </section>}
-    {job && <div className={'job-card ' + job.status}><div><Sparkles size={14}/><span>{job.message}</span>{activeJob(job) && <button onClick={() => void stop()}><Square size={11}/>停止</button>}</div><progress max="100" value={job.progress}/>{job.warnings?.map(w => <p className="warning" key={w}>{w}</p>)}</div>}
+    {job && <div className={'job-card ' + job.status} role={job.status === 'failed' ? 'alert' : 'status'}><div><Sparkles size={14}/><span>{job.message}</span>{activeJob(job) && <button onClick={() => void stop()}><Square size={11}/>停止</button>}</div><progress max="100" value={job.progress}/>{job.warnings?.map(w => <p className="warning" key={w}>{w}</p>)}{['failed', 'cancelled'].includes(job.status) && ['mindmap', 'analysis'].includes(job.kind) && <button disabled={working} onClick={() => void start(job.kind, '', job.kind === 'mindmap' && !!study.mindmap)}>{job.kind === 'mindmap' ? '重试脑图' : '重试大纲'}</button>}</div>}
     {tab !== 'chat' && submissionError && <p className="panel-submission-error" role="alert">{submissionError}</p>}
     {tab === 'chat' && <><div className="messages">{!study.messages.length && !job?.text && <div className="chat-welcome"><div className="assistant-symbol"><Sparkles size={22}/></div><h3>不明白的地方，随时问</h3><p>助教会结合当前字幕与视频结构回答，<br/>引用可以直接回到原片。</p><div className="quick-prompts">{['这里是什么意思？','用一个例子解释当前概念','梳理视频的主要观点'].map(q => <button disabled={working} key={q} onClick={() => void start('chat', q)}>{q}<ChevronRight size={14}/></button>)}</div></div>}
       {study.messages.map(answer)}

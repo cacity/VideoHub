@@ -51,7 +51,9 @@ def learning_url(path: str = "", directory: str = "") -> str:
         if not result.ok:
             raise ValueError(data.get("error", "导入学习资料失败"))
         if directory:
-            if data.get("needs_selection"):
-                raise ValueError("目录中有多个视频，请在网页“导入视频 → 视频工程”中选择本次学习的视频")
+            if data.get("errors") or data.get("needs_selection"):
+                # Multi-video selection happens in the browser rather than
+                # blocking the desktop window on a large batch.
+                return BASE_URL + "/learn?" + urlencode({"directory": directory, "launch": launch})
             data = data["video"]
         return BASE_URL + "/learn?" + urlencode({"video": data["id"], "launch": launch})
