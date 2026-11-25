@@ -1,4 +1,5 @@
 import json
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -111,7 +112,7 @@ def test_learning_html_is_not_stored_across_restarts(tmp_path, monkeypatch):
             response.close()
 
 
-@pytest.mark.parametrize("mode", ["library", "video", "project", "project-multiple"])
+@pytest.mark.parametrize("mode", ["library", "video", "trim", "project", "project-multiple"])
 def test_desktop_open_gets_fresh_url_without_disclosing_session_token(monkeypatch, mode):
     from src import learning_desktop
     from urllib.parse import parse_qs, urlparse
@@ -136,14 +137,15 @@ def test_desktop_open_gets_fresh_url_without_disclosing_session_token(monkeypatc
 
     monkeypatch.setattr(learning_desktop.requests, "get", get)
     monkeypatch.setattr(learning_desktop.requests, "post", post)
-    options = {"path": "test.mp4"} if mode == "video" else {"directory": "project"} if mode.startswith("project") else {}
+    options = {"path": "test.mp4", "trim": mode == "trim"} if mode in {"video", "trim"} else {"directory": "project"} if mode.startswith("project") else {}
     urls = [learning_desktop.learning_url(**options) for _ in range(2)]
     assert urls[0] != urls[1]
     for url in urls:
         query = parse_qs(urlparse(url).query)
         assert "private-session" not in url
         assert len(query["launch"][0]) == 16
-        assert query.get("video") == (["test-id"] if mode in {"video", "project"} else None)
+        assert query.get("video") == (["test-id"] if mode in {"video", "trim", "project"} else None)
+        assert query.get("trim") == (["1"] if mode == "trim" else None)
         if mode == "project-multiple":
             assert query["directory"] == ["project"]
 
@@ -320,15 +322,34 @@ def test_subtitle_style_persists_without_modifying_cues_and_rejects_css_values(w
     route = f"/api/learning/videos/{video['id']}"
     before = client.get(route).json
     style = {"font_family": "serif", "source_color": "#123456", "target_color": "#abcdef", "background": 0.6,
-             "position": "top", "bold": True, "outline": False, "line_height": 1.8}
-    response = client.put(route + "/progress", headers=headers, json={"style": style, "font": 28, "time": 10})
+             "position": "top", "bold": True, "outline": False, "line_height": 1.8,
+             "offset": 35, "transcript_font": 24, "transcript_gap": 2, "english_size_delta": 4}
+    response = client.put(route + "/progress", headers=headers, json={"style": style, "font": 80, "time": 10})
     assert response.status_code == 200 and response.json["style"] == style
     detail = client.get(route).json
-    assert detail["progress"]["style"] == style and detail["progress"]["font"] == 28
+    assert detail["progress"]["style"] == style and detail["progress"]["font"] == 80
     assert detail["cues"] == before["cues"] and detail["subtitle_version"] == before["subtitle_version"]
-    for patch in [{"source_color": "url(secret)"}, {"font_family": "anything"}, {"font_family": []}, {"background": "nan"}, {"bold": "yes"}, {"position": "fixed"}, {"position": {}}, {"extra_css": "red"}]:
+    for patch in [{"source_color": "url(secret)"}, {"font_family": "anything"}, {"font_family": []}, {"background": "nan"}, {"bold": "yes"}, {"position": "fixed"}, {"position": {}}, {"extra_css": "red"}, {"offset": "nan"}, {"transcript_font": "infinity"}, {"transcript_gap": []}, {"english_size_delta": "nan"}]:
         assert client.put(route + "/progress", headers=headers, json={"style": patch}).status_code == 400
     assert client.get(route).json["progress"]["style"] == style
+
+
+def test_subtitle_appearance_defaults_for_old_progress_and_numeric_bounds(workspace):
+    app, client, headers, video = workspace
+    route = f"/api/learning/videos/{video['id']}"
+    # Saved progress from earlier versions has no new style fields.
+    service = app.config["LEARNING_SERVICE"]
+    service.store.save_progress(video["id"], {"time": 3, "rate": 1, "font": 20, "mode": "bilingual", "overlay": "bilingual",
+                                             "style": {"position": "top"}})
+    defaults = client.get(route).json["progress"]["style"]
+    assert defaults["position"] == "top" and defaults["offset"] == 0
+    assert defaults["transcript_font"] == 16 and defaults["transcript_gap"] == 6
+    assert defaults["english_size_delta"] == 2
+    result = client.put(route + "/progress", headers=headers, json={"font": 200, "style": {
+        "offset": 100, "transcript_font": 80, "transcript_gap": -10, "english_size_delta": 40}}).json
+    assert result["font"] == 96 and result["style"]["offset"] == 60
+    assert result["style"]["transcript_font"] == 36 and result["style"]["transcript_gap"] == 0
+    assert result["style"]["english_size_delta"] == 12
 
 
 def test_local_security_and_registered_media_range(workspace):
@@ -380,13 +401,91 @@ def test_modified_video_requires_reregistration(workspace):
     assert client.post("/api/learning/videos", headers=headers, json={"path": video["path"]}).status_code == 201
 
 
-def wait_job(client, job_id):
-    for _ in range(200):
+def wait_job(client, job_id, timeout=2):
+    for _ in range(round(timeout / 0.01)):
         job = client.get("/api/learning/jobs/" + job_id).json
         if job["status"] not in {"queued", "running", "cancelling"}:
             return job
         time.sleep(0.01)
     raise AssertionError("job did not finish")
+
+
+def test_remove_from_library_retains_study_and_reimport_restores_video(workspace):
+    app, client, headers, video = workspace
+    route = "/api/learning/videos/" + video["id"]
+    library = "/api/learning/videos"
+    source = Path(video["path"])
+    original = source.read_bytes()
+    other = source.with_name("其他视频.mp4")
+    other.write_bytes(original)
+    second = client.post(library, headers=headers, json={"path": str(other)}).json
+    assert client.put(route + "/progress", headers=headers, json={"time": 16}).status_code == 200
+    assert client.post(route + "/notes", headers=headers, json={"text": "恢复时保留", "start": 16, "end": 16}).status_code == 201
+    tracked = client.post(route + "/subtitles", headers=headers, json={"content": SRT, "role": "source"}).json
+    assert client.delete(route).status_code == 403
+    assert client.delete(route, headers=headers).status_code == 200
+    assert client.delete(route, headers=headers).status_code == 200
+    assert source.read_bytes() == original
+    # A late progress update does not restore a removed row.
+    assert client.put(route + "/progress", headers=headers, json={"time": 19}).status_code == 200
+    restarted = create_app(app.config["LEARNING_SERVICE"].store.root).test_client()
+    assert [item["id"] for item in restarted.get(library).json["videos"]] == [second["id"]]
+    restored = restarted.post(library, headers={"X-Learning-Token": restarted.get("/api/learning/session").json["token"]},
+                              json={"path": str(source)})
+    assert restored.status_code == 201
+    assert restored.json["id"] == video["id"]
+    assert restored.json["progress"]["time"] == 19
+    assert restored.json["subtitle_version"] == tracked["subtitle_version"]
+    assert restarted.get(route + "/notes").json["notes"][0]["text"] == "恢复时保留"
+    assert {item["id"] for item in restarted.get(library).json["videos"]} == {video["id"], second["id"]}
+
+
+def test_export_clip_from_non_keyframe_preserves_audio_and_original(tmp_path):
+    try:
+        ffmpeg = media.executable("ffmpeg")
+        media.executable("ffprobe")
+    except ValueError as error:
+        pytest.skip(str(error))
+    source = tmp_path / "测试 录像.mp4"
+    subprocess.run([
+        ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=red:s=160x96:r=25:d=2",
+        "-f", "lavfi", "-i", "color=green:s=160x96:r=25:d=2",
+        "-f", "lavfi", "-i", "color=black:s=160x96:r=25:d=2",
+        "-f", "lavfi", "-i", "sine=duration=6",
+        "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[out]", "-map", "[out]", "-map", "3:a",
+        "-c:v", "libx264", "-g", "250", "-sc_threshold", "0", "-c:a", "aac", str(source),
+    ], check=True, timeout=30)
+    original = source.read_bytes()
+    root = tmp_path / "learning"
+    client = create_app(root).test_client()
+    headers = {"X-Learning-Token": client.get("/api/learning/session").json["token"]}
+    video = client.post("/api/learning/videos", headers=headers, json={"path": str(source)}).json
+    route = "/api/learning/videos/" + video["id"] + "/clips"
+    assert client.get(route).json == {"job": None}
+    for start, end in [(-1, 2), (1, 1), (2, 1), (0, 6.1), ("nan", 4)]:
+        assert client.post(route, headers=headers, json={"start": start, "end": end}).status_code == 400
+    parameters = {"start": 2.2, "end": 3.8}
+    assert client.post(route, json=parameters).status_code == 403
+    response = client.post(route, headers=headers, json=parameters)
+    assert response.status_code == 202
+    job = wait_job(client, response.json["id"], timeout=15)
+    assert job["status"] == "finished", job
+    assert client.get(route).json["job"]["id"] == job["id"]
+    clip = root / "clips" / job["result"]["clip"]["name"]
+    info = media.probe(clip)
+    assert info["duration"] == pytest.approx(1.6, abs=0.05)
+    assert (info["width"], info["height"], info["codec"], info["audio_codec"]) == (160, 96, "h264", "aac")
+    pixels = subprocess.check_output([
+        ffmpeg, "-v", "error", "-i", str(clip), "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1",
+    ], timeout=30)
+    red, green, blue = pixels[:3]
+    assert green > 90 and red < 20 and blue < 20
+    downloaded = client.get("/api/learning/jobs/" + job["id"] + "/clip")
+    assert downloaded.data == clip.read_bytes()
+    assert "attachment" in downloaded.headers["Content-Disposition"]
+    downloaded.close()
+    assert source.read_bytes() == original
+    assert sorted((root / "clips").iterdir()) == [clip]
 
 
 class FakeProvider:
@@ -1197,6 +1296,7 @@ def test_project_accepts_lingering_platform_captions_without_changing_originals(
     content = (
         SRT + "\n3\n00:00:54,490 --> 00:01:01,770\non the EV side\n"
         "\n4\n00:00:58,650 --> 00:01:01,770\nrecent SUV reviews\n"
+        "\n5\n00:01:00,262 --> 00:01:02,262\ntrailing padding\n"
     )
     original = root / "lesson.en-orig.srt"
     original.write_text(content, encoding="utf-8")
@@ -1209,7 +1309,12 @@ def test_project_accepts_lingering_platform_captions_without_changing_originals(
     assert len(detail["available_tracks"]) == 2
     assert [c["end"] for c in detail["cues"][-2:]] == [60, 60]
     assert [c["text"] for c in detail["cues"][-2:]] == ["on the EV side", "recent SUV reviews"]
-    assert "1.77" in detail["subtitle_warnings"][0] and "2 条" in detail["subtitle_warnings"][0]
+    warning = detail["subtitle_warnings"][0]
+    assert "2.26" in warning and "2 条字幕的结束时间对齐至片尾" in warning
+    assert "跳过片尾后的 1 条字幕" in warning
+    snapshot = subtitles.read_track(Path(detail["tracks"]["source"]["path"]))["cues"]
+    assert snapshot == detail["playback_cues"]["source"]
+    assert len(snapshot) == 4
     assert original.read_bytes() == before
     reloaded = client.get(f"/api/learning/videos/{detail['id']}").json
     assert reloaded["subtitle_warnings"] == detail["subtitle_warnings"]

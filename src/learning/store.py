@@ -35,6 +35,8 @@ class Store:
                 CREATE TABLE IF NOT EXISTS videos (
                     id TEXT PRIMARY KEY, path TEXT UNIQUE NOT NULL, data TEXT NOT NULL,
                     updated TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS removed_videos (
+                    video_id TEXT PRIMARY KEY REFERENCES videos(id));
                 CREATE TABLE IF NOT EXISTS tracks (
                     video_id TEXT NOT NULL REFERENCES videos(id), role TEXT NOT NULL,
                     data TEXT NOT NULL, PRIMARY KEY(video_id, role));
@@ -71,9 +73,22 @@ class Store:
             raise KeyError("视频未登记")
         return json.loads(row[0])
 
-    def videos(self) -> list[dict]:
+    def videos(self, *, include_removed: bool = False) -> list[dict]:
+        query = "SELECT data FROM videos"
+        if not include_removed:
+            query += " WHERE id NOT IN (SELECT video_id FROM removed_videos)"
         with self.connect() as db:
-            return [json.loads(row[0]) for row in db.execute("SELECT data FROM videos ORDER BY updated DESC")]
+            return [json.loads(row[0]) for row in db.execute(query + " ORDER BY updated DESC")]
+
+    def remove_video(self, video_id: str):
+        with self.connect() as db:
+            if not db.execute("SELECT 1 FROM videos WHERE id=?", (video_id,)).fetchone():
+                raise KeyError("视频未登记")
+            db.execute("INSERT OR IGNORE INTO removed_videos VALUES(?)", (video_id,))
+
+    def restore_video(self, video_id: str):
+        with self.connect() as db:
+            db.execute("DELETE FROM removed_videos WHERE video_id=?", (video_id,))
 
     def save_video(self, video: dict):
         with self.connect() as db:
@@ -167,7 +182,10 @@ class Store:
                     job.update(status="interrupted", message="服务重启，任务已中断；可重新发起并复用已完成的分析缓存")
                     db.execute("UPDATE jobs SET data=? WHERE id=?", (encode(job), row["id"]))
 
-    def video_jobs(self, video_id: str) -> list[dict]:
+    def video_jobs(self, video_id: str, *, kind: str | None = None) -> list[dict]:
         with self.connect() as db:
             rows = db.execute("SELECT data FROM jobs ORDER BY rowid DESC").fetchall()
-        return [item for row in rows if (item := json.loads(row[0]))["video_id"] == video_id][:30]
+        return [
+            item for row in rows if (item := json.loads(row[0]))["video_id"] == video_id
+            and (kind is None or item["kind"] == kind)
+        ][:30]

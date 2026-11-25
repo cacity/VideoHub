@@ -1,12 +1,10 @@
 import yt_dlp
-import whisper
-import torch
+# Whisper/PyTorch and the OpenAI SDK are imported inside tasks. Loading them
+# here makes opening the desktop wait for libraries unrelated to the UI.
 from pathlib import Path
-import openai
 import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from openai import OpenAI
 import shutil
 import requests
 import html
@@ -815,6 +813,7 @@ def configure_cuda_for_whisper():
     根据资源策略配置 Whisper，避免转录占满整机资源。
     :return: 设备名称 ("cuda" 或 "cpu")
     """
+    import torch
     try:
         return apply_whisper_resource_policy(torch)
     except Exception as e:
@@ -827,6 +826,8 @@ def configure_cuda_for_whisper():
 
 def run_whisper_transcription(audio_path, model_size, device, whisper_params):
     """Load and run Whisper inside the shared single-transcription slot."""
+    import torch
+    import whisper
 
     with whisper_execution_slot():
         print(f"加载 {model_size} 模型...")
@@ -941,6 +942,7 @@ def translate_with_llm(text, target_language='zh-CN', source_language='auto'):
     """
     try:
         # 语言代码映射
+        from openai import OpenAI
         language_map = {
             'zh-CN': '简体中文',
             'zh-TW': '繁体中文',
@@ -1079,6 +1081,7 @@ def translate_with_llm(text, target_language='zh-CN', source_language='auto', fa
     """Translate text with DeepSeek first, then OpenAI. Google fallback is optional."""
     target_language = normalize_target_language(target_language)
     try:
+        from openai import OpenAI
         target_lang_name = get_translation_language_name(target_language)
         deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
         openai_api_key = os.getenv("OPENAI_API_KEY", "")
@@ -1255,6 +1258,7 @@ def polish_subtitle_translations_with_deepseek(segments, chunk_size=50, progress
     model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat"
 
     try:
+        from openai import OpenAI
         client = OpenAI(api_key=api_key, base_url=base_url)
     except Exception as e:
         print(f"初始化 DeepSeek 客户端失败，跳过字幕润色: {e}")
@@ -3094,6 +3098,7 @@ def transcribe_audio_unified(
     :param output_basename: 输出文件基础名（可选，一般传入视频文件路径以保证字幕名与视频名一致）
     :return: (text_path, subtitle_path) 元组，如果不生成字幕则 subtitle_path 为 None
     """
+    import torch
     # 创建输出目录
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     if generate_subtitles:
@@ -3334,6 +3339,7 @@ def transcribe_audio_to_text(audio_path, output_dir=TRANSCRIPTS_DIR, model_size=
     :param model_size: 模型大小，可选 "tiny", "base", "small", "medium", "large"
     :return: 文本文件的路径
     """
+    import torch
     # 创建输出目录
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
@@ -3418,6 +3424,7 @@ def create_bilingual_subtitles(audio_path, output_dir=SUBTITLES_DIR, model_size=
     :param source_language: 指定源语言（可选），如果为None则自动检测
     :return: 字幕文件路径
     """
+    import torch
     # 创建输出目录
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
@@ -4719,6 +4726,7 @@ class TextSummaryComposite:
         使用 OpenAI 直接生成摘要
         """
         try:
+            from openai import OpenAI
             client = OpenAI(
                 api_key=self.target_api_key,
                 base_url=self.target_api_url
@@ -4759,6 +4767,7 @@ class TextSummaryComposite:
         使用 OpenAI 进行推理（用于两阶段模式的第一步）
         """
         try:
+            from openai import OpenAI
             client = OpenAI(
                 api_key=self.target_api_key,
                 base_url=self.target_api_url
@@ -4786,6 +4795,7 @@ class TextSummaryComposite:
         使用目标模型基于推理生成最终摘要（支持两个模型选择）
         """
         try:
+            from openai import OpenAI
             combined_prompt = f"""这是我的原始请求：
 
 {user_prompt}
@@ -4937,6 +4947,7 @@ class TextSummaryComposite:
         """
         try:
             # 创建 OpenAI 客户端
+            from openai import OpenAI
             client = OpenAI(
                 api_key=self.target_api_key,
                 base_url=self.target_api_url
@@ -4988,6 +4999,7 @@ class TextSummaryComposite:
         """
         try:
             # 创建 OpenAI 客户端
+            from openai import OpenAI
             client = OpenAI(
                 api_key=self.target_api_key,
                 base_url=self.target_api_url

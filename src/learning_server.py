@@ -12,29 +12,29 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory, stream_with_context
 
 try:
-    from .learning.service import LearningService
     from .learning import media
     from .learning.assistant import Assistant
-    from .learning.providers import capabilities
-    from .learning.notes import NoteConflict, save_note, markdown
-    from .learning.search import search_web
-    from .learning.imports import recent_downloads, directory_assets
-    from .learning.preparation import start_preview, start_transcription
-    from .learning.project import import_project
     from .learning.downloads import import_download
-    from .learning.mindmap import latest_key, as_markdown
+    from .learning.imports import directory_assets, recent_downloads
+    from .learning.mindmap import as_markdown, latest_key
+    from .learning.notes import NoteConflict, markdown, save_note
+    from .learning.preparation import start_preview, start_transcription, start_trim
+    from .learning.project import import_project
+    from .learning.providers import capabilities
+    from .learning.search import search_web
+    from .learning.service import LearningService
 except ImportError:
-    from learning.service import LearningService
     from learning import media
     from learning.assistant import Assistant
-    from learning.providers import capabilities
-    from learning.notes import NoteConflict, save_note, markdown
-    from learning.search import search_web
-    from learning.imports import recent_downloads, directory_assets
-    from learning.preparation import start_preview, start_transcription
-    from learning.project import import_project
     from learning.downloads import import_download
-    from learning.mindmap import latest_key, as_markdown
+    from learning.imports import directory_assets, recent_downloads
+    from learning.mindmap import as_markdown, latest_key
+    from learning.notes import NoteConflict, markdown, save_note
+    from learning.preparation import start_preview, start_transcription, start_trim
+    from learning.project import import_project
+    from learning.providers import capabilities
+    from learning.search import search_web
+    from learning.service import LearningService
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA = REPO_ROOT / "workspace" / "learning"
@@ -144,6 +144,21 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     @app.get("/api/learning/videos/<video_id>")
     def video(video_id):
         return jsonify(service.detail(video_id))
+
+    @app.delete("/api/learning/videos/<video_id>")
+    def remove_video(video_id):
+        service.store.remove_video(video_id)
+        return jsonify(ok=True)
+
+    @app.get("/api/learning/videos/<video_id>/clips")
+    def latest_clip(video_id):
+        service.store.video(video_id)
+        jobs = service.store.video_jobs(video_id, kind="trim")
+        return jsonify(job=jobs[0] if jobs else None)
+
+    @app.post("/api/learning/videos/<video_id>/clips")
+    def create_clip(video_id):
+        return jsonify(start_trim(assistant, video_id, body())), 202
 
     @app.get("/api/learning/videos/<video_id>/media")
     def video_media(video_id):
@@ -278,6 +293,14 @@ def create_app(data_root: Path = DEFAULT_DATA, dev_origin: str = "") -> Flask:
     @app.get("/api/learning/jobs/<job_id>")
     def job(job_id):
         return jsonify(service.store.job(job_id))
+
+    @app.get("/api/learning/jobs/<job_id>/clip")
+    def download_clip(job_id):
+        value = service.store.job(job_id)
+        if value["kind"] != "trim" or value["status"] != "finished":
+            raise KeyError("视频片段尚未生成")
+        name = value["result"]["clip"]["name"]
+        return send_from_directory(service.store.root / "clips", name, as_attachment=True, mimetype="video/mp4")
 
     @app.post("/api/learning/jobs/<job_id>/cancel")
     def cancel(job_id):

@@ -33,7 +33,7 @@ def work_label(url, info=None):
 
 
 def provider_label(name):
-    return {"f2": "F2", "dlpanda": "DLPanda"}.get(name, name or "未知来源")
+    return {"f2": "F2", "dlpanda": "DLPanda", "hellotik": "HelloTik"}.get(name, name or "未知来源")
 
 
 def report_status(message, callback=None, progress=0):

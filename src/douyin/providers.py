@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""F2-first metadata resolution with a DLPanda public-link fallback."""
+"""F2-first metadata resolution with DLPanda and HelloTik fallbacks."""
 
 from __future__ import annotations
 
@@ -377,7 +377,7 @@ class DLPandaProvider:
 
 
 class DouyinProviderChain:
-    """Try F2 first, then DLPanda, retaining useful failure details."""
+    """Try F2, DLPanda, then HelloTik, retaining useful failure details."""
 
     F2_COOLDOWN_SECONDS = 15 * 60
     _f2_blocked_until = {}
@@ -389,9 +389,12 @@ class DouyinProviderChain:
         providers=None,
     ):
         self.config = config or DouyinConfig()
+        from .hellotik import HelloTikProvider
+
         self.providers = providers or [
             F2Provider(self.config),
             DLPandaProvider(self.config),
+            HelloTikProvider(self.config),
         ]
         self.last_errors: Dict[str, str] = {}
 
@@ -413,9 +416,13 @@ class DouyinProviderChain:
         with self._f2_health_lock:
             self._f2_blocked_until[self._f2_key()] = monotonic() + self.F2_COOLDOWN_SECONDS
 
-    def get_video_info(self, url: str) -> Dict[str, Any]:
+    def get_video_info(self, url: str, *, start_after: Optional[str] = None) -> Dict[str, Any]:
         self.last_errors = {}
+        names = [getattr(p, "name", p.__class__.__name__) for p in self.providers]
+        start_index = names.index(start_after) + 1 if start_after in names else 0
         for index, provider in enumerate(self.providers):
+            if index < start_index:
+                continue
             name = getattr(provider, "name", provider.__class__.__name__)
             label = provider_label(name)
             next_source = "，继续尝试其他解析源" if index + 1 < len(self.providers) else ""

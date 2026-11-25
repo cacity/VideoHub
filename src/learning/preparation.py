@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from . import media
+from .service import finite
 from .store import new_id
 from .subtitles import bound_transcription, read_track, write_srt
 
@@ -28,16 +29,58 @@ def start_preview(assistant, video_id: str):
                     message="正在生成浏览器预览，原视频保持不变",
                 ),
             )
+        else:
+            media.probe(destination)
         if cancelled.is_set():
             raise InterruptedError()
         current = service.store.video(video_id)
         if (current["size"], current["mtime_ns"]) != (video["size"], video["mtime_ns"]):
             raise ValueError("原视频已改变，请重新生成预览")
-        media.probe(destination)
         service.store.save_video({**current, "preview": str(destination)})
         return {"preview_ready": True}
 
     return assistant.jobs.start(video_id, "preview", work)
+
+
+def start_trim(assistant, video_id: str, data: dict):
+    store = assistant.service.store
+    video = store.video(video_id)
+    source = Path(video["path"])
+    start = finite(data.get("start"), "开始时间")
+    end = finite(data.get("end"), "结束时间")
+    info = media.probe(source)
+    source_version = info["size"], info["mtime_ns"]
+    if source_version != (video["size"], video["mtime_ns"]):
+        raise ValueError("原视频已改变，请重新导入后再截取")
+    duration = info["duration"]
+    if not 0 <= start < end <= duration or round(end - start, 6) <= 0:
+        raise ValueError("请选择视频时长内的起止点，结束时间须晚于开始时间")
+
+    def work(cancelled, update):
+        destination = store.root / "clips" / f"{source.stem[:72]}-片段-{new_id()[:12]}.mp4"
+        last_progress = -1
+
+        def on_progress(seconds):
+            nonlocal last_progress
+            progress = min(99, max(0, int(seconds / (end - start) * 100)))
+            if progress != last_progress:
+                last_progress = progress
+                update(progress=progress, message="正在截取视频")
+
+        update(message="正在截取视频")
+        media.trim(source, destination, start, end, cancelled, on_progress)
+        try:
+            stat = source.stat()
+            if (stat.st_size, stat.st_mtime_ns) != source_version:
+                raise ValueError("原视频在截取期间已改变，请重新导入后再试")
+            if cancelled.is_set():
+                raise InterruptedError()
+        except (OSError, ValueError):
+            destination.unlink(missing_ok=True)
+            raise
+        return {"clip": {"name": destination.name, "start": start, "end": end}}
+
+    return assistant.jobs.start(video_id, "trim", work)
 
 
 def start_transcription(assistant, video_id: str, data: dict):

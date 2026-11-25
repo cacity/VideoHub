@@ -15,6 +15,7 @@ let importedLessons = [];
 let projectImportFailures = [];
 const projectRequests = [];
 const savedByVideo = [];
+const clipRequests = [];
 const detail = {
   id: 'fixture', title: 'Synthetic lesson', duration: 60, width: 1280, height: 720,
   path: '/synthetic.mp4', source_url: '', media_url: '/synthetic.mp4', browser_ready: true,
@@ -74,8 +75,20 @@ before(async () => {
         data = { video: importedLessons[0] || null, imported: importedLessons, errors: projectImportFailures };
       }
     }
+    else if (route === '/videos/one' && options.method === 'DELETE') {
+      importedLessons = importedLessons.filter(v => v.id !== 'one');
+      data = { ok: true };
+    }
     else if (importedLessons.some(v => route === '/videos/' + v.id)) data = structuredClone(importedLessons.find(v => route === '/videos/' + v.id));
     else if (route === '/videos/fixture') data = structuredClone(detail);
+    else if (route === '/videos/fixture/clips') {
+      if (options.method === 'POST') {
+        clipRequests.push(JSON.parse(options.body));
+        data = { id: 'clip-fixture', kind: 'trim', status: 'queued', progress: 0, message: '正在准备' };
+      } else data = { job: null };
+    }
+    else if (route === '/jobs/clip-fixture') data = { id: 'clip-fixture', kind: 'trim', status: 'finished', progress: 100,
+      result: { clip: { name: '片段.mp4', ...clipRequests.at(-1) } } };
     else if (route.endsWith('/subtitle-candidates')) data = { tracks: subtitleCandidates };
     else if (route.endsWith('/select-track') || route.endsWith('/subtitles')) {
       const request = JSON.parse(options.body);
@@ -512,9 +525,67 @@ test('directory imports select all lessons and switch their own captions and pro
   assert.equal(document.querySelector('video').currentTime, 17);
 });
 
+test('directory groups collapse, remember state after reopening, and expose search matches without losing playback', async () => {
+  const group = () => document.querySelector('[aria-label="目录：course"]');
+  const lessonRows = () => [...document.querySelectorAll('.library-item')].filter(button => button.textContent.includes('Lesson'));
+  assert.equal(group().getAttribute('aria-expanded'), 'true');
+  await act(async () => group().click());
+  assert.equal(group().getAttribute('aria-expanded'), 'false');
+  assert.equal(lessonRows().length, 0);
+  assert.match(document.querySelector('.transcript').textContent, /English one/);
+  await act(async () => root.unmount());
+  const entry = resolve(__dirname, '../src/learning.tsx');
+  delete require.cache[entry];
+  await act(async () => require(entry));
+  assert.equal(group().getAttribute('aria-expanded'), 'false');
+  const search = document.querySelector('[aria-label="搜索学习资料"]');
+  const query = async text => act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(search, text);
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await query('Lesson two');
+  assert.equal(lessonRows().length, 1);
+  assert.match(lessonRows()[0].textContent, /two/);
+  await query('course');
+  assert.equal(lessonRows().length, 2, 'searching the directory reveals all its lessons');
+  await query('');
+  assert.equal(lessonRows().length, 0, 'clearing search restores the saved collapse state');
+  await act(async () => group().click());
+  assert.equal(lessonRows().length, 2);
+});
+
+test('subtitle appearance independently adjusts large overlays, position, transcript font and spacing and survives reopening', async () => {
+  const originalText = document.querySelector('.transcript').textContent;
+  const change = async (label, value) => act(async () => {
+    const input = document.querySelector(`[aria-label="${label}"]`);
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, String(value));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await change('字幕字号', 80);
+  await change('画面字幕上下位置', 35);
+  await change('文稿字号', 24);
+  await change('文稿句组间距', 2);
+  assert.equal(document.querySelector('.subtitle-overlay').style.getPropertyValue('--subtitle-size'), '80px');
+  assert.equal(document.querySelector('.subtitle-overlay').style.getPropertyValue('--subtitle-offset'), '35%');
+  assert.equal(document.querySelector('.transcript').style.getPropertyValue('--transcript-font'), '24px');
+  assert.equal(document.querySelector('.transcript').style.getPropertyValue('--transcript-gap'), '2px');
+  assert.equal(document.querySelector('.transcript').textContent, originalText);
+  await act(async () => root.unmount());
+  const entry = resolve(__dirname, '../src/learning.tsx');
+  delete require.cache[entry];
+  await act(async () => require(entry));
+  assert.equal(document.querySelector('[aria-label="字幕字号"]').value, '80');
+  assert.equal(document.querySelector('[aria-label="画面字幕上下位置"]').value, '35');
+  assert.equal(document.querySelector('[aria-label="文稿字号"]').value, '24');
+  assert.equal(document.querySelector('[aria-label="文稿句组间距"]').value, '2');
+  await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === '恢复默认字幕样式').click());
+  assert.equal(document.querySelector('[aria-label="字幕字号"]').value, '20');
+  assert.equal(document.querySelector('[aria-label="文稿字号"]').value, '16');
+});
+
 test('partial directory imports show the failed video without dropping the successful lesson', async () => {
   projectImportFailures = [{ path: '/course/two.mp4', error: '无法读取视频' }];
-  await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent.includes('导入视频')).click());
+  await scanProject();
   await act(async () => document.querySelector('.import-modal').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   assert.equal(document.querySelector('.import-modal'), null);
   assert.match(document.querySelector('.import-notice').textContent, /已导入 1 个视频，1 个失败/);
@@ -536,4 +607,49 @@ test('desktop directory links open the directory form and complete failures rema
   assert.equal(document.querySelectorAll('.import-video-choice input:checked').length, 2);
   assert.match(document.querySelector('.import-modal [role="alert"]').textContent, /模拟导入失败/);
   assert.equal(document.querySelector('.import-modal .primary').disabled, false);
+});
+
+test('desktop trim link opens the tool and uses player marks to export an MP4', async () => {
+  await act(async () => root.unmount());
+  history.replaceState(null, '', '/learn?video=fixture&trim=1&launch=example');
+  const entry = resolve(__dirname, '../src/learning.tsx');
+  delete require.cache[entry];
+  await act(async () => require(entry));
+  const form = document.querySelector('#learning-clip');
+  const player = document.querySelector('video');
+  const buttons = [...form.querySelectorAll('button')];
+  await act(async () => { player.currentTime = 10.125; buttons.find(b => b.textContent === '设为起点').click(); });
+  await act(async () => { player.currentTime = 8; buttons.find(b => b.textContent === '设为终点').click(); });
+  assert.equal(form.querySelector('.primary').disabled, true);
+  await act(async () => { player.currentTime = 25.5; buttons.find(b => b.textContent === '设为终点').click(); });
+  assert.deepEqual([...form.querySelectorAll('input')].map(input => input.value), ['00:00:10.125', '00:00:25.5']);
+  await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  assert.deepEqual(clipRequests.at(-1), { start: 10.125, end: 25.5 });
+  assert.ok(form.querySelector('progress'));
+  await act(async () => new Promise(resolve => setTimeout(resolve, 400)));
+  assert.equal(form.querySelector('a[download]').getAttribute('href'), '/api/learning/jobs/clip-fixture/clip');
+});
+
+test('library management confirms removal and clears the active player and URL', async () => {
+  importedLessons = [{ ...structuredClone(detail), id: 'one', title: 'Lesson one' }];
+  await act(async () => root.unmount());
+  const entry = resolve(__dirname, '../src/learning.tsx');
+  delete require.cache[entry];
+  await act(async () => require(entry));
+  const row = [...document.querySelectorAll('.library-item')].find(button => button.textContent === 'Lesson one');
+  await act(async () => row.click());
+  await act(async () => document.querySelector('[aria-label="管理学习资料"]').click());
+  const remove = document.querySelector('[aria-label="移出资料库：Lesson one"]');
+  window.confirm = () => false;
+  await act(async () => remove.click());
+  assert.ok(document.querySelector('[aria-label="移出资料库：Lesson one"]'));
+  window.confirm = message => { assert.match(message, /原视频、字幕和学习记录会保留/); return true; };
+  await act(async () => remove.click());
+  assert.equal(importedLessons.length, 0);
+  assert.ok(!document.querySelector('[aria-label="移出资料库：Lesson one"]'));
+  assert.equal(document.querySelector('video'), null);
+  assert.equal(location.search, '');
+  assert.equal(localStorage.getItem('videohub.learning.last'), null);
+  assert.match(document.querySelector('.import-notice').textContent, /已将「Lesson one」移出资料库/);
+  assert.ok([...document.querySelectorAll('.library-item')].some(button => button.textContent === 'Synthetic lesson'));
 });

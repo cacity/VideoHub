@@ -148,7 +148,7 @@ def import_download(service, path: str, title: str = "", source_url: str = "") -
         return None
     url = source_url or item["source_url"]
     root = project_directory(url)
-    previous = next((v for v in service.store.videos() if Path(v["path"]) == source), {})
+    previous = next((v for v in service.store.videos(include_removed=True) if Path(v["path"]) == source), {})
     video = bundle_download(source, root, url, title or item["title"], previous.get("id", ""))
     result = import_project(service, str(root))["video"]
     update_history(url, video)

@@ -24,6 +24,10 @@ DEFAULT_SUBTITLE_STYLE = {
     "bold": False,
     "outline": True,
     "line_height": 1.5,
+    "offset": 0,
+    "transcript_font": 16,
+    "transcript_gap": 6,
+    "english_size_delta": 2,
 }
 
 
@@ -44,6 +48,13 @@ def subtitle_style(value: dict) -> dict:
             raise ValueError("字幕描边/粗体设置无效")
     style["background"] = min(0.9, max(0, finite(style["background"], "字幕背景")))
     style["line_height"] = min(2, max(1.1, finite(style["line_height"], "字幕行距")))
+    for key, low, high, name in (
+        ("offset", 0, 60, "字幕位置微调"),
+        ("transcript_font", 12, 36, "文稿字号"),
+        ("transcript_gap", 0, 24, "文稿句组间距"),
+        ("english_size_delta", -12, 12, "中英字幕字号差"),
+    ):
+        style[key] = min(high, max(low, finite(style[key], name)))
     return style
 
 
@@ -68,7 +79,7 @@ class LearningService:
         info = media.probe(source)
         if source_url and not source_url.startswith(("https://", "http://")):
             raise ValueError("来源链接须为 HTTP/HTTPS")
-        existing = next((v for v in self.store.videos() if Path(v["path"]) == source), None)
+        existing = next((v for v in self.store.videos(include_removed=True) if Path(v["path"]) == source), None)
         if project and not existing and project.get("id"):
             try:
                 previous = self.store.video(project["id"])
@@ -126,7 +137,9 @@ class LearningService:
             prepared[key] = item
         self.store.save_video(video)
         self.store.save_tracks(video["id"], prepared)
-        return self.detail(video["id"])
+        detail = self.detail(video["id"])
+        self.store.restore_video(video["id"])
+        return detail
 
     def prepare_track(self, track: dict) -> dict:
         role = track.get("role", "source")
@@ -168,20 +181,25 @@ class LearningService:
 
     @staticmethod
     def validate_track(track: dict, duration: float):
-        end = max(c["end"] for c in track["cues"])
+        cues = track["cues"]
+        end = max(c["end"] for c in cues)
         if end <= duration:
             return
-        # Platform captions can linger briefly after the final video frame.
-        # Only shorten cues that actually begin inside the video; a later cue
-        # or a substantial overrun still indicates a potentially wrong file.
-        if end > duration + 5 or any(c["start"] >= duration for c in track["cues"]):
-            name = Path(track["path"]).name or "所选字幕"
-            raise ValueError(f"{name}：字幕超出视频时长 {end - duration:.2f} 秒，请检查是否选错文件")
-        track["cues"], changed = subtitles.bound_transcription(track["cues"], duration)
-        track["hash"] = hashlib.sha256(encode([track["role"], track["language"], track["cues"]]).encode()).hexdigest()
+        # Caption padding can include whole cues after the end of the media.
+        # Require some playable subtitles before trimming a brief overrun.
         name = Path(track["path"]).name or "所选字幕"
+        outside = sum(c["start"] >= duration for c in cues)
+        if end > duration + 5 or outside == len(cues):
+            raise ValueError(f"{name}：字幕超出视频时长 {end - duration:.2f} 秒，请检查是否选错文件")
+        track["cues"], changed = subtitles.bound_transcription(cues, duration)
+        track["hash"] = hashlib.sha256(encode([track["role"], track["language"], track["cues"]]).encode()).hexdigest()
+        corrections = []
+        if changed > outside:
+            corrections.append(f"已将 {changed - outside} 条字幕的结束时间对齐至片尾")
+        if outside:
+            corrections.append(f"已跳过片尾后的 {outside} 条字幕")
         track["timing_warning"] = (
-            f"{name}：片尾延长 {end - duration:.2f} 秒，已将 {changed} 条字幕的结束时间对齐至片尾；原文件未改动。"
+            f"{name}：字幕超出片尾 {end - duration:.2f} 秒，{'，'.join(corrections)}；原文件未改动。"
         )
 
     def detail(self, video_id: str) -> dict:
@@ -292,7 +310,7 @@ class LearningService:
         previous.update({k: v for k, v in value.items() if k in {"time", "rate", "mode", "overlay", "font"}})
         previous["time"] = min(video["duration"], max(0, finite(previous["time"])))
         previous["rate"] = min(3, max(0.25, finite(previous["rate"], "倍速")))
-        previous["font"] = min(36, max(14, finite(previous["font"], "字号")))
+        previous["font"] = min(96, max(14, finite(previous["font"], "字号")))
         if any(previous[k] not in {"source", "target", "bilingual", "off"} for k in ("mode", "overlay")):
             raise ValueError("字幕显示模式无效")
         self.store.save_progress(video_id, previous)
