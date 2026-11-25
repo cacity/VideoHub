@@ -1,8 +1,10 @@
 export type Mode = 'source' | 'target' | 'bilingual' | 'off';
 export type SubtitleStyle = { font_family: 'sans' | 'serif' | 'mono'; source_color: string; target_color: string;
-  background: number; position: 'bottom' | 'top'; bold: boolean; outline: boolean; line_height: number };
+  background: number; position: 'bottom' | 'top'; bold: boolean; outline: boolean; line_height: number;
+  offset: number; transcript_font: number; transcript_gap: number; english_size_delta: number };
 export const defaultSubtitleStyle: SubtitleStyle = { font_family: 'sans', source_color: '#ffffff', target_color: '#f3f1cd',
-  background: 0, position: 'bottom', bold: false, outline: true, line_height: 1.5 };
+  background: 0, position: 'bottom', bold: false, outline: true, line_height: 1.5,
+  offset: 0, transcript_font: 16, transcript_gap: 6, english_size_delta: 2 };
 export type Progress = { time: number; rate: number; mode: Mode; overlay: Mode; font: number; style?: SubtitleStyle };
 export type TimedCue = { id: string; start: number; end: number; text: string };
 export type Cue = TimedCue & { translation: string };
@@ -13,12 +15,28 @@ export type Video = { id: string; title: string; duration: number; width?: numbe
   subtitle_version: string; subtitle_warnings?: string[]; tracks: Record<string, { language: string; path?: string; hash?: string; original_path?: string }>; project_root?: string;
   subtitle_urls?: Partial<Record<'source' | 'target', string>>;
   available_tracks: Array<{ key: string; name: string; path?: string; language: string; role: string; updated?: string; label?: string }> };
+
+export function groupLibrary(videos: Video[], query = '') {
+  const groups = new Map<string, { key: string; title: string; path: string; videos: Video[] }>();
+  for (const video of videos) {
+    const path = video.path.replace(/\\/g, '/');
+    const directory = (video.project_root?.replace(/\\/g, '/') || path.slice(0, path.lastIndexOf('/') + 1)).replace(/\/+$/, '');
+    // Normalize Windows drive/UNC paths, while retaining case-sensitive POSIX paths.
+    const key = /^[a-z]:\//i.test(directory) || directory.startsWith('//') ? directory.toLowerCase() : directory;
+    const title = directory.split('/').pop() || '';
+    if (!groups.has(key)) groups.set(key, { key, title, path: directory, videos: [] });
+    groups.get(key)!.videos.push(video);
+  }
+  const needle = query.trim().toLowerCase();
+  return [...groups.values()].map(group => ({ ...group, videos: group.title.toLowerCase().includes(needle)
+    ? group.videos : group.videos.filter(video => video.title.toLowerCase().includes(needle)) })).filter(group => group.videos.length);
+}
 export type Message = { id: string; role: 'user' | 'assistant'; text: string; time: number; status: string;
   citations?: Citation[]; sources?: WebSource[]; searched_sources?: WebSource[]; warnings?: string[];
   usage?: { total_tokens?: number }; subtitle_version: string; provider?: string; model?: string; error?: string };
 export type Chapter = { title: string; summary: string; start: number; end: number; cue_ids: string[] };
 export type Job = { id: string; video_id: string; kind: string; status: string; progress: number; message: string; text: string;
-  outline?: Chapter[]; warnings?: string[]; result?: { outline?: Chapter[]; answer?: Message }; coverage?: { completed: number; total: number } };
+  outline?: Chapter[]; warnings?: string[]; result?: { outline?: Chapter[]; answer?: Message; clip?: { name: string; start: number; end: number } }; coverage?: { completed: number; total: number } };
 export type Note = { id: string; text: string; start: number; end: number; created: string; updated: string;
   version: number; subtitle_version: string; citations: Citation[]; sources: WebSource[]; tags: string[] };
 export type MindmapNode = { id: string; label: string; summary: string; start: number; end: number; chapter_indices: number[]; children: MindmapNode[] };

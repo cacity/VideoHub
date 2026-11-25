@@ -64,9 +64,10 @@ REVIEW_PACKS_DIR = _ensure_workspace_subdir("review_packs")
 LEARNING_DIR = _ensure_workspace_subdir("learning")
 LEARNING_CACHE_DIR = _ensure_dir(Path(LEARNING_DIR) / "cache")
 LEARNING_PROJECTS_DIR = _ensure_dir(Path(LEARNING_DIR) / "projects")
+LEARNING_CLIPS_DIR = _ensure_dir(Path(LEARNING_DIR) / "clips")
 MEETINGS_DIR = _ensure_workspace_subdir("meetings")
 # The learning database contains user notes and is never a disposable cache.
-PROTECTED_DIRECTORY_KEYS = frozenset({"learning", "learning_projects", "meetings"})
+PROTECTED_DIRECTORY_KEYS = frozenset({"learning", "learning_projects", "learning_clips", "meetings"})
 PUBLISH_PACKAGES_DIR = _ensure_workspace_subdir("publish_packages")
 DOUYIN_PUBLISH_PACKAGES_DIR = _ensure_dir(Path(PUBLISH_PACKAGES_DIR) / "douyin")
 
@@ -110,6 +111,7 @@ DIRECTORY_MAP = {
     "learning": LEARNING_DIR,
     "learning_cache": LEARNING_CACHE_DIR,
     "learning_projects": LEARNING_PROJECTS_DIR,
+    "learning_clips": LEARNING_CLIPS_DIR,
     "meetings": MEETINGS_DIR,
     "publish_packages": PUBLISH_PACKAGES_DIR,
     "douyin_publish_packages": DOUYIN_PUBLISH_PACKAGES_DIR,

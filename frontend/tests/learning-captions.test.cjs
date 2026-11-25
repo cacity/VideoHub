@@ -12,6 +12,23 @@ const api = {};
 new Function('exports', output)(api);
 const { currentCue } = api;
 
+test('library groups by full project directory, normalizes Windows paths, and searches folders and lessons', () => {
+  const videos = [
+    { id: 'a1', path: 'F:\\课程\\剧名\\01.mp4', title: '第一集' },
+    { id: 'a2', path: 'f:/课程/剧名/02.mp4', title: '第二集' },
+    { id: 'b', path: 'G:/课程/剧名/01.mp4', title: '另一版' },
+    { id: 'c', path: '/course/season/01.mp4', project_root: '/course', title: '第三集' },
+    { id: 'd', path: '/single.mp4', title: '单独视频' },
+  ];
+  const groups = api.groupLibrary(videos);
+  assert.deepEqual(groups.map(g => [g.title, g.videos.map(v => v.id)]), [
+    ['剧名', ['a1', 'a2']], ['剧名', ['b']], ['course', ['c']], ['', ['d']],
+  ]);
+  assert.equal(api.groupLibrary(videos, '剧名').flatMap(g => g.videos).length, 3);
+  assert.deepEqual(api.groupLibrary(videos, '第二集')[0].videos.map(v => v.id), ['a2']);
+  assert.deepEqual(api.groupLibrary(videos, '找不到'), []);
+});
+
 const source = [
   { id: 's1', start: 30.24, end: 36.32, text: 'exterior, interior' },
   { id: 's2', start: 32.88, end: 38.399, text: 'details? Some stories' },

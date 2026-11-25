@@ -5,6 +5,7 @@ import pytest
 
 from src.learning import downloads
 from src.learning.project import MANIFEST, inspect_project
+from src.stdout_capture import start_stdout_capture
 
 SRT = "1\n00:00:00,000 --> 00:00:02,000\nHello.\n"
 URL = "https://www.youtube.com/watch?v=testvideo01"
@@ -271,7 +272,8 @@ def test_desktop_douyin_entry_points_route_processed_media_to_learning(monkeypat
     monkeypatch.setattr(yt, "process_local_video", lambda *args, **kwargs: str(video))
     monkeypatch.setitem(sys.modules, "youtube_transcriber", yt)
     monkeypatch.setitem(sys.modules, "learning.downloads", downloads)
-    namespace = {"QThread": object, "pyqtSignal": Signal, "os": os,
+    namespace = {"start_stdout_capture": start_stdout_capture,
+                 "QThread": object, "pyqtSignal": Signal, "os": os,
                  "DEFAULT_SUMMARY_DIR": str(tmp_path), "DOUYIN_AVAILABLE": True,
                  "DouyinDownloader": douyin.DouyinDownloader, "DouyinUtils": utils}
     source_path = Path(__file__).resolve().parents[1] / filename

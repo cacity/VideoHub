@@ -95,6 +95,7 @@ wheelhouse/
 !/frontend/src/learning.css
 !/frontend/src/learning-api.ts
 !/frontend/src/learning-panel.tsx
+!/frontend/src/learning-clip.tsx
 !/frontend/src/learning-resize.tsx
 !/frontend/src/learning-shortcuts.ts
 !/frontend/src/learning-markdown.tsx

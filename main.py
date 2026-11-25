@@ -33,17 +33,15 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox, QInputDialog, QMenu, QFontComboBox, QDoubleSpinBox,
     QFrame, QColorDialog
 )
+from src.stdout_capture import start_stdout_capture
+
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QUrl, QTimer, QObject
 from PyQt6.QtGui import (QIcon, QPixmap, QFont, QDesktopServices, QTextCursor,
                          QAction, QClipboard, QEnterEvent, QColor, QPainter,
                          QPen, QPainterPath)
 
 # 导入原始代码中的功能模块
-import yt_dlp
-import whisper
-import torch
 from dotenv import load_dotenv
-from openai import OpenAI
 import requests
 import html
 import subprocess
@@ -912,15 +910,7 @@ class WorkerThread(QThread):
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
         
         # 重定向print输出到信号
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-        
-        # 替换全局print函数
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
 
         # 控制翻译日志详细程度
         try:
@@ -1079,8 +1069,8 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            # 恢复原始print函数
-            builtins.print = original_print
+            # 结束当前线程的日志转发
+            output_capture.close()
     
     def process_douyin_transcription_and_summary(self, video_file, model, api_key, base_url,
                                                  whisper_model_size, stream, summary_dir, custom_prompt,
@@ -1341,14 +1331,7 @@ class WorkerThread(QThread):
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
         
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-        
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
         
         try:
             # 调用原始代码中的处理函数
@@ -1369,7 +1352,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
     
     def process_local_video(self):
         """处理本地视频文件"""
@@ -1396,14 +1379,7 @@ class WorkerThread(QThread):
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
         
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-        
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
         
         try:
             # 调用原始代码中的处理函数
@@ -1424,7 +1400,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
     
     def process_local_video_batch(self):
         """批量处理本地视频文件"""
@@ -1452,14 +1428,7 @@ class WorkerThread(QThread):
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
         
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-        
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
         
         try:
             # 调用批量处理函数
@@ -1493,7 +1462,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"批量处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
 
     def process_extract_audio(self):
         """从本地视频文件或目录批量提取音频"""
@@ -1503,14 +1472,7 @@ class WorkerThread(QThread):
         output_dir = self.params.get("output_dir", SONGS_DIR)
         recursive = self.params.get("recursive", True)
 
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
 
         try:
             results = extract_audio_from_local_videos(
@@ -1530,7 +1492,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"音频提取过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
 
     def process_local_text(self):
         """处理本地文本文件"""
@@ -1547,14 +1509,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
         
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-        
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
         
         try:
             # 调用原始代码中的处理函数
@@ -1573,7 +1528,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
     
     def process_batch(self):
         """批量处理YouTube视频"""
@@ -1599,14 +1554,7 @@ class WorkerThread(QThread):
         generate_article = self.params.get("generate_article", True)
         
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-        
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
         
         try:
             # 调用原始代码中的处理函数
@@ -1639,7 +1587,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"批量处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
 
     def process_dubbing(self):
         """处理中文配音任务"""
@@ -1881,15 +1829,16 @@ class LearningOpenThread(QThread):
     opened = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, path="", parent=None, directory=""):
+    def __init__(self, path="", parent=None, directory="", *, trim=False):
         super().__init__(parent)
         self.path = path
         self.directory = directory
+        self.trim = trim
 
     def run(self):
         try:
             from learning_desktop import learning_url
-            self.opened.emit(learning_url(self.path, self.directory))
+            self.opened.emit(learning_url(self.path, self.directory, trim=self.trim))
         except Exception as exc:
             self.failed.emit(str(exc) if isinstance(exc, ValueError) else "学习服务启动失败，请检查本地服务与依赖")
 
@@ -2082,31 +2031,35 @@ class MainWindow(QMainWindow):
         open_button = QPushButton("打开学习资料库")
         choose_button = QPushButton("选择视频并开始学习")
         project_button = QPushButton("打开视频工程目录（自动加载字幕）")
+        trim_button = QPushButton("截取本地视频片段")
         open_button.clicked.connect(lambda: self.open_learning_workspace())
         choose_button.clicked.connect(self.choose_learning_video)
         project_button.clicked.connect(self.choose_learning_project)
+        trim_button.clicked.connect(lambda: self.choose_learning_video(trim=True))
         buttons.addWidget(open_button)
         buttons.addWidget(choose_button)
         buttons.addWidget(project_button)
+        buttons.addWidget(trim_button)
         layout.addLayout(buttons)
         layout.addStretch()
         return tab
 
-    def choose_learning_video(self):
-        path, _ = QFileDialog.getOpenFileName(self, "选择学习视频", "", "视频 (*.mp4 *.mkv *.webm *.mov *.m4v *.avi *.flv)")
+    def choose_learning_video(self, *, trim=False):
+        title = "选择要截取的视频" if trim else "选择学习视频"
+        path, _ = QFileDialog.getOpenFileName(self, title, "", "视频 (*.mp4 *.mkv *.webm *.mov *.m4v *.avi *.flv *.mpeg *.mpg)")
         if path:
-            self.open_learning_workspace(path)
+            self.open_learning_workspace(path, trim=trim)
 
     def choose_learning_project(self):
         directory = QFileDialog.getExistingDirectory(self, "选择视频和字幕所在的工程目录")
         if directory:
             self.open_learning_workspace(directory=directory)
 
-    def open_learning_workspace(self, path="", directory=""):
+    def open_learning_workspace(self, path="", directory="", *, trim=False):
         if getattr(self, "learning_open_thread", None) and self.learning_open_thread.isRunning():
             self.statusBar.showMessage("正在打开视频学习，请稍候")
             return
-        self.learning_open_thread = LearningOpenThread(path, self, directory)
+        self.learning_open_thread = LearningOpenThread(path, self, directory, trim=trim)
         self.learning_open_thread.opened.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
         self.learning_open_thread.failed.connect(lambda message: QMessageBox.warning(self, "视频学习", message))
         self.learning_open_thread.start()
@@ -2169,14 +2122,16 @@ class MainWindow(QMainWindow):
         # 左侧选项
         left_options = QVBoxLayout()
         self.download_video_checkbox = QCheckBox("下载完整视频（而不仅是音频）")
-        self.generate_subtitles_checkbox = QCheckBox("生成字幕文件")
         self.translate_checkbox = QCheckBox("翻译字幕")
         self.embed_subtitles_checkbox = QCheckBox("将字幕嵌入到视频中")
 
         # 处理步骤选择
         self.prefer_native_subtitles_checkbox = QCheckBox("优先使用原生字幕（快速生成摘要）")
         self.prefer_native_subtitles_checkbox.setToolTip("如果视频有原生字幕，直接使用字幕生成摘要，跳过音频下载和转录步骤")
-        self.enable_transcription_checkbox = QCheckBox("执行转录（音频转文字）")
+        self.enable_transcription_checkbox = QCheckBox("转录并生成字幕")
+        self.enable_transcription_checkbox.setToolTip("将音频转成文字并保存字幕文件；优先使用原生字幕，缺失时使用 Whisper 转录。")
+        # Both task parameters now follow the same user choice.
+        self.generate_subtitles_checkbox = self.enable_transcription_checkbox
         self.generate_article_checkbox = QCheckBox("生成文章摘要")
 
         persistent_checkboxes = [
@@ -2185,26 +2140,21 @@ class MainWindow(QMainWindow):
                 self.prefer_native_subtitles_checkbox,
                 "online_video/prefer_native_subtitles",
             ),
-            (
-                self.enable_transcription_checkbox,
-                "online_video/enable_transcription",
-            ),
-            (
-                self.generate_subtitles_checkbox,
-                "online_video/generate_subtitles",
-            ),
             (self.translate_checkbox, "online_video/translate_subtitles"),
             (self.embed_subtitles_checkbox, "online_video/embed_subtitles"),
             (self.generate_article_checkbox, "online_video/generate_article"),
         ]
         for checkbox, preference_key in persistent_checkboxes:
             self.bind_persistent_checkbox(checkbox, preference_key)
+        combined_key = "online_video/transcribe_subtitles"
+        previous_choice = self.ui_preferences.get_bool("online_video/enable_transcription", True) or self.ui_preferences.get_bool("online_video/generate_subtitles", False)
+        self.enable_transcription_checkbox.setChecked(self.ui_preferences.get_bool(combined_key, previous_choice))
+        self.enable_transcription_checkbox.toggled.connect(lambda checked: self.ui_preferences.set_bool(combined_key, checked))
         
         # 按照正确的处理流程排序：下载视频 -> 优先原生字幕 -> 执行转录/生成字幕 -> 嵌入视频 -> 生成摘要
         left_options.addWidget(self.download_video_checkbox)
         left_options.addWidget(self.prefer_native_subtitles_checkbox)
         left_options.addWidget(self.enable_transcription_checkbox)
-        left_options.addWidget(self.generate_subtitles_checkbox)
         left_options.addWidget(self.translate_checkbox)
         left_options.addWidget(self.embed_subtitles_checkbox)
         left_options.addWidget(self.generate_article_checkbox)
@@ -6721,15 +6671,11 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
             from youtube_transcriber import auto_extract_cookies_from_browsers
             
             # 重定向print输出到对话框
-            original_print = print
-            def custom_print(*args, **kwargs):
-                text = " ".join(map(str, args))
+            def forward_output(text):
                 progress_text.append(text)
                 QApplication.processEvents()
-                original_print(*args, **kwargs)
-            
-            import builtins
-            builtins.print = custom_print
+
+            output_capture = start_stdout_capture(forward_output)
             
             try:
                 # 尝试自动获取cookies
@@ -6768,8 +6714,8 @@ https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"""
                     progress_text.append(error_msg)
                     
             finally:
-                # 恢复原始print函数
-                builtins.print = original_print
+                # 结束当前线程的日志转发
+                output_capture.close()
                 
         except Exception as e:
             progress_label.setText("❌ 获取过程中出错")

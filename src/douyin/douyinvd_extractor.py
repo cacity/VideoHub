@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Compatibility facade for the F2 -> DLPanda Douyin provider chain."""
+"""Compatibility facade for the F2 -> DLPanda -> HelloTik provider chain."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class MediaAddressError(DouyinProviderError):
 
 
 class DouyinVdExtractor:
-    """Resolve through F2 first and DLPanda second, then download media."""
+    """Resolve through F2, DLPanda and HelloTik, then download media."""
 
     def __init__(
         self,
@@ -76,7 +76,7 @@ class DouyinVdExtractor:
         }
         # DLPanda currently renders its player with referrerpolicy="no-referrer".
         # Its signed CDN URLs return 403 when a DLPanda Referer is supplied.
-        if provider != "dlpanda":
+        if provider not in {"dlpanda", "hellotik"}:
             headers["Referer"] = "https://www.douyin.com/"
 
         # Never send a user's Douyin Cookie to DLPanda or an unrelated CDN.
@@ -86,7 +86,7 @@ class DouyinVdExtractor:
             or host.endswith(".douyin.com")
             or host.endswith(".iesdouyin.com")
         )
-        if is_douyin_host:
+        if provider == "f2" and is_douyin_host:
             cookie = self.config.get_cookie()
             if cookie:
                 headers["Cookie"] = cookie
@@ -171,24 +171,42 @@ class DouyinVdExtractor:
         info = video_info or self.get_video_info(douyin_url)
         if not info:
             return {"success": False, "error": self.last_error or "无法获取视频信息"}
-        for attempt in range(2):
+        # One refresh, plus a final provider switch if DLPanda's CDN fails.
+        for attempt in range(3):
             try:
                 result = self._download_video_once(douyin_url, download_dir, save_metadata, info, progress_callback)
                 if result.get("success"):
                     self.last_error = ""
                 return result
             except MediaAddressError as exc:
-                if attempt:
+                switch_to_hellotik = (
+                    info.get("provider") == "dlpanda"
+                    and isinstance(self.provider_chain, DouyinProviderChain)
+                    and any(getattr(p, "name", "") == "hellotik" for p in self.provider_chain.providers)
+                )
+                if (attempt and not switch_to_hellotik) or attempt == 2:
                     self.last_error = f"视频地址刷新后仍不可用（{concise_error(exc)}）；请稍后重试或检查抖音访问状态"
                     break
                 message = f"视频地址不可用（{concise_error(exc)}），正在重新解析并重试一次..."
                 print(message)
                 if progress_callback:
                     progress_callback(message, 10)
-                refreshed = self.get_video_info(douyin_url)
+                # A parsed DLPanda URL can still fail at its CDN. In that case
+                # move to HelloTik instead of resolving the same dead address.
+                if switch_to_hellotik:
+                    try:
+                        refreshed = self.provider_chain.get_video_info(douyin_url, start_after="dlpanda")
+                    except DouyinProviderError as fallback_error:
+                        refreshed = None
+                        self.last_error = concise_error(fallback_error)
+                else:
+                    refreshed = self.get_video_info(douyin_url)
                 if not refreshed:
                     self.last_error = "视频地址不可用，重新解析失败：" + (self.last_error or "未获取到新地址")
                     break
+                errors = {**info.get("provider_errors", {}), **refreshed.get("provider_errors", {})}
+                errors[info.get("provider", "unknown")] = "媒体地址不可用：" + concise_error(exc)
+                refreshed["provider_errors"] = errors
                 previous_id = str(info.get("aweme_id") or "unknown")
                 if previous_id != "unknown" and str(refreshed.get("aweme_id")) != previous_id:
                     self.last_error = "重新解析返回了其他作品，已停止下载，请检查链接"

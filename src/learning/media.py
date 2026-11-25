@@ -60,6 +60,26 @@ def probe(path: Path) -> dict:
 
 
 def preview(path: Path, destination: Path, cancelled, on_progress) -> Path:
+    return encode_mp4(
+        path, destination, cancelled, on_progress,
+        output_options=["-map", "0:a:0?", "-vf", "scale='min(1280,iw)':-2"],
+        failure="浏览器预览转码失败，请检查视频与磁盘空间",
+    )
+
+
+def trim(path: Path, destination: Path, start: float, end: float, cancelled, on_progress) -> Path:
+    return encode_mp4(
+        path, destination, cancelled, on_progress,
+        input_options=["-ss", f"{start:.6f}"],
+        output_options=[
+            "-t", f"{end - start:.6f}", "-map", "0:a?", "-map_chapters", "-1",
+            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-pix_fmt", "yuv420p",
+        ],
+        failure="视频截取失败，请检查视频与磁盘空间",
+    )
+
+
+def encode_mp4(path: Path, destination: Path, cancelled, on_progress, *, output_options, failure, input_options=()) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(".partial.mp4")
     process = subprocess.Popen(
@@ -68,14 +88,13 @@ def preview(path: Path, destination: Path, cancelled, on_progress) -> Path:
             "-v",
             "error",
             "-y",
+            "-nostdin",
+            *input_options,
             "-i",
             str(path),
             "-map",
             "0:v:0",
-            "-map",
-            "0:a:0?",
-            "-vf",
-            "scale='min(1280,iw)':-2",
+            *output_options,
             "-c:v",
             "libx264",
             "-preset",
@@ -95,6 +114,7 @@ def preview(path: Path, destination: Path, cancelled, on_progress) -> Path:
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         text=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     try:
         # The monitor thread also terminates the process if encoding stops producing output.
@@ -104,7 +124,7 @@ def preview(path: Path, destination: Path, cancelled, on_progress) -> Path:
 
         def monitor():
             while not done.wait(0.2):
-                if cancelled.is_set():
+                if cancelled.is_set() and process.poll() is None:
                     process.terminate()
                     return
 
@@ -112,14 +132,22 @@ def preview(path: Path, destination: Path, cancelled, on_progress) -> Path:
         try:
             for line in process.stdout:
                 if line.startswith("out_time_us="):
-                    on_progress(float(line.split("=", 1)[1].strip() or 0) / 1_000_000)
+                    timestamp = line.split("=", 1)[1].strip()
+                    if timestamp.lstrip("-").isdigit():
+                        on_progress(int(timestamp) / 1_000_000)
             result = process.wait()
         finally:
             done.set()
         if cancelled.is_set():
-            raise InterruptedError("预览生成已停止")
-        if result:
-            raise ValueError("浏览器预览转码失败，请检查视频与磁盘空间")
+            raise InterruptedError()
+        if result or not temporary.is_file():
+            raise ValueError(failure)
+        try:
+            probe(temporary)
+        except ValueError:
+            raise ValueError(failure) from None
+        if cancelled.is_set():
+            raise InterruptedError()
         temporary.replace(destination)
         return destination
     finally:

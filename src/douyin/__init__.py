@@ -3,18 +3,19 @@
 
 """
 抖音视频下载模块
-单视频使用 F2 主解析与 DLPanda 回退
+单视频使用 F2 主解析、DLPanda 与 HelloTik 顺序回退
 """
 
 __version__ = "2.0.0"
 __author__ = "YouTube Reader Team"
-__description__ = "抖音视频下载工具（F2 主解析 + DLPanda 回退）"
+__description__ = "抖音视频下载工具（F2 → DLPanda → HelloTik）"
 
 from .downloader import DouyinDownloader
 from .config import DouyinConfig
 from .utils import DouyinUtils
 from .douyinvd_extractor import DouyinVdExtractor
 from .providers import DLPandaProvider, DouyinProviderChain, F2Provider
+from .hellotik import HelloTikProvider
 
 __all__ = [
     'DouyinDownloader',
@@ -24,4 +25,5 @@ __all__ = [
     'DouyinProviderChain',
     'F2Provider',
     'DLPandaProvider',
+    'HelloTikProvider',
 ]

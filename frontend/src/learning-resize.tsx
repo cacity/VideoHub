@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-type Sizes = { library: number; assistant: number; player: number | null };
+type Sizes = { library: number; assistant: number; player: number | null; videoShare: number };
 type Part = keyof Sizes;
-const defaults: Sizes = { library: 220, assistant: 360, player: null };
+const defaults: Sizes = { library: 220, assistant: 360, player: null, videoShare: 0.535 };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 function savedSizes(): Sizes {
@@ -10,11 +10,11 @@ function savedSizes(): Sizes {
     const value = JSON.parse(localStorage.getItem('videohub.learning.sizes') || '{}');
     const valid = (key: Part, min: number, max: number) => typeof value?.[key] === 'number' && Number.isFinite(value[key])
       ? clamp(value[key], min, max) : defaults[key];
-    return { library: valid('library', 160, 420)!, assistant: valid('assistant', 260, 10000)!, player: valid('player', 60, 1200) };
+    return { library: valid('library', 160, 420)!, assistant: valid('assistant', 260, 10000)!, player: valid('player', 60, 1200), videoShare: valid('videoShare', .05, .95)! };
   } catch { return { ...defaults }; }
 }
 
-export function useLearningSizes(lesson: React.RefObject<HTMLElement>, assistantHidden: boolean, ratio: number, libraryHidden = false) {
+export function useLearningSizes(lesson: React.RefObject<HTMLElement>, assistantHidden: boolean, ratio: number, libraryHidden = false, transcriptSide = false) {
   const [sizes, setSizes] = useState(savedSizes);
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [contentWidth, setContentWidth] = useState(640);
@@ -43,12 +43,19 @@ export function useLearningSizes(lesson: React.RefObject<HTMLElement>, assistant
   // Give reading/brain-map tasks up to 80% of the viewport while keeping a
   // usable video column; collapsing the library immediately releases its room.
   const assistantMax = Math.max(260, Math.min(viewport.width * .8, viewport.width - (libraryHidden ? 0 : library) - 320));
-  const playerMax = Math.max(1, Math.min(1200, viewport.height * .85, contentWidth / ratio));
+  const splitAvailable = Math.max(1, contentWidth - 12);
+  const videoMin = Math.min(280, splitAvailable / 2);
+  const videoMax = Math.max(videoMin, splitAvailable - 280);
+  const videoWidth = clamp(splitAvailable * sizes.videoShare, videoMin, videoMax);
+  const playerWidth = transcriptSide && contentWidth > 640 ? videoWidth : contentWidth;
+  const playerMax = Math.max(1, Math.min(1200, viewport.height * .85, playerWidth / ratio));
   const playerMin = Math.min(120, playerMax);
-  const change = (part: Part, value: number) => setSizes(previous => ({ ...previous, [part]: Math.round(value) }));
+  const change = (part: Part, value: number) => setSizes(previous => ({ ...previous,
+    [part]: part === 'videoShare' ? clamp(value, .05, .95) : Math.round(value) }));
   const reset = (part: Part) => setSizes(previous => ({ ...previous, [part]: defaults[part] }));
   return {
     library, libraryMax,
+    videoWidth, videoMin, videoMax, splitAvailable,
     assistant: clamp(sizes.assistant, 260, assistantMax), assistantMax,
     player: clamp(sizes.player ?? viewport.height * (assistantHidden ? .68 : .46), playerMin, playerMax), playerMin, playerMax,
     change, reset,

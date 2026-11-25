@@ -3,6 +3,8 @@
 包含所有 QThread 子类，用于执行耗时操作避免界面卡顿
 """
 
+from src.stdout_capture import start_stdout_capture
+
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer
 
 
@@ -97,15 +99,7 @@ class WorkerThread(QThread):
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
 
         # 重定向print输出到信号
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-
-        # 替换全局print函数
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
 
         # 控制翻译日志详细程度
         try:
@@ -269,8 +263,8 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            # 恢复原始print函数
-            builtins.print = original_print
+            # 结束当前线程的日志转发
+            output_capture.close()
 
     def _process_douyin_transcription_and_summary(self, video_file, model, api_key, base_url,
                                                    whisper_model_size, stream, summary_dir,
@@ -534,14 +528,7 @@ class WorkerThread(QThread):
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
 
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
 
         try:
             # 调用原始代码中的处理函数
@@ -562,7 +549,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
 
     def process_local_video(self):
         """处理本地视频文件"""
@@ -592,14 +579,7 @@ class WorkerThread(QThread):
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
 
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
 
         try:
             # 调用原始代码中的处理函数
@@ -620,7 +600,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
 
     def process_local_video_batch(self):
         """批量处理本地视频文件"""
@@ -651,14 +631,7 @@ class WorkerThread(QThread):
         os.environ["TRANSLATION_POLISH_DEEPSEEK"] = "true" if enable_translation_polish else "false"
 
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
 
         try:
             # 调用批量处理函数
@@ -692,7 +665,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"批量处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
 
     def process_extract_audio(self):
         """从本地视频文件或目录批量提取音频"""
@@ -705,14 +678,7 @@ class WorkerThread(QThread):
         output_dir = self.params.get("output_dir", SONGS_DIR)
         recursive = self.params.get("recursive", True)
 
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
 
         try:
             results = extract_audio_from_local_videos(
@@ -732,7 +698,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"音频提取过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
 
     def process_local_text(self):
         """处理本地文本文件"""
@@ -752,14 +718,7 @@ class WorkerThread(QThread):
         template_path = self.params.get("template_path", None)
 
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
 
         try:
             # 调用原始代码中的处理函数
@@ -778,7 +737,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
 
     def process_batch(self):
         """批量处理YouTube视频"""
@@ -807,14 +766,7 @@ class WorkerThread(QThread):
         generate_article = self.params.get("generate_article", True)
 
         # 重定向print输出
-        original_print = print
-        def custom_print(*args, **kwargs):
-            text = " ".join(map(str, args))
-            self.update_signal.emit(text)
-            original_print(*args, **kwargs)
-
-        import builtins
-        builtins.print = custom_print
+        output_capture = start_stdout_capture(self.update_signal.emit)
 
         try:
             # 调用原始代码中的处理函数
@@ -847,7 +799,7 @@ class WorkerThread(QThread):
             self.update_signal.emit(f"批量处理过程中出现错误: {str(e)}")
             self.finished_signal.emit("", False)
         finally:
-            builtins.print = original_print
+            output_capture.close()
 
     def process_dubbing(self):
         """处理中文配音任务"""

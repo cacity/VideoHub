@@ -432,7 +432,7 @@ class DouyinUtils:
             else:
                 create_date = "未知"
             duration_str = DouyinUtils.format_duration(int(duration or 0))
-            provider_label = {"f2": "F2", "dlpanda": "DLPanda"}.get(provider, provider)
+            provider_label = {"f2": "F2", "dlpanda": "DLPanda", "hellotik": "HelloTik"}.get(provider, provider)
 
             summary = f"""
 作者: {author}

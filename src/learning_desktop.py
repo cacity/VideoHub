@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import threading
 import secrets
+import threading
 from urllib.parse import urlencode
 
 import requests
@@ -13,7 +13,7 @@ _server = None
 BASE_URL = "http://127.0.0.1:8767"
 
 
-def learning_url(path: str = "", directory: str = "") -> str:
+def learning_url(path: str = "", directory: str = "", *, trim: bool = False) -> str:
     """Start/reuse the local service and optionally register a user-selected video."""
     global _server
     with _lock:
@@ -56,4 +56,7 @@ def learning_url(path: str = "", directory: str = "") -> str:
                 # blocking the desktop window on a large batch.
                 return BASE_URL + "/learn?" + urlencode({"directory": directory, "launch": launch})
             data = data["video"]
-        return BASE_URL + "/learn?" + urlencode({"video": data["id"], "launch": launch})
+        params = {"video": data["id"], "launch": launch}
+        if trim:
+            params["trim"] = "1"
+        return BASE_URL + "/learn?" + urlencode(params)
