@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Compatibility facade for the F2 -> DLPanda -> HelloTik provider chain."""
+"""Compatibility facade for the Douyin video and gallery provider chain."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class MediaAddressError(DouyinProviderError):
 
 
 class DouyinVdExtractor:
-    """Resolve through F2, DLPanda and HelloTik, then download media."""
+    """Resolve through available providers, then save videos or complete galleries."""
 
     def __init__(
         self,
@@ -76,7 +76,7 @@ class DouyinVdExtractor:
         }
         # DLPanda currently renders its player with referrerpolicy="no-referrer".
         # Its signed CDN URLs return 403 when a DLPanda Referer is supplied.
-        if provider not in {"dlpanda", "hellotik"}:
+        if provider not in {"dlpanda", "hellotik", "peanutdl"}:
             headers["Referer"] = "https://www.douyin.com/"
 
         # Never send a user's Douyin Cookie to DLPanda or an unrelated CDN.
@@ -114,7 +114,7 @@ class DouyinVdExtractor:
                 media_url,
                 headers=self._request_headers(provider, media_url),
                 stream=True,
-                timeout=max(self.config.get("timeout", 30), 60),
+                timeout=max(self.config.get("timeout", 30), 15 if output_path.suffix == ".download" else 60),
                 allow_redirects=True,
             ) as response:
                 try:
@@ -171,31 +171,27 @@ class DouyinVdExtractor:
         info = video_info or self.get_video_info(douyin_url)
         if not info:
             return {"success": False, "error": self.last_error or "无法获取视频信息"}
-        # One refresh, plus a final provider switch if DLPanda's CDN fails.
-        for attempt in range(3):
+        sources = self.provider_chain.providers if isinstance(self.provider_chain, DouyinProviderChain) else []
+        names = [getattr(p, "name", "") for p in sources]
+        for attempt in range(max(2, len(sources) + 1)):
             try:
                 result = self._download_video_once(douyin_url, download_dir, save_metadata, info, progress_callback)
                 if result.get("success"):
                     self.last_error = ""
                 return result
             except MediaAddressError as exc:
-                switch_to_hellotik = (
-                    info.get("provider") == "dlpanda"
-                    and isinstance(self.provider_chain, DouyinProviderChain)
-                    and any(getattr(p, "name", "") == "hellotik" for p in self.provider_chain.providers)
-                )
-                if (attempt and not switch_to_hellotik) or attempt == 2:
+                source = info.get("provider")
+                switch_source = source in names and names.index(source) + 1 < len(names)
+                if attempt and not switch_source:
                     self.last_error = f"视频地址刷新后仍不可用（{concise_error(exc)}）；请稍后重试或检查抖音访问状态"
                     break
                 message = f"视频地址不可用（{concise_error(exc)}），正在重新解析并重试一次..."
                 print(message)
                 if progress_callback:
                     progress_callback(message, 10)
-                # A parsed DLPanda URL can still fail at its CDN. In that case
-                # move to HelloTik instead of resolving the same dead address.
-                if switch_to_hellotik:
+                if switch_source:
                     try:
-                        refreshed = self.provider_chain.get_video_info(douyin_url, start_after="dlpanda")
+                        refreshed = self.provider_chain.get_video_info(douyin_url, start_after=source)
                     except DouyinProviderError as fallback_error:
                         refreshed = None
                         self.last_error = concise_error(fallback_error)
@@ -211,9 +207,50 @@ class DouyinVdExtractor:
                 if previous_id != "unknown" and str(refreshed.get("aweme_id")) != previous_id:
                     self.last_error = "重新解析返回了其他作品，已停止下载，请检查链接"
                     break
+                if info.get("type") == "image" and (
+                    refreshed.get("type") != "image"
+                    or len(refreshed.get("images") or []) != len(info.get("images") or [])
+                ):
+                    self.last_error = "备用来源返回的图集数量或类型不一致，已停止下载，避免漏图"
+                    break
                 info = refreshed
         print(f"下载视频失败: {self.last_error}")
         return {"success": False, "error": self.last_error}
+
+    def _download_image(self, candidates, folder, index, provider, callback, start, end):
+        from PIL import Image
+
+        extensions = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp", "GIF": ".gif", "AVIF": ".avif"}
+        for extension in extensions.values():
+            existing = folder / f"{index:03d}{extension}"
+            if existing.is_file():
+                try:
+                    with Image.open(existing) as image:
+                        image.load()
+                        if extensions.get(image.format) == extension:
+                            return existing, True
+                except (OSError, ValueError):
+                    pass
+        temporary = folder / f"{index:03d}.download"
+        for address in list(dict.fromkeys(candidates))[:6]:
+            try:
+                self._download_media(address, temporary, provider, callback, start, end)
+                try:
+                    with Image.open(temporary) as image:
+                        image.load()
+                        extension = extensions.get(image.format)
+                        if not extension:
+                            raise ValueError("unsupported image")
+                except (OSError, ValueError) as exc:
+                    raise MediaAddressError("图片地址返回无效或不完整图片") from exc
+                destination = folder / f"{index:03d}{extension}"
+                temporary.replace(destination)
+                return destination, False
+            except (MediaAddressError, requests.RequestException):
+                continue
+            finally:
+                temporary.unlink(missing_ok=True)
+        raise MediaAddressError(f"第 {index} 张图片的所有地址均不可用")
 
     def _download_video_once(
         self, douyin_url: str, download_dir: str, save_metadata: bool,
@@ -231,7 +268,7 @@ class DouyinVdExtractor:
 
             video_url = self.get_video_url(douyin_url, info)
             images = info.get("images") or []
-            if video_url:
+            if video_url and info.get("type") != "image":
                 destination = output_dir / f"{base_filename}_no_watermark.mp4"
                 reused = destination.is_file() and destination.stat().st_size > 0
                 alternatives = (info.get("video") or {}).get("play_urls") or []
@@ -259,15 +296,19 @@ class DouyinVdExtractor:
                     }
                 )
             elif images:
-                span = max(70 // len(images), 1)
+                # A provider gets its own directory so a fallback never combines
+                # half of one source's gallery with another source's pictures.
+                safe_provider = provider if provider in {"f2", "dlpanda", "hellotik", "peanutdl"} else "unknown"
+                gallery_dir = output_dir / f"{base_filename}_images" / safe_provider
+                (gallery_dir / "gallery.json").unlink(missing_ok=True)
+                groups = info.get("image_url_groups") or [[url] for url in images]
+                if len(groups) != len(images):
+                    raise DouyinProviderError("图集地址与图片数量不一致")
                 for index, image_url in enumerate(images, start=1):
-                    image_path = self._download_media(
-                        image_url,
-                        output_dir / f"{base_filename}_{index:02d}.jpg",
-                        provider,
-                        progress_callback,
-                        15 + (index - 1) * span,
-                        min(15 + index * span, 85),
+                    image_path, reused = self._download_image(
+                        [image_url] + groups[index - 1], gallery_dir, index, provider,
+                        progress_callback, 15 + int(70 * (index - 1) / len(images)),
+                        15 + int(70 * index / len(images)),
                     )
                     files["image"].append(str(image_path))
                     downloaded_files.append(
@@ -275,8 +316,21 @@ class DouyinVdExtractor:
                             "type": "image",
                             "path": str(image_path),
                             "size": image_path.stat().st_size,
+                            "index": index,
+                            "reused": reused,
                         }
                     )
+                    message = f"图集已保存 {index}/{len(images)} 张：{image_path}"
+                    if progress_callback:
+                        progress_callback(message, 15 + int(70 * index / len(images)))
+                    else:
+                        print(message)
+                manifest = gallery_dir / "gallery.json"
+                manifest.write_text(json.dumps({
+                    "aweme_id": info.get("aweme_id"), "provider": provider,
+                    "expected_count": len(images), "saved_count": len(files["image"]),
+                    "files": [Path(path).name for path in files["image"]],
+                }, ensure_ascii=False, indent=2), encoding="utf-8")
             else:
                 raise DouyinProviderError("解析结果中没有可下载的媒体地址")
 
@@ -339,6 +393,7 @@ class DouyinVdExtractor:
                 "downloaded_files": downloaded_files,
                 "files": files,
                 "errors": [],
+                "image_count": len(files["image"]),
             }
         except MediaAddressError:
             raise

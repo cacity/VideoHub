@@ -20,7 +20,7 @@ def work_label(url, info=None):
     except ValueError:
         parsed = urlsplit("")
     if not work_id or work_id == "unknown":
-        match = re.search(r"/(?:share/)?video/(\d+)", parsed.path)
+        match = re.search(r"/(?:share/)?(?:video|note)/(\d+)", parsed.path)
         work_id = match[1] if match else parse_qs(parsed.query).get("modal_id", [""])[0]
     if work_id.isdigit():
         identity = f"作品ID {work_id}"
@@ -33,7 +33,7 @@ def work_label(url, info=None):
 
 
 def provider_label(name):
-    return {"f2": "F2", "dlpanda": "DLPanda", "hellotik": "HelloTik"}.get(name, name or "未知来源")
+    return {"f2": "F2", "dlpanda": "DLPanda", "hellotik": "HelloTik", "peanutdl": "PeanutDL"}.get(name, name or "未知来源")
 
 
 def report_status(message, callback=None, progress=0):

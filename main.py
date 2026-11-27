@@ -956,7 +956,7 @@ class WorkerThread(QThread):
                         self.update_signal.emit("❌ 无法获取抖音视频信息")
                         self.update_signal.emit("可能原因：")
                         self.update_signal.emit("1. 视频链接已失效或被删除")
-                        self.update_signal.emit("2. F2 解析失败且 DLPanda 回退不可用")
+                        self.update_signal.emit("2. F2、DLPanda、HelloTik、PeanutDL 当前均未成功")
                         self.update_signal.emit("3. 私密/受限制视频缺少有效 Cookie")
                         self.update_signal.emit("建议：检查链接，或在抖音下载设置中填入有效 Cookie")
                         self.finished_signal.emit("抖音视频信息获取失败", False)
@@ -9202,7 +9202,7 @@ class DouyinParseThread(QThread):
                 print(f"[线程] 视频信息为空，发出失败信号")
                 self.finished_signal.emit(
                     False,
-                    downloader.last_error or "F2 与 DLPanda 均无法解析视频信息",
+                    downloader.last_error or "当前抖音解析来源均未成功",
                 )
                 
         except Exception as e:
@@ -9238,7 +9238,8 @@ class DouyinDownloadThread(QThread):
             video_files = download_result.get("files", {}).get("video", [])
             if not video_files:
                 self.result_signal.emit(download_result)
-                self.finished_signal.emit(True, "下载完成（未找到视频文件进行转录）")
+                count = len(download_result.get("files", {}).get("image", []))
+                self.finished_signal.emit(True, f"图集下载完成（共 {count} 张，无需视频转录）" if count else "下载完成（无视频需要转录）")
                 return
             
             # 使用第一个视频文件

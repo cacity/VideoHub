@@ -150,7 +150,7 @@ class WorkerThread(QThread):
                         self.update_signal.emit("❌ 无法获取抖音视频信息")
                         self.update_signal.emit("可能原因：")
                         self.update_signal.emit("1. 视频链接已失效或被删除")
-                        self.update_signal.emit("2. F2 解析失败且 DLPanda 回退不可用")
+                        self.update_signal.emit("2. F2、DLPanda、HelloTik、PeanutDL 当前均未成功")
                         self.update_signal.emit("3. 私密/受限制视频缺少有效 Cookie")
                         self.update_signal.emit("建议：检查链接，或在抖音下载设置中填入有效 Cookie")
                         self.finished_signal.emit("抖音视频信息获取失败", False)

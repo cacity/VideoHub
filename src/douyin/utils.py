@@ -33,6 +33,7 @@ class DouyinUtils:
             # 常见的抖音URL格式
             patterns = [
                 r'video/(\d+)',  # https://www.douyin.com/video/7xxxxx
+                r'note/(\d+)',  # 图文作品
                 r'share/video/(\d+)',  # 分享链接
                 r'/(\d+)',  # 短链接
                 r'modal_id=(\d+)',  # 模态框链接
@@ -432,7 +433,7 @@ class DouyinUtils:
             else:
                 create_date = "未知"
             duration_str = DouyinUtils.format_duration(int(duration or 0))
-            provider_label = {"f2": "F2", "dlpanda": "DLPanda", "hellotik": "HelloTik"}.get(provider, provider)
+            provider_label = {"f2": "F2", "dlpanda": "DLPanda", "hellotik": "HelloTik", "peanutdl": "PeanutDL"}.get(provider, provider)
 
             summary = f"""
 作者: {author}
@@ -440,6 +441,7 @@ class DouyinUtils:
 时长: {duration_str}
 发布时间: {create_date}
 解析源: {provider_label}
+作品类型: {"图集（共 " + str(len(video_info.get('images') or [])) + " 张）" if video_info.get('type') == 'image' else "视频"}
             """.strip()
             
             return summary

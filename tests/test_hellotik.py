@@ -18,6 +18,13 @@ from douyin.hellotik import HelloTikProvider
 from douyin.providers import DouyinProviderChain, DouyinProviderError
 
 URL = "https://www.douyin.com/video/7709439864568051162"
+
+
+@pytest.fixture(autouse=True)
+def isolate_provider_health(monkeypatch):
+    monkeypatch.setattr(DouyinProviderChain, "_f2_blocked_until", {})
+
+
 PROFILE = {
     "id": "rotated-profile", "authRoute": "gate-new",
     "ticketResponseFields": {"key": "ticket_new"},
@@ -134,7 +141,7 @@ def test_rate_limit_is_reported_without_retry_or_secret_logs(tmp_path, capsys):
 def test_default_chain_order_and_dlpanda_parse_failure(tmp_path, monkeypatch):
     config = DouyinConfig({"download_dir": str(tmp_path)})
     chain = DouyinProviderChain(config)
-    assert [p.name for p in chain.providers] == ["f2", "dlpanda", "hellotik"]
+    assert [p.name for p in chain.providers] == ["f2", "dlpanda", "hellotik", "peanutdl"]
     calls = []
     for provider in chain.providers[:2]:
         def fail(url, name=provider.name):

@@ -38,7 +38,7 @@ class DouyinDownloader:
         download_dir = self.config.get("download_dir")
         os.makedirs(download_dir, exist_ok=True)
         
-        # 保留旧属性名以兼容调用方；内部已是 F2 -> DLPanda -> HelloTik。
+        # 保留旧属性名以兼容调用方；内部为多来源视频/图集解析链。
         self.douyinvd_extractor = DouyinVdExtractor(port=port, config=self.config)
         self._video_info_cache: Dict[str, Dict[str, Any]] = {}
         self.last_error = ""
@@ -80,7 +80,10 @@ class DouyinDownloader:
                 for entry in douyinvd_result.get("downloaded_files", []):
                     state = "已复用本地文件" if entry.get("reused") else "已保存"
                     report_status(f"[抖音][{state}] {entry['path']}", progress_callback, 100)
-                if source in {"DLPanda", "HelloTik"} and (info.get("provider_errors") or {}).get("f2"):
+                if info.get("type") == "image":
+                    count = len(douyinvd_result.get("files", {}).get("image", []))
+                    report_status(f"[抖音][图集完成] 已保存 {count}/{len(info.get('images') or [])} 张图片", progress_callback, 100)
+                if source in {"DLPanda", "HelloTik", "PeanutDL"} and (info.get("provider_errors") or {}).get("f2"):
                     report_status(f"[抖音][来源说明] 本次文件由 {source} 提供地址；F2 不可用不影响本次文件保存。", progress_callback, 100)
                 self.last_error = ""
                 return douyinvd_result
@@ -416,7 +419,7 @@ class DouyinDownloader:
         download_dir: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        使用 F2 -> DLPanda -> HelloTik 下载视频（方法名保留兼容性）
+        使用 F2 -> DLPanda -> HelloTik -> PeanutDL 保存视频或图集（方法名保留兼容性）
         :param url: 视频URL
         :param progress_callback: 进度回调函数
         :return: 下载结果

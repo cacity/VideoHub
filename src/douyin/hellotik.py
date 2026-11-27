@@ -149,16 +149,24 @@ class HelloTikProvider:
         if not isinstance(data, dict):
             raise DouyinProviderError("HelloTik 解析结果格式已变化")
 
-        def urls(values):
-            return list(dict.fromkeys(
+        def urls(values, unique=True):
+            addresses = [
                 address for value in (values or [])
                 if isinstance(value, (str, dict))
                 for address in [value.get("url", "") if isinstance(value, dict) else value]
                 if isinstance(address, str) and urlparse(address).scheme in {"http", "https"}
-            ))
+            ]
+            return list(dict.fromkeys(addresses)) if unique else addresses
 
         videos = urls(data.get("videos"))
-        pictures = urls(data.get("pics"))
+        pictures = urls(data.get("pics"), unique=False)
+        if len(pictures) != len(data.get("pics") or []):
+            raise DouyinProviderError("HelloTik 图集含缺失的图片地址，不能保存完整图集")
+        gallery = bool(pictures) and (
+            not videos or len(pictures) > 1
+            or "/note/" in urlparse(source_url).path
+            or str(data.get("type", "")).lower() in {"image", "images", "photo", "album"}
+        )
         if not videos and not pictures:
             raise DouyinProviderError("HelloTik 结果中没有可下载的视频或图片地址")
         work_id = DouyinUtils.extract_video_id(source_url)
@@ -166,7 +174,7 @@ class HelloTikProvider:
         raw = {
             "aweme_id": work_id or "unknown", "desc": data.get("title"),
             "video": {"play_addr": {"url_list": videos}, "cover": {"url_list": pictures[:1]}},
-            "images": [] if videos else pictures,
+            "images": pictures if gallery else [],
         }
         info = F2Provider._normalize(raw, source_url)
         info.update(provider="hellotik", from_hellotik=True, raw_data={})
