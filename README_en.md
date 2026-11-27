@@ -1,8 +1,18 @@
 # VideoHub
 
-**Current Version: v0.8.0 (Source Version)**
+**Current Version: v0.8.1 (Source Version)**
 
 English | [简体中文](./README.md)
+
+## v0.8.1: Complete Photo Galleries and PeanutDL Fallback
+
+Updated November 27, 2026. See the [v0.8.1 release notes](./docs/release-v0.8.1.md) for details.
+
+- **Additional fallback**: Videos and galleries use F2 → DLPanda → HelloTik → PeanutDL with bounded retries. Third-party requests never receive your Douyin cookie.
+- **Complete galleries**: Recognize photo share links and save every image in order, preserving its actual format and showing saved/expected counts. Slideshow-only results no longer count as a completed photo gallery.
+- **Validation and resume**: Decode each image, try alternate addresses or subsequent providers when needed, report missing images, and reuse valid files on repeated downloads. Images are saved under `<title_postID>_images/<provider>/`, with a count manifest after completion.
+
+A user-provided ten-image gallery was fully downloaded through both PeanutDL and HelloTik; PeanutDL supplied images with a 3240-pixel long edge in this sample. Restart source VideoHub after updating. Existing EXE builds require separate repackaging.
 
 ## v0.8.0: Subtitle Reading, Video Clips and Download Improvements
 

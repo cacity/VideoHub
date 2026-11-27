@@ -42,6 +42,10 @@ def download_douyin(downloader, url: str, *, video_info=None, progress_callback=
     info = video_info or downloader.get_video_info(url)
     if not info:
         return {"success": False, "error": downloader.last_error or "无法获取抖音视频信息"}
+    if info.get("type") == "image":
+        if progress_callback:
+            progress_callback("检测到图集，保存全部图片；无需视频转录", 5)
+        return downloader.download_video(url, video_info=info, progress_callback=progress_callback)
     work_id = str(info.get("aweme_id", ""))
     canonical_url = f"https://www.douyin.com/video/{work_id}" if work_id.isdigit() else url
     root = project_directory(canonical_url)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""F2-first metadata resolution with DLPanda and HelloTik fallbacks."""
+"""F2-first resolution with DLPanda, HelloTik and PeanutDL fallbacks."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from time import monotonic
 from typing import Any, Dict, Iterable, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -160,10 +160,13 @@ class F2Provider:
         play_url = play_urls[0] if play_urls else ""
 
         images = []
+        image_url_groups = []
         for image in detail.get("images") or []:
-            image_url = _first_url(image.get("url_list") if isinstance(image, dict) else image)
-            if image_url:
-                images.append(image_url)
+            candidates = _all_urls(image.get("url_list") if isinstance(image, dict) else image)
+            if not candidates:
+                raise DouyinProviderError("F2 图集含缺失的图片地址，不能保存完整图集")
+            images.append(candidates[0])
+            image_url_groups.append(candidates)
 
         aweme_id = str(detail.get("aweme_id") or DouyinUtils.extract_video_id(source_url) or "unknown")
         author = detail.get("author") or {}
@@ -211,7 +214,8 @@ class F2Provider:
                 "collect_count": statistics.get("collect_count") or 0,
             },
             "images": images,
-            "type": "image" if images and not play_url else "video",
+            "image_url_groups": image_url_groups,
+            "type": "image" if images else "video",
             "source_url": source_url,
             "provider": "f2",
             "from_f2": True,
@@ -290,7 +294,13 @@ class DLPandaProvider:
             raise DouyinProviderError(f"DLPanda {message}")
 
         video_url = ""
-        download = result.select_one("[data-download-url]")
+        def image_link(node):
+            return bool(re.search(
+                r"\.(?:jpe?g|png|webp|gif|avif)(?:$|\?)",
+                node.get("data-download-name", "") or node.get("data-download-url", ""), re.I,
+            ))
+
+        download = next((node for node in result.select("[data-download-url]") if not image_link(node)), None)
         if download:
             video_url = download.get("data-download-url") or download.get("href") or ""
         if not video_url:
@@ -305,12 +315,13 @@ class DLPandaProvider:
         ))
 
         image_urls = []
-        for node in result.select("a[data-download-name], img[src]"):
+        image_downloads = [node for node in result.select("a[data-download-name]") if image_link(node)]
+        for node in image_downloads or ([] if video_url else result.select("img[src]")):
             name = (node.get("data-download-name") or "").lower()
             candidate = node.get("data-download-url") or node.get("href") or node.get("src") or ""
             if candidate and (
-                re.search(r"\.(?:jpe?g|png|webp)(?:$|\?)", candidate, re.I)
-                or re.search(r"\.(?:jpe?g|png|webp)$", name, re.I)
+                re.search(r"\.(?:jpe?g|png|webp|gif|avif)(?:$|\?)", candidate, re.I)
+                or re.search(r"\.(?:jpe?g|png|webp|gif|avif)$", name, re.I)
             ):
                 normalized = urljoin(cls.base_url, candidate)
                 if normalized not in image_urls:
@@ -377,7 +388,7 @@ class DLPandaProvider:
 
 
 class DouyinProviderChain:
-    """Try F2, DLPanda, then HelloTik, retaining useful failure details."""
+    """Try F2, DLPanda, HelloTik and PeanutDL, retaining failure details."""
 
     F2_COOLDOWN_SECONDS = 15 * 60
     _f2_blocked_until = {}
@@ -390,11 +401,13 @@ class DouyinProviderChain:
     ):
         self.config = config or DouyinConfig()
         from .hellotik import HelloTikProvider
+        from .peanutdl import PeanutDLProvider
 
         self.providers = providers or [
             F2Provider(self.config),
             DLPandaProvider(self.config),
             HelloTikProvider(self.config),
+            PeanutDLProvider(self.config),
         ]
         self.last_errors: Dict[str, str] = {}
 
@@ -418,6 +431,19 @@ class DouyinProviderChain:
 
     def get_video_info(self, url: str, *, start_after: Optional[str] = None) -> Dict[str, Any]:
         self.last_errors = {}
+        request_url = url
+        if urlparse(url).hostname in {"v.douyin.com", "jx.douyin.com"}:
+            # Learn whether a short link targets a gallery before a provider
+            # mistakes its slideshow rendition for the original pictures.
+            try:
+                with requests.get(url, headers={"User-Agent": self.config.get("user_agent")},
+                                  timeout=self.config.get("timeout", 30), stream=True) as redirect:
+                    host = urlparse(redirect.url).hostname or ""
+                    if host == "douyin.com" or host.endswith(".douyin.com") or host.endswith(".iesdouyin.com"):
+                        request_url = redirect.url
+            except requests.RequestException:
+                pass  # Providers can still resolve the original public link.
+        expect_gallery = "/note/" in urlparse(request_url).path
         names = [getattr(p, "name", p.__class__.__name__) for p in self.providers]
         start_index = names.index(start_after) + 1 if start_after in names else 0
         for index, provider in enumerate(self.providers):
@@ -436,8 +462,10 @@ class DouyinProviderChain:
                     continue
             try:
                 print(f"[抖音解析] 正在通过 {label} 获取媒体地址...")
-                info = provider.get_video_info(url)
+                info = provider.get_video_info(request_url)
                 if info:
+                    if expect_gallery and (info.get("type") != "image" or not info.get("images")):
+                        raise DouyinProviderError("此链接是图集，但该来源仅提供视频或封面，继续尝试完整图片来源")
                     info.setdefault("provider", name)
                     if self.last_errors:
                         info["provider_errors"] = self.last_errors.copy()
